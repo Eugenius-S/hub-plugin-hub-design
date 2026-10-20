@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -336,4 +336,19 @@ test("первый фрейм — ниже тулбара минимум на 24
     assert.ok(v.y >= FRAME_TOP, `${W}×${H}: y ${v.y}`);
   }
   assert.ok(fitView([], 1000, 700).y >= FRAME_TOP);
+});
+
+test("scrollsRight: затухание справа только пока есть что прокрутить", () => {
+  assert.equal(scrollsRight({ scrollLeft: 0, clientWidth: 600, scrollWidth: 800 }), true);
+  assert.equal(scrollsRight({ scrollLeft: 100, clientWidth: 600, scrollWidth: 800 }), true);
+  assert.equal(scrollsRight({ scrollLeft: 200, clientWidth: 600, scrollWidth: 800 }), false);
+  assert.equal(scrollsRight({ scrollLeft: 0, clientWidth: 800, scrollWidth: 800 }), false);
+  assert.equal(scrollsRight({ scrollLeft: 199.5, clientWidth: 600, scrollWidth: 800 }), false);
+});
+
+test("серия одного отправителя: подпись (head) только у первого сообщения", () => {
+  const lines = chatLines([{ kind: "file", k: 1, path: "/d/x.png", image: true }, { kind: "out", k: 2, text: "вот шапка" }, { kind: "out", k: 3, text: "ещё" },
+    { kind: "in", k: 4, text: "ок" }, { kind: "in", k: 5, text: "и ещё" }, { kind: "out", k: 6, text: "готово" }], 40, "designer");
+  assert.deepEqual(lines.map((l) => l.head), [true, false, false, true, false, true]);
+  assert.equal(chatLines([{ kind: "out", k: 1, text: "a" }], 40, "designer")[0].head, true);
 });

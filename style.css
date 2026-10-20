@@ -18,6 +18,7 @@
 .hd-plus:hover{background:var(--muted);color:var(--foreground)}
 .hd-chat,.hd-comments{flex:1;min-height:0;overflow:auto;padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
 .hd-msg{max-width:100%;word-break:break-word}
+.hd-msg.cont{margin-top:calc(var(--space-1) - var(--space-3))}   /* продолжение серии — ближе к предыдущему, без подписи */
 .hd-who-name{font-weight:600;margin-bottom:2px}
 .hd-mbody{white-space:pre-wrap}
 .hd-pic{display:block;margin-bottom:var(--space-1)}

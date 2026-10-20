@@ -1,6 +1,6 @@
 // Hub Design: стартовый экран, как дашборд Claude Design: заголовок, вкладки «Все / Мои / Чужие», поиск, вид и сортировка,
 // ряд пресетов (новый файл этого вида) и прошлые макеты карточками с живым превью. Цвета, шрифты и тень — тема хаба.
-import { ago, bannerText, isGone, nameOf } from "./lib.js";
+import { ago, bannerText, isGone, nameOf, scrollsRight } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
 // пресет — новый файл этого вида: чат уходит специалисту вида, в поле ввода ложится заготовка «новый <вид>: …»
@@ -128,6 +128,10 @@ export function createDashboard(app) {
     subs.set(p.id, sub);
   }
 
+  const fade = () => presets.classList.toggle("more", scrollsRight(presets));
+  presets.addEventListener("scroll", fade, { passive: true });
+  new ResizeObserver(fade).observe(presets);
+
   const need = createNeed(app);
   const files = el("div", "hdd-files");
   const empty = el("div", "hdd-empty");
@@ -231,6 +235,7 @@ export function createDashboard(app) {
     }
     files.classList.toggle("list", S.list);
     paintFiles();
+    fade();
   }
   paint();
   return { node: root, paint, state: S };

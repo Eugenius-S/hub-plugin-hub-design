@@ -17,7 +17,9 @@
 .hdd-search:focus,.hdd-path:focus{border-color:var(--ring)}
 
 /* пресеты */
-.hdd-presets{display:flex;flex-wrap:nowrap;gap:10px;margin:28px -6px 0;padding:6px 6px 8px;overflow-x:auto;scrollbar-width:thin}   /* не влезли — ряд прокручивается, подписи не рвутся */
+.hdd-presets{display:flex;flex-wrap:nowrap;gap:10px;margin:28px -6px 0;padding:6px 6px 8px;overflow-x:auto;scrollbar-width:none}   /* не влезли — ряд прокручивается без полосы, подписи не рвутся */
+.hdd-presets::-webkit-scrollbar{display:none}
+.hdd-presets.more{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}   /* справа есть ещё — край затухает */
 .hdd-preset{flex:0 0 134px;min-width:0;border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;gap:8px;color:var(--foreground)}
 .hdd-art{position:relative;display:block;height:96px;border-radius:14px;background:var(--card);box-shadow:var(--shadow-plate);overflow:hidden;transition:box-shadow .15s,transform .15s}
 .hdd-art::before{content:"";position:absolute;inset:5px;border-radius:10px;background:var(--art,var(--muted))}

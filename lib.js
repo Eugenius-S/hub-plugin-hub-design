@@ -134,7 +134,7 @@ export function chatLines(items, limit = 60, session = "") {
   return (items || [])
     .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && String(it.text).trim() !== "—" || it.kind === "file")
     .slice(-limit)
-    .map((it) => ({ k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === "Вы",
+    .map((it, i, all) => ({ head: i === 0 || whoOf(all[i - 1], session) !== whoOf(it, session), k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === "Вы",
       text: it.kind === "file" ? (it.image ? String(it.caption || "") : `${it.caption ? it.caption + "\n" : ""}${it.path}`) : String(it.text),
       ...(it.kind === "file" && it.image ? { image: String(it.path) } : {}) }));
 }
@@ -423,3 +423,8 @@ export function lacking(sessions, asked = {}, now = Date.now(), needed = NEEDED)
   return needed.filter((n) => !have.has(n.name)).map((n) => ({ ...n, state: asked[n.name] && now - asked[n.name] < ASK_TTL ? "wait" : "ask" }));
 }
 export const bannerText = (n) => `Для Hub Design нужен ${n.title}`;
+
+// справа от видимой части ряда есть что прокрутить (1 px — допуск на дробные размеры)
+export function scrollsRight({ scrollLeft, clientWidth, scrollWidth }) {
+  return scrollWidth - (scrollLeft + clientWidth) > 1;
+}

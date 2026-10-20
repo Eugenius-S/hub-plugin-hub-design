@@ -1001,8 +1001,8 @@ function paintChat() {
   const stick = ui.chat.scrollHeight - ui.chat.scrollTop - ui.chat.clientHeight < 40;
   const el = hub.el;
   ui.chat.replaceChildren(...lines.map((l) => {
-    const row = el("div", "hd-msg " + (l.mine ? "me" : "them"));
-    if (l.who) row.append(el("div", "hd-who-name", l.who));
+    const row = el("div", "hd-msg " + (l.mine ? "me" : "them") + (l.head ? "" : " cont"));
+    if (l.who && l.head) row.append(el("div", "hd-who-name", l.who));
     const body = el("div", "hd-mbody");
     if (l.image) {   // присланная картинка — уменьшенная копия (?w=), целиком открывается по клику
       const a = el("a", "hd-pic");
