@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking } from "../lib.js";
+import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -254,4 +255,26 @@ test("Exit Hub Design: в чат специалиста, с кем шёл раз
   assert.equal(exitTarget("designer", ["animator"], "#/s/hub", "hub-design"), "#/s/hub");               // designer в хабе нет
   assert.equal(exitTarget("designer", [], "#/x/hub-design?a=1", "hub-design"), "#/");                  // «назад» — сам плагин: не петляем
   assert.equal(exitTarget("", undefined, "", "hub-design"), "#/");
+});
+
+test("специалисты плагина: designer обязателен, animator желателен; каждый пресет ведёт к кому-то из списка", () => {
+  assert.deepEqual(NEEDED.map((n) => [n.name, n.need]), [["designer", "required"], ["animator", "wanted"]]);
+  for (const p of PRESETS) assert.ok(NEEDED.some((n) => n.name === p.to), p.id);
+});
+
+test("lacking: кого нет в снимке; хаб за специалиста не считается; просили — ждём, по истечении снова просим", () => {
+  const sessions = [{ name: "hub", kind: "hub" }, { name: "animator" }];
+  assert.deepEqual(lacking(sessions).map((n) => [n.name, n.state]), [["designer", "ask"]]);
+  assert.deepEqual(lacking([...sessions, { name: "designer" }]), []);
+  assert.deepEqual(lacking([{ name: "designer", kind: "hub" }]).map((n) => n.name), ["designer", "animator"]);
+  assert.equal(lacking(sessions, { designer: 1000 }, 1000 + ASK_TTL - 1)[0].state, "wait");
+  assert.equal(lacking(sessions, { designer: 1000 }, 1000 + ASK_TTL)[0].state, "ask");
+  assert.deepEqual(lacking(sessions, { designer: 1000 }, 5, []), []);
+});
+
+test("сообщение хабу и его имя", () => {
+  assert.equal(installText("designer"), "Поставь специалиста для Hub Design: specialists install designer");
+  assert.equal(hubName([{ name: "x" }, { name: "main", kind: "hub" }]), "main");
+  assert.equal(hubName([]), "hub");
+  assert.equal(bannerText(NEEDED[0]), "Для Hub Design нужен дизайнер");
 });

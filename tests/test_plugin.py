@@ -137,3 +137,24 @@ class Scripts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_needed_specialists_060(self):
+        # 0.6.0: нужных специалистов нет в хабе — плашка «Поставить» (просьба хабу от владельца), ждём по снимку, у animator — тихая строка
+        with open(os.path.join(HERE, "lib.js"), encoding="utf-8") as f:
+            lib = f.read()
+        self.assertIn("export const NEEDED", lib)                        # список — одно место
+        with open(os.path.join(HERE, "main.js"), encoding="utf-8") as f:
+            main = f.read()
+        self.assertIn("async function install(name)", main)
+        self.assertIn("text: installText(name)", main)                   # «Поставь специалиста для Hub Design: specialists install <имя>»
+        self.assertIn("action: true", main)                              # кнопка страницы, не ответ на карточку
+        self.assertIn("lacking(", main)                                  # кого нет — считаем по снимку, без таймера опроса
+        self.assertIn("ui.need.paint(", main)                            # чат без специалиста — та же плашка
+        with open(os.path.join(HERE, "dashboard.js"), encoding="utf-8") as f:
+            dash = f.read()
+        self.assertIn("export function createNeed(", dash)
+        self.assertIn('"Попросила хаб, ждём"', dash)
+        self.assertIn("нет специалиста", dash)                           # animator — строка у пресета, не плашка
+        with open(os.path.join(HERE, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("С Hub Design ставится специалист designer из каталога specialists (кнопка на стартовом экране)", readme)

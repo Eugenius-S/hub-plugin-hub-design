@@ -1,6 +1,6 @@
 // Hub Design: стартовый экран, как дашборд Claude Design: заголовок, вкладки «Все / Мои / Чужие», поиск, вид и сортировка,
 // ряд пресетов (новый файл этого вида) и прошлые макеты карточками с живым превью. Цвета, шрифты и тень — тема хаба.
-import { ago, frameTitle, isGone } from "./lib.js";
+import { ago, bannerText, frameTitle, isGone } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
 // пресет — новый файл этого вида: чат уходит специалисту вида, в поле ввода ложится заготовка «новый <вид>: …»
@@ -48,7 +48,32 @@ const ART = {
   motion: '<i class="a-card" style="left:14%;top:16%;width:72%;height:68%"><i class="a-ball b1"></i><i class="a-ball b2"></i><i class="a-ball b3"></i><i class="a-ball b4"></i></i>',
 };
 
-// createDashboard(app): app = { hub, files(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path) }
+// плашка «нужен специалист»: строки — lacking() из lib.js; «Поставить» просит хаб, пока ждём — «Попросила хаб, ждём»
+export function createNeed(app, cls = "") {
+  const node = app.hub.el("div", "hdd-need " + cls);
+  node.hidden = true;
+  let sig = "";
+  function paint(rows) {
+    const next = rows.map((r) => r.name + ":" + r.state).join();
+    if (next === sig) return;
+    sig = next;
+    node.hidden = !rows.length;
+    node.replaceChildren(...rows.map((r) => {
+      const row = app.hub.el("div", "hdd-need-row");
+      row.dataset.need = r.name;
+      const text = app.hub.el("span", "hdd-need-t", bannerText(r));
+      const b = app.hub.el("button", "hdd-need-b", r.state === "wait" ? "Попросила хаб, ждём" : "Поставить");
+      b.type = "button";
+      b.disabled = r.state === "wait";
+      b.addEventListener("click", () => app.install(r.name));
+      row.append(text, b);
+      return row;
+    }));
+  }
+  return { node, paint };
+}
+
+// createDashboard(app): app = { hub, files(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name) }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
   const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false };
@@ -92,6 +117,7 @@ export function createDashboard(app) {
   pathIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && pathIn.value.trim()) app.openPath(pathIn.value); });
 
   const presets = el("div", "hdd-presets");
+  const subs = new Map();
   for (const p of PRESETS) {
     const b = el("button", "hdd-preset");
     b.type = "button";
@@ -100,14 +126,18 @@ export function createDashboard(app) {
     art.innerHTML = ART[p.id];
     const label = el("span", "hdd-plabel", p.title);
     if (p.badge) label.append(el("span", "hdd-badge " + (p.badge === "Бета" ? "beta" : "new"), p.badge));
-    b.append(art, label);
+    const sub = el("span", "hdd-psub");
+    sub.hidden = true;
+    b.append(art, label, sub);
     b.addEventListener("click", () => app.preset(p));
     presets.append(b);
+    subs.set(p.id, sub);
   }
 
+  const need = createNeed(app);
   const files = el("div", "hdd-files");
   const empty = el("div", "hdd-empty");
-  page.append(head, bar, pathIn, presets, files, empty);
+  page.append(head, need.node, bar, pathIn, presets, files, empty);
   root.append(page);
   // клавиши в поиске и пути не доходят до горячих клавиш холста
   root.addEventListener("keydown", (e) => e.stopPropagation());
@@ -196,6 +226,15 @@ export function createDashboard(app) {
     bSort.classList.toggle("on", S.sort !== "recent");
     bMore.classList.toggle("on", S.path);
     pathIn.hidden = !S.path;
+    // нет обязательного специалиста — плашка; нет желательного — тихая строка у его пресета
+    const lack = app.lacking();
+    need.paint(lack.filter((n) => n.need === "required"));
+    for (const p of PRESETS) {
+      const n = lack.find((x) => x.name === p.to && x.need !== "required");
+      const sub = subs.get(p.id);
+      sub.hidden = !n;
+      sub.textContent = n ? `нет специалиста ${n.name}` : "";
+    }
     files.classList.toggle("list", S.list);
     paintFiles();
   }

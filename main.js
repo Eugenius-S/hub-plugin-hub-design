@@ -3,11 +3,11 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, fileUrl, frameTitle,
-  goneText, hasEffect, htmlAuthored, htmlPaths, isGone, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, timelineQuery, toolMode, windowHeight,
+import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, fileUrl, frameTitle,
+  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, timelineQuery, toolMode, windowHeight,
   wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
-import { createDashboard, isStub, stubText } from "./dashboard.js";
+import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
 const ID = "hub-design";
@@ -24,7 +24,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], have: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, homeWho: null, back: "", openFrom: null, sent: 0,
+  authors: [], have: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -132,6 +132,7 @@ function load() {
   P.drawings = b.drawings || [];
   P.notes = b.notes || [];
   P.round = b.round || 1;
+  try { P.asked = JSON.parse(localStorage.getItem(STORE + "asked") || "{}") || {}; } catch { P.asked = {}; }
   if (b.cv) P.cv = { x: 56, y: 84, k: 1, auto: true, ...b.cv };
   if (b.shapes) P.shapes = { ...P.shapes, ...b.shapes };
   P.seq = [...P.pins, ...P.drawings, ...P.notes].reduce((m, p) => Math.max(m, Number(String(p.id).slice(1)) || 0), 0);
@@ -425,6 +426,23 @@ function addNote(x, y) {
   ui.cv.focusNote(n.id);
 }
 
+// кого из нужных специалистов в хабе нет (по снимку: появился — пропадает сам); просили — «ждём»
+const lackNow = () => lacking((ui?.snap || hub.snapshot() || {}).sessions || [], P.asked);
+// «Поставить»: сообщение хабу от владельца — ставит только хаб или владелец; ждём, пока сессия появится в снимке
+async function install(name) {
+  if (P.asked[name] && Date.now() - P.asked[name] < ASK_TTL) return;
+  P.asked[name] = Date.now();
+  localStorage.setItem(STORE + "asked", JSON.stringify(P.asked));
+  paint();
+  const r = await hub.post("/api/send", { session: hubName((hub.snapshot() || {}).sessions), text: installText(name), action: true });
+  if (r.error) {
+    delete P.asked[name];
+    localStorage.setItem(STORE + "asked", JSON.stringify(P.asked));
+    P.note = "Не ушло: " + r.error;
+    paint();
+  }
+}
+
 const recipient = (file) => recipientOf(file, { picked: P.picked, authors: P.authors, found: P.found, frames: P.frames });
 const app = {
   get P() { return P; },
@@ -439,7 +457,7 @@ const app = {
   removeNote: (id) => { P.notes = P.notes.filter((n) => n.id !== id); save(); paint(); },
   noteChanged: () => { hold(); paintCard(); paintComments(); },
   recent: () => recentHtml(P.items),
-  handle, visible: () => P.shown,
+  handle, visible: () => P.shown, lacking: lackNow, install,
   recipient, recipients: () => [...P.ok].sort(), pickRecipient, ensureAuthor,
   // ✕ закрывает открытый макет (его комментарии и правки остаются черновиками) и ведёт на стартовый дашборд
   close() {
@@ -654,6 +672,7 @@ function build(root) {
   const list = el("div", "hd-comments");
   const card = el("div", "hd-card");
   const banner = el("div", "hd-banner");
+  const need = createNeed({ hub, install }, "chat");   // получателя в хабе нет — не молча в пустоту: та же плашка
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: "Опишите, что нужно изменить…",
@@ -675,7 +694,7 @@ function build(root) {
   });
   const note = el("div", "hd-note");
   foot.append(icon("gear"), who);
-  card.append(banner, chips, strip, input.node, foot, note);
+  card.append(banner, need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card);
 
   // правая часть: холст с плавающими тулбарами, панель стилей и список файлов, пока холст пуст
@@ -685,14 +704,14 @@ function build(root) {
   const dash = createDashboard({
     hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => P.authors,
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path), openPath: (path) => openChecked(path),
-    preset: (p) => startPreset(p),
+    preset: (p) => startPreset(p), lacking: lackNow, install,
   });
   const exitB = button("hd-exit", "Exit Hub Design", "Выйти из Hub Design в чат: " + P.session, () => app.exit());
   right.append(cv.node, props, dash.node, exitB);
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, right, exitB, title, tabChat, tabComments, chat, list, banner, chips, strip, input, who, note, cv, props, dash, last: {} };
+  return { root, wrap, right, exitB, title, tabChat, tabComments, chat, list, banner, need, chips, strip, input, who, note, cv, props, dash, last: {} };
 }
 
 function render(root, snap) {
@@ -723,6 +742,7 @@ function paint() {
   ui.note.textContent = P.note;
   ui.note.hidden = !P.note;
   ui.cv.paint();
+  ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // на стартовом экране обязательного показывает он сам
   ui.dash.node.hidden = !home();
   if (home()) ui.dash.paint();
 

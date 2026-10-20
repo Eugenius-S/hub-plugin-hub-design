@@ -365,3 +365,18 @@ export function exitTarget(session, known, back, id) {
   if (session && (known || []).includes(session)) return "#/s/" + encodeURIComponent(session);
   return back && !String(back).startsWith("#/x/" + id) ? back : "#/";
 }
+
+// специалисты, без которых Hub Design работает не полностью — одно место; ставятся из каталога specialists (`specialists install <имя>`)
+export const NEEDED = [
+  { name: "designer", need: "required", title: "дизайнер" },
+  { name: "animator", need: "wanted", title: "аниматор" },
+];
+export const ASK_TTL = 30 * 60 * 1000;   // «попросила хаб» держится столько, потом снова «Поставить»
+export const installText = (name) => `Поставь специалиста для Hub Design: specialists install ${name}`;
+export const hubName = (sessions) => ((sessions || []).find((s) => s.kind === "hub") || {}).name || "hub";
+// кого нет в хабе: строки NEEDED с состоянием «ask» (можно просить) или «wait» (просили, ждём — до появления сессии в снимке)
+export function lacking(sessions, asked = {}, now = Date.now(), needed = NEEDED) {
+  const have = new Set((sessions || []).filter((s) => s.kind !== "hub").map((s) => s.name));
+  return needed.filter((n) => !have.has(n.name)).map((n) => ({ ...n, state: asked[n.name] && now - asked[n.name] < ASK_TTL ? "wait" : "ask" }));
+}
+export const bannerText = (n) => `Для Hub Design нужен ${n.title}`;
