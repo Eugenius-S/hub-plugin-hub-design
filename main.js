@@ -4,7 +4,7 @@
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
 import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
-  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, timelineQuery, toolMode, windowHeight,
+  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight,
   describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -162,8 +162,11 @@ const draftNotes = () => P.notes.filter((n) => n.state === "draft" && String(n.t
 const draftTweaks = () => P.tweaks.filter((t) => t.state === "draft" && tweakEffect(t));
 const drafts = () => draftCount(draftPins(), draftChanges(), draftDrawings(), draftNotes(), draftTweaks());
 const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h: f.h }]));
-const batchText = (extra = {}) => message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
-  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), ...extra });
+// выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок «Отправить дизайнеру» не включает
+const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
+const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
+  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), ...extra }));
+const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 
 // получателя не помним между открытиями: им управляет открытый макет (wanted); перенос из чата — поверх
 function fromAddress() {
@@ -704,7 +707,7 @@ function build(root) {
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: "Опишите, что нужно изменить…",
-    prefix: (text) => { if (home()) return NEW_DESIGN + text; const b = batchText(); return b ? b + "\n\n" + text : text; },
+    prefix: (text) => { if (home()) return NEW_DESIGN + text; const b = batchText() || selText(); return b ? b + "\n\n" + text : text; },
     onSent: () => {
       if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // на стартовом экране написали — это задача на новый макет
       else if (drafts() > 0) markSent();

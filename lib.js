@@ -335,6 +335,9 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   return blocks.join("\n\n");
 }
 
+// выделенный на холсте элемент одной строкой — чтобы «сделай этот блок шире» работало без пина
+export const selectedLine = (s) => (s && s.sel ? `Выделено: ${s.file} \`${s.sel}\` ${s.tag || "элемент"}${s.label ? ` «${cut(s.label)}»` : ""}` : "");
+
 export const draftCount = (comments, changes, drawings = [], notes = [], tweaks = []) =>
   comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length + tweaks.filter(tweakEffect).length +
   notes.filter((n) => String(n.text || "").trim()).length;

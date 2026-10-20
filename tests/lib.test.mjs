@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -423,4 +423,12 @@ test("крутилки: исходное значение — default, инач�
   assert.equal(tweakBase(c, "z"), "x");
   assert.equal(tweakBase(d, "1"), true);
   assert.equal(tweakBase(d, ""), false);
+});
+
+test("выделенное: строка «Выделено: файл `селектор` тег «подпись»», нет выделения — пусто", () => {
+  assert.equal(selectedLine({ file: "/d/a/index.html", sel: "#hero > h1", tag: "h1", label: "Цены без сюрпризов" }), "Выделено: /d/a/index.html `#hero > h1` h1 «Цены без сюрпризов»");
+  assert.equal(selectedLine({ file: "/d/a/index.html", sel: ".card:nth-of-type(2)", tag: "div", label: "" }), "Выделено: /d/a/index.html `.card:nth-of-type(2)` div");
+  assert.equal(selectedLine({ file: "/d/a/index.html", sel: "p", tag: "p", label: "я".repeat(200) }).length < 120, true);
+  assert.equal(selectedLine(null), "");
+  assert.equal(selectedLine({ file: "/a.html", sel: null }), "");
 });
