@@ -46,6 +46,33 @@ export function recentHtml(items, limit = 12) {
   return out.reverse().slice(0, limit);
 }
 
+// макеты всех сессий и их авторы: автор — кто писал файл инструментом (Write/Edit), иначе кто назвал его последним.
+// timelines: {сессия: [элементы ленты]}; skip — сессии, которые макетов не ведут (хаб, исполнители)
+const WRITE_TOOLS = /^(Write|Edit|MultiEdit)$/;
+export function htmlAuthored(timelines, skip = () => false) {
+  const best = new Map();
+  const take = (path, session, ts, wrote) => {
+    if (!path || !/\.html?$/i.test(path) || path.startsWith("http")) return;
+    const cur = best.get(path);
+    if (!cur) return best.set(path, { path, session, ts, wrote, last: ts });
+    cur.last = Math.max(cur.last, ts);
+    if (cur.wrote && !wrote) return;
+    if (wrote && !cur.wrote || ts >= cur.ts) Object.assign(cur, { session, ts, wrote });
+  };
+  for (const [session, items] of Object.entries(timelines || {})) {
+    if (skip(session)) continue;
+    for (const it of items || []) {
+      const ts = Number(it.ts) || 0;
+      if (it.kind === "tool") {
+        const inp = it.input || {};
+        take(inp.file_path || inp.path, session, ts, WRITE_TOOLS.test(it.name || ""));
+      } else if (it.kind === "file") take(it.path, session, ts, false);
+      else if (it.kind === "out") htmlPaths(it.text).forEach((p) => take(p, session, ts, false));
+    }
+  }
+  return [...best.values()].sort((a, b) => b.last - a.last);
+}
+
 // строки разговора для чата: реплики владельца и сессии, присланные файлы; шаги инструментов и служебное — нет
 export function chatLines(items, limit = 60) {
   return (items || [])
@@ -210,3 +237,16 @@ export const toolMode = (tool) => TOOLS[tool] || "view";
 
 // быстрые цвета панели стилей
 export const SWATCHES = ["#0b0b0b", "#52514e", "#ffffff", "#d97757", "#e5484d", "#f5a524", "#30a46c", "#257de0", "#6e56cf", "#e93d82", "#faf9f6", "#1f1e1d"];
+
+// «5 мин назад» для карточек макетов
+export function ago(ts, now = Date.now() / 1000) {
+  const s = Math.max(0, now - Number(ts || 0));
+  if (!ts) return "";
+  if (s < 90) return "только что";
+  if (s < 3600) return `${Math.round(s / 60)} мин назад`;
+  if (s < 86400) return `${Math.round(s / 3600)} ч назад`;
+  return `${Math.round(s / 86400)} дн назад`;
+}
+
+// слова владельца перед текстом, когда макета ещё нет: дизайнер делает новый, а не правит открытый
+export const NEW_DESIGN = "Новый макет (Hub Design): ";

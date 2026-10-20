@@ -45,6 +45,24 @@ class Scripts(unittest.TestCase):
             css = f.read()
         self.assertIn("html.hs-hidden .hd-top", css)
 
+    def test_recipient_follows_design_not_session(self):
+        # получатель и чат — специалист макета (автор или designer), не сессия палитры и не «последняя в браузере»
+        with open(os.path.join(HERE, "main.js"), encoding="utf-8") as f:
+            main = f.read()
+        self.assertNotIn('"last", JSON.stringify({ session', main)   # получатель не хранится между открытиями
+        self.assertNotIn("P.session = h.session", main)             # перенос из чата не меняет получателя
+        self.assertIn("setSession(wanted())", main)                 # следует за открытым макетом
+        self.assertIn("sendOne(", main)                             # «Отправить» в окне комментария — автору сразу
+        self.assertIn("/api/inject", main)                          # «Отправить сейчас», как в чате хаба
+        self.assertIn("close()", main)                              # ✕ закрыть Hub Design
+        with open(os.path.join(HERE, "canvas.js"), encoding="utf-8") as f:
+            canvas = f.read()
+        self.assertIn("app.close()", canvas)
+        self.assertNotIn('"Комментарий", null', canvas)             # кнопки «Комментарий» (в пачку) в окне больше нет
+        with open(os.path.join(HERE, "style.css"), encoding="utf-8") as f:
+            css = f.read()
+        self.assertIn(".hd-card .bar{flex-wrap:nowrap", css)        # поле ввода в узкой колонке — одной строкой
+
 
 if __name__ == "__main__":
     unittest.main()

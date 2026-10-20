@@ -59,7 +59,7 @@
     .ed .row{display:flex;justify-content:space-between;margin-top:10px;gap:8px}
     .ed button.b{border:1px solid var(--bd);border-radius:8px;padding:5px 12px;cursor:pointer;background:var(--bg);color:var(--fg)}
     .ed button.go{background:var(--a);border-color:var(--a);color:var(--on)}
-    .ed button.del{border:0;color:var(--mu);background:none;padding:5px 4px}
+    .ed button.x,.ed button.del{border:0;color:var(--mu);background:none;padding:5px 8px}
     svg.draw{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
     svg.draw *{fill:none;stroke:var(--a);stroke-width:calc(3px * var(--s));stroke-linecap:round;stroke-linejoin:round}
     svg.draw .sent{stroke:var(--mu)}
@@ -227,7 +227,7 @@
     const ed = document.createElement("div");
     ed.className = "ed";
     ed.dataset.id = id;
-    ed.innerHTML = `<h4>Комментарий<button class="x" title="Закрыть">×</button></h4><textarea placeholder="Что поменять здесь?"></textarea><div class="row"><button class="b save">Комментарий</button><button class="b go">Отправить дизайнеру</button></div><div class="row" style="margin-top:4px"><button class="b del">Удалить</button></div>`;
+    ed.innerHTML = `<h4>Комментарий</h4><textarea placeholder="Что поменять здесь?"></textarea><div class="row"><span><button class="b x">Закрыть</button><button class="b del">Удалить</button></span><button class="b go">Отправить</button></div>`;
     const ta = ed.querySelector("textarea");
     ta.value = p.text || "";
     const close = () => { ed.remove(); framed = null; };
@@ -240,13 +240,11 @@
     ed.addEventListener("click", (e) => e.stopPropagation());
     ta.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter" && !e.isComposing && (e.metaKey || e.ctrlKey)) { e.preventDefault(); done(true); }
-      else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); done(false); }
-      if (e.key === "Escape") { e.preventDefault(); if (!p.text && !ta.value.trim()) send({ t: "remove", id }); close(); }
+      if (e.key === "Enter" && !e.isComposing && !e.shiftKey) { e.preventDefault(); done(true); }
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
     });
-    ed.querySelector(".save").addEventListener("click", () => done(false));
     ed.querySelector(".go").addEventListener("click", () => done(true));
-    ed.querySelector(".x").addEventListener("click", () => { if (!p.text && !ta.value.trim()) send({ t: "remove", id }); close(); });
+    ed.querySelector(".x").addEventListener("click", () => done(false));
     ed.querySelector(".del").addEventListener("click", () => { close(); send({ t: "remove", id }); });
     root.append(ed);
     place();

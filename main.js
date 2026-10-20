@@ -3,8 +3,8 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { PROPS, SWATCHES, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameHeight, frameTitle,
-  hasEffect, htmlPaths, message, nextSpot, recentHtml, toolMode } from "./lib.js";
+import { NEW_DESIGN, PROPS, SWATCHES, ago, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameHeight, frameTitle,
+  hasEffect, htmlAuthored, htmlPaths, message, nextSpot, recentHtml, toolMode } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
@@ -22,6 +22,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
+  authors: [], ok: new Set(), pinned: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -34,6 +35,13 @@ export default function register(h) {
   hub = h;
   hub.addStyle("style.css");
   addEventListener("message", onFrame);
+  // адрес до Hub Design: «✕» возвращает туда (нет — на главную)
+  let prev = location.hash;
+  addEventListener("hashchange", (e) => {
+    const was = e.oldURL ? new URL(e.oldURL).hash : prev;
+    prev = location.hash;
+    if (was && !was.startsWith("#/x/" + ID)) P.back = was;
+  });
   hub.addView({
     id: ID, title: "Hub Design", subtitle: "холст, пины и правки дизайнеру", icon: "icon.svg", full: true,
     render, show() { P.shown = true; sidebar(true); fromAddress(); ping(); }, hide() { P.shown = false; sidebar(false); },
@@ -60,7 +68,8 @@ export default function register(h) {
 
 const PALETTE = '<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Zm-5 9a1.4 1.4 0 1 1 0-2.800A1.400 1.400 0 0 1 7 12Zm3-4a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 10 8Zm5 0a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 15 8Z"/></svg>';
 
-// перенос из чата сессии: сессия и набранное в поле уезжают в Hub Design (поле у сессии очищается — текст не пропадёт, он в поле у дизайнера)
+// перенос из чата сессии: набранное в поле уезжает в Hub Design (поле у сессии очищается — текст не пропадёт, он в поле у дизайнера).
+// Получатель — не эта сессия, а специалист макета: дизайнер или автор открытого файла; сессия лишь подсказывает, какой макет открыть
 function handoff(root) {
   const ctx = root.__ctx;
   if (!ctx?.session) return;
@@ -76,18 +85,25 @@ function applyHandoff() {
   const h = P.handoff;
   if (!h || !ui) return;
   P.handoff = null;
-  if (h.session !== P.session) { P.session = h.session; P.items = []; P.rev = -1; ui.input.set({ to: P.session }); }
   P.tab = "chat";
-  P.autoOpen = true;   // откроем последний HTML этой сессии на холсте, как только придёт её лента (если его там ещё нет)
+  P.openFrom = h.session;   // откроем последний макет этой сессии на холсте, если он у неё есть (пока в списке его нет — ждём ленты)
   const ta = ui.input.node.querySelector("textarea");
   if (ta && h.text) {
     ta.value = ta.value ? ta.value + "\n" + h.text : h.text;
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
   save();
-  pullChat(hub.snapshot() || {});
+  openFromSession();
   paint();
   ui.input.focus();
+}
+function openFromSession() {
+  const from = P.openFrom;
+  if (!from) return;
+  const mine = P.authors.find((a) => a.session === from);
+  if (!mine) return;
+  P.openFrom = null;
+  if (!P.frames.some((f) => f.path === mine.path)) addFrame(mine.path, true); else { P.focus = mine.path; ui.cv.focusOn(mine.path); }
 }
 
 // боковую панель хаба прячет отдельный плагин hide-sidebar; нет его — события никто не слушает
@@ -99,7 +115,6 @@ function sidebar(hide) {
 function save() {
   localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes,
     round: P.round, cv: P.cv, shapes: P.shapes }));
-  localStorage.setItem(STORE + "last", JSON.stringify({ session: P.session }));
   hold();
 }
 function load() {
@@ -132,7 +147,7 @@ function hold() {
   if (drafts() > 0) html.setAttribute("data-hub-hold", HOLD);
   else if (html.getAttribute("data-hub-hold") === HOLD) html.removeAttribute("data-hub-hold");
 }
-const draftPins = () => P.pins.filter((p) => p.state === "draft");
+const draftPins = () => P.pins.filter((p) => p.state === "draft" && String(p.text || "").trim());
 const draftChanges = () => P.changes.filter((c) => c.state === "draft");
 const draftDrawings = () => P.drawings.filter((d) => d.state === "draft");
 const draftNotes = () => P.notes.filter((n) => n.state === "draft" && String(n.text || "").trim());
@@ -141,11 +156,8 @@ const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h:
 const batchText = (extra = {}) => message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
   changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), ...extra });
 
-// последняя сессия в этом браузере; перенос из чата — поверх
+// получателя не помним между открытиями: им управляет открытый макет (wanted); перенос из чата — поверх
 function fromAddress() {
-  let last = {};
-  try { last = JSON.parse(getKey("last") || "{}"); } catch { last = {}; }
-  if (!P.handoff && last.session && last.session !== P.session) { P.session = last.session; P.items = []; P.rev = -1; ui?.input.set({ to: P.session }); }
   applyHandoff();
 }
 
@@ -277,8 +289,9 @@ function handle(file, m, ep = epOf(file)) {
   } else if (m.t === "comment") {
     const p = P.pins.find((q) => q.id === m.id);
     if (p) p.text = m.text;
+    P.focus = file;
     syncAll();
-    if (m.send) { save(); paint(); sendBatch(); return; }
+    if (m.send && p && String(p.text || "").trim()) { save(); paint(); sendOne(p); return; }
   } else if (m.t === "remove") {
     P.pins = P.pins.filter((q) => q.id !== m.id);
     renumber();
@@ -370,6 +383,8 @@ const app = {
   noteChanged: () => { hold(); paintCard(); paintComments(); },
   recent: () => recentHtml(P.items),
   handle, visible: () => P.shown,
+  recipient: (file) => authorOf(file),
+  close() { location.hash = P.back && !P.back.startsWith("#/x/" + ID) ? P.back : "#/"; },
   toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; paint(); },
 };
 
@@ -387,6 +402,26 @@ function markSent() {
   syncAll();
   paint();
 }
+// «Отправить» в окне комментария: уходит один комментарий (точка и элемент) тому, кто работает над макетом
+async function sendOne(pin) {
+  if (P.busy) return;
+  const to = authorOf(pin.file);
+  const text = message({ path: pin.file, round: P.round, views: views(), comments: [pin], changes: [] });
+  if (!text) return;
+  P.busy = true;
+  paint();
+  const r = await hub.post("/api/send", { session: to, text });
+  P.busy = false;
+  if (r.error) { P.note = "Не ушло: " + r.error; return paint(); }
+  P.note = "";
+  pin.state = "sent";
+  P.round += 1;
+  P.pinned = null;
+  renumber();
+  save();
+  syncAll();
+  paint();
+}
 async function sendBatch() {
   const text = batchText();
   if (!text || P.busy) return;
@@ -399,14 +434,78 @@ async function sendBatch() {
   markSent();
 }
 
+// --- кому уходит разговор: специалист макета ---------------------------------------------------------------------
+// автор макета — кто писал файл (или последним назвал его) в лентах сессий хаба; нет автора — дизайнер
+const authorOf = (file) => (P.authors.find((a) => a.path === file) || {}).session || P.frames.find((f) => f.path === file)?.author || DEFAULT_SESSION;
+function wanted() {
+  if (P.pinned && P.pinned.focus === P.focus) return P.session;   // выбрали вручную — держим, пока открыт тот же макет
+  P.pinned = null;
+  return P.focus ? authorOf(P.focus) : DEFAULT_SESSION;
+}
+function setSession(name) {
+  if (!name || name === P.session) return;
+  P.session = name;
+  P.items = [];
+  P.rev = -1;
+  if (ui) { ui.input.set({ to: name }); ui.last.chat = ""; ui.last.queue = ""; pullChat(hub.snapshot() || {}); }
+}
+// макеты по лентам сессий хаба. В снимке лент нет (страница берёт ленту открытой сессии сама) — тянем /api/timeline каждой
+// сессии, но редко: лента изменилась (timeline_rev) и прошло ≥ 20 с, по три запроса разом; хранится только то, что про HTML
+const tl = new Map();   // сессия → {rev, at, items}
+let scanning = false;
+const slim = (items) => (items || []).filter((it) => (it.kind === "tool" && /\.html?$/i.test((it.input || {}).file_path || (it.input || {}).path || ""))
+  || (it.kind === "file" && /\.html?$/i.test(it.path || "")) || (it.kind === "out" && htmlPaths(it.text).length))
+  .map((it) => ({ kind: it.kind, name: it.name, ts: it.ts, path: it.path, input: it.input && { file_path: (it.input.file_path || it.input.path) },
+    text: it.kind === "out" ? htmlPaths(it.text).join(" ") : undefined }));
+function recompute() {
+  const lines = Object.fromEntries([...tl].map(([k, v]) => [k, v.items]));
+  P.authors = htmlAuthored(lines, (n) => !P.ok.has(n));
+  openFromSession();
+  openNewDesign();
+}
+async function scanDesigns(snap) {
+  P.ok = new Set((snap.sessions || []).filter((x) => x.kind !== "hub" && x.role !== "executor").map((x) => x.name));
+  if (scanning || !P.shown) return;
+  const revs = snap.timeline_rev || {};
+  const gap = P.openNew ? 3000 : 20000;
+  const due = [...P.ok].filter((n) => { const c = tl.get(n); return !c || (c.rev !== (revs[n] ?? 0) && Date.now() - c.at > gap); });
+  if (!due.length) { if (ui.last.authors !== P.authors.length + "#" + P.ok.size) { ui.last.authors = P.authors.length + "#" + P.ok.size; recompute(); } return; }
+  scanning = true;
+  const queue = [...due];
+  const worker = async () => {
+    for (let n = queue.shift(); n; n = queue.shift()) {
+      try {
+        const res = await fetch(`/api/timeline?${new URLSearchParams({ session: n, since: "0" })}`);
+        if (res.ok) tl.set(n, { rev: revs[n] ?? 0, at: Date.now(), items: slim((await res.json()).items) });
+      } catch { /* следующий снимок повторит */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  for (const n of [...tl.keys()]) if (!P.ok.has(n)) tl.delete(n);
+  scanning = false;
+  recompute();
+  paint();
+}
+// владелец написал, когда макетов не было: ждём файл, который дизайнер напишет после отправки, и открываем его
+function openNewDesign() {
+  const w = P.openNew;
+  if (!w) return;
+  if (Date.now() / 1000 - w.ts > 900) { P.openNew = null; return; }
+  const f = P.authors.find((a) => a.session === w.session && a.wrote && a.ts >= w.ts - 1);
+  if (!f) return;
+  P.openNew = null;
+  addFrame(f.path, true);
+}
+
 // --- лента разговора ---------------------------------------------------------------------------------------------
 async function pullChat(snap) {
   const want = (snap.timeline_rev || {})[P.session] ?? 0;
   if (P.loading || (P.rev === want && P.epoch === snap.epoch)) return;
   P.loading = true;
   try {
-    const res = await fetch(`/api/timeline?${new URLSearchParams({ session: P.session, since: "0" })}`);
-    if (res.ok) {
+    const sess = P.session;
+    const res = await fetch(`/api/timeline?${new URLSearchParams({ session: sess, since: "0" })}`);
+    if (res.ok && sess === P.session) {
       const r = await res.json();
       P.items = r.items || [];
       P.rev = want;
@@ -414,26 +513,15 @@ async function pullChat(snap) {
     }
   } catch { /* следующий снимок повторит */ }
   P.loading = false;
-  if (P.autoOpen && P.items.length) {
-    P.autoOpen = false;
-    const last = recentHtml(P.items, 1)[0];
-    if (last && !P.frames.some((f) => f.path === last)) { addFrame(last, true); return; }
-  }
   paint();
 }
 
 // --- вид ---------------------------------------------------------------------------------------------------------
-const ICONS = {
-  logo: '<svg viewBox="0 0 20 20" width="18" height="18"><path d="M10 2.5a7.5 7.5 0 1 0 0 15c1 0 1.6-.6 1.6-1.4 0-.5-.3-.9-.3-1.4 0-.8.6-1.3 1.4-1.3h1.6a3 3 0 0 0 3-3C17 5.5 14 2.5 10 2.5Z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="6.5" cy="9" r="1" fill="currentColor"/><circle cx="9.5" cy="6" r="1" fill="currentColor"/><circle cx="13" cy="7" r="1" fill="currentColor"/></svg>',
-  comment: '<svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 2.500c-3 0-5.500 2-5.500 4.700 0 1.200.5 2.200 1.300 3L3 13l2.800-1c.7.2 1.400.3 2.200.3 3 0 5.500-2 5.500-4.600S11 2.500 8 2.500Z" fill="none" stroke="currentColor" stroke-width="1.200" stroke-linejoin="round"/></svg>',
-  edit: '<svg viewBox="0 0 16 16" width="13" height="13"><path d="M3 13h2l7-7a1.400 1.400 0 0 0-2-2L3 11v2ZM9 5l2 2" fill="none" stroke="currentColor" stroke-width="1.200" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  draw: '<svg viewBox="0 0 16 16" width="13" height="13"><path d="M3 13c3-.5 3-4 5.500-4.500 2-.4 2 1.800 4 1M10.500 3.500l2 2L7 11l-2.500.5L5 9l5.500-5.500Z" fill="none" stroke="currentColor" stroke-width="1.200" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  gear: '<svg viewBox="0 0 16 16" width="13" height="13"><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.200"/><path d="M8 1.800v1.600M8 12.600v1.600M1.800 8h1.600M12.600 8h1.600M3.600 3.600l1.100 1.100M11.300 11.300l1.100 1.100M12.400 3.600l-1.100 1.100M4.700 11.300l-1.100 1.100" stroke="currentColor" stroke-width="1.200" stroke-linecap="round"/></svg>',
-  file: '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 2.500h5l3 3v8H4v-11Z" fill="none" stroke="currentColor" stroke-width="1.200" stroke-linejoin="round"/></svg>',
-};
+const LOGO = PALETTE.replace('class="icon"', 'class="hd-logo-svg" width="20" height="20"');
+const ICONS = { logo: LOGO, comment: CI.comment, edit: CI.pencil, draw: CI.free, file: CI.file, note: CI.note };
 function icon(name, text) {
   const b = hub.el("span", "hd-ic");
-  b.innerHTML = ICONS[name] || CI[name];
+  if (name === "gear" && hub.icon) b.append(hub.icon("settings")); else b.innerHTML = ICONS[name] || CI[name] || "";
   if (text) b.append(document.createTextNode(text));
   return b;
 }
@@ -468,18 +556,25 @@ function build(root) {
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: "Опишите, что нужно изменить…",
-    prefix: (text) => { const b = batchText(); return b ? b + "\n\n" + text : text; },
-    onSent: () => { if (drafts() > 0) markSent(); },
+    prefix: (text) => { const b = batchText(); return b ? b + "\n\n" + text : P.frames.length ? text : NEW_DESIGN + text; },
+    onSent: () => {
+      if (!P.frames.length) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // нет макетов — это задача на новый
+      if (drafts() > 0) markSent();
+    },
   });
+  const strip = el("div", "strip-host");
+  strip.hidden = true;
   const foot = el("div", "hd-foot");
   const who = el("select", "hd-who");
   who.title = "Кому уходят правки";
   who.addEventListener("change", () => {
-    P.session = who.value; P.items = []; P.rev = -1; input.set({ to: P.session }); save(); pullChat(hub.snapshot()); paint();
+    P.pinned = { focus: P.focus };
+    setSession(who.value);
+    paint();
   });
   const note = el("div", "hd-note");
   foot.append(icon("gear"), who);
-  card.append(banner, chips, input.node, foot, note);
+  card.append(banner, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card);
 
   // правая часть: холст с плавающими тулбарами, панель стилей и список файлов, пока холст пуст
@@ -491,11 +586,11 @@ function build(root) {
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, title, tabChat, tabComments, chat, list, banner, chips, input, who, note, cv, props, files, last: {} };
+  return { root, wrap, title, tabChat, tabComments, chat, list, banner, chips, strip, input, who, note, cv, props, files, last: {} };
 }
 
 function render(root, snap) {
-  if (!ui || ui.root !== root) { ui = build(root); load(); fromAddress(); ping(); P.autoOpen = !P.frames.length; }
+  if (!ui || ui.root !== root) { ui = build(root); load(); fromAddress(); ping(); }
   ui.snap = snap;
   pullChat(snap);
   paint();
@@ -506,12 +601,14 @@ const baseName = (p) => p.split(/[\\/]/).pop();
 function paint() {
   if (!ui) return;
   const snap = ui.snap || hub.snapshot() || {};
+  scanDesigns(snap);
+  setSession(wanted());
   const sig = JSON.stringify(theme());
   if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: JSON.parse(sig) }); }
   ui.title.textContent = P.focus ? frameTitle(P.focus).replace(/\.html?$/i, "") || "Hub Design" : "Hub Design";
   ui.tabChat.classList.toggle("on", P.tab === "chat");
   ui.tabComments.classList.toggle("on", P.tab === "comments");
-  const live = P.pins.filter((p) => p.state !== "done").length + P.changes.filter((c) => c.state !== "done" && hasEffect(c)).length +
+  const live = P.pins.filter((p) => p.state !== "done" && String(p.text || "").trim()).length + P.changes.filter((c) => c.state !== "done" && hasEffect(c)).length +
     P.drawings.filter((d) => d.state !== "done").length + P.notes.filter((n) => String(n.text || "").trim()).length;
   ui.tabComments.textContent = live ? `Комментарии ${live}` : "Комментарии";
   ui.chat.hidden = P.tab !== "chat";
@@ -533,28 +630,69 @@ function paint() {
   }
 
   paintFiles();
+  paintQueue(snap);
   paintProps();
   paintCard();
   paintComments();
   paintChat();
 }
 
+// пустой холст: все макеты (HTML из сессий хаба) карточками на выбор; написали сразу — это новый макет
 function paintFiles() {
-  const recent = recentHtml(P.items);
-  const sig = recent.join("|") + "#" + P.session;
+  const list = P.authors.slice(0, 30);
+  const sig = list.map((d) => d.path + d.session + d.last).join("|") + "#" + Math.floor(Date.now() / 60000);
   if (ui.last.files === sig) return;
   ui.last.files = sig;
   const el = hub.el;
   const pathIn = el("input", "hd-path");
-  pathIn.placeholder = "Путь к HTML: /…/index.html";
+  pathIn.placeholder = "Открыть по пути: /…/index.html";
   pathIn.value = ui.last.pathValue || "";
   pathIn.addEventListener("input", () => { ui.last.pathValue = pathIn.value; });
   pathIn.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") addFrame(pathIn.value, true); });
-  const rows = recent.map((p) => button("hd-frow", [icon("file"), el("span", "hd-fname", baseName(p)), el("span", "hd-fdir", p.split("/").slice(-3, -1).join("/"))], p, () => addFrame(p, true)));
+  const cards = list.map((d) => {
+    const who = el("span", "hd-dwho", d.session);
+    const c = button("hd-dcard", [el("span", "hd-dico", ""), el("span", "hd-dname", baseName(d.path).replace(/\.html?$/i, "")),
+      el("span", "hd-ddir", d.path.split("/").slice(-3, -1).join("/")), el("span", "hd-dmeta", ""), ], d.path, () => addFrame(d.path, true));
+    c.querySelector(".hd-dico").innerHTML = CI.file;
+    c.querySelector(".hd-dmeta").append(who, el("span", "hd-dago", ago(d.last)));
+    return c;
+  });
   const box = el("div", "hd-fbox");
-  box.append(el("h3", null, "Холст пуст"), pathIn,
-    ...(rows.length ? [el("div", "hd-fhint", `Последние HTML сессии ${P.session}`), ...rows] : [el("div", "hd-fhint", `У ${P.session} пока нет HTML. Укажите путь выше или откройте ссылку из разговора.`)]));
+  box.append(el("h3", null, "Макеты"),
+    el("div", "hd-fhint", cards.length ? "Выберите макет, чтобы открыть его на холсте. Или напишите слева, что нужно, — дизайнер сделает новый." : "Макетов пока нет. Напишите слева, что нужно, — дизайнер сделает новый."),
+    pathIn);
+  if (cards.length) { const grid = el("div", "hd-dgrid"); grid.append(...cards); box.insertBefore(grid, pathIn); }
   ui.files.replaceChildren(box);
+}
+
+// очередь сообщений к получателю — как полоса над полем в чате хаба: «Отправить сейчас» (если занят) и «Убрать»
+function paintQueue(snap) {
+  const s = (snap.sessions || []).find((x) => x.name === P.session) || {};
+  const msgs = snap.messages || {};
+  const queued = P.items.filter((it) => it.kind === "in" && (msgs[it.id] || {}).state === "queued");
+  const sig = P.session + "#" + queued.map((it) => it.id + (s.state === "busy" ? "b" + (msgs[it.id].injectable ? 1 : 0) : "") + (msgs[it.id].removable === false ? "x" : "")).join();
+  if (ui.last.queue === sig) return;
+  ui.last.queue = sig;
+  ui.strip.hidden = !queued.length;
+  if (!queued.length) return ui.strip.replaceChildren();
+  const el = hub.el;
+  const clip = (t, n) => { const x = String(t || "").replace(/\s+/g, " ").trim(); return x.length > n ? x.slice(0, n) + "…" : x; };
+  const act = (label, cls, fn) => {
+    const b = button("btn small " + cls, label, null, async () => { b.disabled = true; try { await fn(); } finally { b.disabled = false; } });
+    return b;
+  };
+  const box = el("div", "strip");
+  queued.slice(0, 3).forEach((it, i) => {
+    const m = msgs[it.id] || {};
+    const row = el("div", "strip-row");
+    row.dataset.k = "queue";
+    if (i === 0) row.append(el("span", "k", `В очереди · ${queued.length}`));
+    row.append(el("span", "t", clip(it.text, 90)));
+    if (s.state === "busy" && m.injectable) row.append(act("Отправить сейчас", "", () => hub.post("/api/inject", { session: P.session, id: it.id })));
+    if (m.removable !== false) row.append(act("Убрать", "quiet", () => hub.post("/api/queue/cancel", { session: P.session, id: it.id })));
+    box.append(row);
+  });
+  ui.strip.replaceChildren(box);
 }
 
 // панель стилей справа: цвет заливки и текста, остальные свойства выбранного элемента
@@ -641,7 +779,7 @@ function field(f) {
 function paintCard() {
   const n = drafts();
   const items = [
-    ...P.pins.filter((p) => p.state === "draft").map((p) => ({ text: p.text || "…без текста", ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
+    ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
     ...P.changes.filter((c) => c.state === "draft" && hasEffect(c)).map((c) => ({ text: `${c.label || c.sel}: ${describeChange(c)}`, ic: "edit", del: () => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); } })),
     ...P.drawings.filter((d) => d.state === "draft").map((d) => ({ text: describeDrawing(d), ic: "draw", del: () => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: "Заметка: " + d.text, ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
@@ -666,7 +804,7 @@ function paintCard() {
 }
 
 function paintComments() {
-  const pins = P.pins.filter((p) => p.state !== "done");
+  const pins = P.pins.filter((p) => p.state !== "done" && String(p.text || "").trim());
   const changes = P.changes.filter((c) => c.state !== "done" && hasEffect(c));
   const drawings = P.drawings.filter((d) => d.state !== "done");
   const notes = P.notes.filter((n) => String(n.text || "").trim());
@@ -677,7 +815,7 @@ function paintComments() {
   const rows = [];
   for (const p of pins) {
     const li = el("div", "hd-citem " + p.state);
-    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", p.text || "…без текста"));
+    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", p.text));
     li.title = p.sel;
     rows.push(li);
   }

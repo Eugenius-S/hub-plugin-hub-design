@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, frameHeight, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, frameHeight, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago } from "../lib.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -135,4 +135,26 @@ test("пачка с нескольких фреймов — разделами �
   assert.match(text, /Заметка на холсте Общая мысль/);
   assert.ok(!text.includes("  \n"));
   assert.equal(draftCount([{ text: "x" }], [], [{}, {}], [{ text: "n" }, { text: "" }]), 4);
+});
+
+test("автор макета — кто писал файл, иначе кто назвал последним; хаб и исполнители не в счёт", () => {
+  const tl = {
+    designer: [{ kind: "tool", name: "Write", ts: 100, input: { file_path: "/d/a/index.html" } }, { kind: "out", ts: 110, text: "Готово /d/b/page.html" }],
+    "gen-1": [{ kind: "out", ts: 200, text: "Смотри /d/a/index.html и /d/b/page.html" }, { kind: "tool", name: "Read", ts: 210, input: { file_path: "/d/c/x.html" } }],
+    hub: [{ kind: "tool", name: "Write", ts: 300, input: { file_path: "/d/a/index.html" } }],
+  };
+  const r = htmlAuthored(tl, (n) => n === "hub");
+  const by = Object.fromEntries(r.map((x) => [x.path, x.session]));
+  assert.equal(by["/d/a/index.html"], "designer");   // писал дизайнер, gen-1 только назвал
+  assert.equal(by["/d/b/page.html"], "gen-1");        // никто не писал — последний назвавший
+  assert.equal(by["/d/c/x.html"], "gen-1");
+  assert.deepEqual(r.map((x) => x.path), ["/d/c/x.html", "/d/a/index.html", "/d/b/page.html"]);   // свежие первыми
+  assert.deepEqual(htmlAuthored({ s: [{ kind: "tool", name: "Write", ts: 1, input: { file_path: "/a.css" } }] }), []);
+});
+
+test("«N мин назад»", () => {
+  assert.equal(ago(1000, 1030), "только что");
+  assert.equal(ago(1000, 1000 + 600), "10 мин назад");
+  assert.equal(ago(1000, 1000 + 7200), "2 ч назад");
+  assert.equal(ago(0, 5), "");
 });

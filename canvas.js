@@ -339,28 +339,32 @@ export function createCanvas(app) {
     closeEditor(false);
     editor = { id: m.id, file: ep.path, x: m.x, y: m.y, ep };
     const box = el("div", "hdc-ed");
-    box.append(el("h4", null, "Комментарий"));
+    box.append(el("h4", null, "Комментарий"), el("span", "hdc-edto", "→ " + app.recipient(ep.path)));
     const ta = el("textarea");
     ta.placeholder = "Что поменять здесь?";
     ta.value = pin.text || "";
-    const close = (cancel) => { if (cancel && !pin.text && !ta.value.trim()) app.handle(ep.path, { t: "remove", id: m.id }); closeEditor(); };
-    const done = (go) => {
+    // «Закрыть» не теряет набранное (останется комментарием в пачке), пустой пин убирается; «Отправить» шлёт сразу автору макета
+    const close = () => {
       const text = ta.value.trim();
       closeEditor();
-      app.handle(ep.path, text ? { t: "comment", id: m.id, text, send: !!go } : { t: "remove", id: m.id });
+      app.handle(ep.path, text ? { t: "comment", id: m.id, text } : { t: "remove", id: m.id });
+    };
+    const send = () => {
+      const text = ta.value.trim();
+      closeEditor();
+      app.handle(ep.path, text ? { t: "comment", id: m.id, text, send: true } : { t: "remove", id: m.id });
     };
     ta.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter" && !e.isComposing && (e.metaKey || e.ctrlKey)) { e.preventDefault(); done(true); }
-      else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); done(false); }
-      else if (e.key === "Escape") { e.preventDefault(); close(true); }
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
     });
     const row = el("div", "hdc-edrow");
-    row.append(btn("hdc-eb", "Комментарий", null, () => done(false)), btn("hdc-eb go", "Отправить дизайнеру", null, () => done(true)));
-    const row2 = el("div", "hdc-edrow");
-    row2.append(btn("hdc-eb del", "Удалить", null, () => { closeEditor(); app.handle(ep.path, { t: "remove", id: m.id }); }),
-      btn("hdc-eb del", "Закрыть", null, () => close(true)));
-    box.append(ta, row, row2);
+    const left = el("span", "hdc-edleft");
+    left.append(btn("hdc-eb quiet", "Закрыть", null, close),
+      btn("hdc-eb quiet", "Удалить", null, () => { closeEditor(); app.handle(ep.path, { t: "remove", id: m.id }); }));
+    row.append(left, btn("hdc-eb go", "Отправить", null, send));
+    box.append(ta, row);
     box.addEventListener("pointerdown", (e) => e.stopPropagation());
     editor.node = box;
     root.append(box);
@@ -416,7 +420,8 @@ export function createCanvas(app) {
   const panel = btn("hdc-tool", svg("panel"), "Панель стилей", () => app.toggleProps());
   const zoomText = el("span", null, "100%");
   const zoomB = btn("hdc-zoom", [zoomText, svg("chev12")], "Масштаб", (e) => zoomMenu(e.currentTarget));
-  top.append(playTop, panel, zoomB);
+  const closeB = btn("hdc-tool hdc-close", hub.icon ? hub.icon("close") : svg("close"), "Закрыть Hub Design", () => app.close());
+  top.append(playTop, panel, zoomB, closeB);
 
   // --- рисуем состояние ----------------------------------------------------------------------------------------------
   function paint() {
