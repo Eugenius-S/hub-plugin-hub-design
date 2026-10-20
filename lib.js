@@ -73,6 +73,38 @@ export function htmlAuthored(timelines, skip = () => false) {
   return [...best.values()].sort((a, b) => b.last - a.last);
 }
 
+// писала ли сессия файл (Write/Edit) в этих строках ленты или истории: ts последней записи, иначе 0
+export function wroteAt(items, file) {
+  let at = 0;
+  for (const it of items || []) {
+    if (it.kind !== "tool" || !WRITE_TOOLS.test(it.name || "")) continue;
+    const inp = it.input || {};
+    if ((inp.file_path || inp.path) === file) at = Math.max(at, Number(it.ts) || 1);
+  }
+  return at;
+}
+
+// кому уходит комментарий к макету: выбор владельца → писавший файл (в ленте или в истории) → только назвавший → никто.
+// how: picked | wrote | named | none; none — получателя выбирает владелец, молча подставлять «дизайнера» нельзя
+export function recipientOf(file, { picked = {}, authors = [], found = {}, frames = [] } = {}) {
+  if (picked[file]) return { session: picked[file], how: "picked" };
+  const a = authors.find((x) => x.path === file);
+  if (a && a.wrote) return { session: a.session, how: "wrote" };
+  if (found[file]) return { session: found[file], how: "wrote" };
+  const f = frames.find((x) => x.path === file);
+  if (f && f.author) return { session: f.author, how: "wrote" };
+  if (a) return { session: a.session, how: "named" };
+  return { session: "", how: "none" };
+}
+
+// в каких сессиях искать, кто писал файл, когда в живой ленте записи нет: назвавшие его, затем дизайнер, затем остальные
+export function searchOrder(file, authors, names, first = "designer") {
+  const named = (authors || []).filter((a) => a.path === file).map((a) => a.session);
+  const all = [...new Set([...named, first, ...names])].filter((n) => names.includes(n));
+  const head = new Set([...named, first]);
+  return { near: all.filter((n) => head.has(n)), far: all.filter((n) => !head.has(n)) };
+}
+
 // строки разговора для чата: реплики владельца и сессии, присланные файлы; шаги инструментов и служебное — нет
 export function chatLines(items, limit = 60) {
   return (items || [])
@@ -225,8 +257,9 @@ export function nextSpot(frames, w, gap = 80) {
   return { x: last.x + last.w + gap, y: last.y };
 }
 
-// высота фрейма по высоте документа
-export const frameHeight = (docH) => Math.min(8000, Math.max(400, Math.round(Number(docH) || 900)));
+// высота окна фрейма — экранная, по ширине (как у устройства); длинная страница прокручивается внутри рамки, а не растягивает её:
+// иначе vh/svh в макете (min-height:100vh) растягиваются до высоты рамки
+export const windowHeight = (w) => ({ 1440: 900, 1280: 800, 768: 1024, 390: 844 })[Number(w)] || 900;
 
 // подпись фрейма: имя файла без .html
 export const frameTitle = (path) => String(path).split(/[\\/]/).pop();

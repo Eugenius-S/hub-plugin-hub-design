@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, frameHeight, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago } from "../lib.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -103,10 +103,11 @@ test("новый фрейм — справа от последнего с заз
   assert.deepEqual(nextSpot([{ x: 0, y: 0, w: 1440, h: 900 }], 390), { x: 1520, y: 0 });
 });
 
-test("высота фрейма, подпись, режимы инструментов, цвета", () => {
-  assert.equal(frameHeight(100), 400);
-  assert.equal(frameHeight(99999), 8000);
-  assert.equal(frameHeight(), 900);
+test("окно фрейма — экранной высоты, а не высоты документа; подпись, режимы инструментов, цвета", () => {
+  assert.equal(windowHeight(1440), 900);
+  assert.equal(windowHeight(390), 844);
+  assert.equal(windowHeight(), 900);
+  assert.ok(windowHeight(1440) < 1200);   // 0.4.0: рамка тянулась до 8000 px, и 100vh макета с ней
   assert.equal(frameTitle("/a/b/index.html"), "index.html");
   assert.equal(frameTitle("C:\\a\\b.html"), "b.html");
   assert.equal(toolMode("select"), "edit");
@@ -157,4 +158,23 @@ test("«N мин назад»", () => {
   assert.equal(ago(1000, 1000 + 600), "10 мин назад");
   assert.equal(ago(1000, 1000 + 7200), "2 ч назад");
   assert.equal(ago(0, 5), "");
+});
+
+test("получатель: выбор владельца → писавший (лента или история) → только назвавший → никто, молча не дизайнер", () => {
+  const authors = [{ path: "/d/a.html", session: "gen-1", wrote: false }, { path: "/d/b.html", session: "designer", wrote: true }];
+  assert.deepEqual(recipientOf("/d/b.html", { authors }), { session: "designer", how: "wrote" });
+  assert.deepEqual(recipientOf("/d/a.html", { authors }), { session: "gen-1", how: "named" });
+  assert.deepEqual(recipientOf("/d/a.html", { authors, found: { "/d/a.html": "designer" } }), { session: "designer", how: "wrote" });
+  assert.deepEqual(recipientOf("/d/a.html", { authors, found: { "/d/a.html": "designer" }, picked: { "/d/a.html": "writer" } }), { session: "writer", how: "picked" });
+  assert.deepEqual(recipientOf("/d/none.html", { authors }), { session: "", how: "none" });
+  assert.deepEqual(recipientOf("/d/none.html"), { session: "", how: "none" });
+});
+
+test("Write макета ушёл за хвост ленты: ищем его в истории, назвавший в хвосте не автор", () => {
+  const history = [{ kind: "tool", name: "Write", ts: 5, input: { file_path: "/d/kolo/index.html" } }, { kind: "tool", name: "Read", ts: 6, input: { file_path: "/d/kolo/index.html" } }];
+  assert.equal(wroteAt(history, "/d/kolo/index.html"), 5);
+  assert.equal(wroteAt(history, "/d/other.html"), 0);
+  assert.equal(wroteAt([{ kind: "out", ts: 9, text: "/d/kolo/index.html" }], "/d/kolo/index.html"), 0);
+  const o = searchOrder("/d/kolo/index.html", [{ path: "/d/kolo/index.html", session: "gen-1" }], ["writer", "gen-1", "designer"]);
+  assert.deepEqual(o, { near: ["gen-1", "designer"], far: ["writer"] });
 });

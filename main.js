@@ -3,8 +3,8 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { NEW_DESIGN, PROPS, SWATCHES, ago, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameHeight, frameTitle,
-  hasEffect, htmlAuthored, htmlPaths, message, nextSpot, recentHtml, toolMode } from "./lib.js";
+import { NEW_DESIGN, PROPS, SWATCHES, ago, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameTitle,
+  hasEffect, htmlAuthored, htmlPaths, message, nextSpot, recentHtml, recipientOf, searchOrder, toolMode, windowHeight, wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
@@ -22,7 +22,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], ok: new Set(), pinned: null, back: "", openFrom: null, sent: 0,
+  authors: [], ok: new Set(), picked: {}, found: {}, pinned: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -114,14 +114,16 @@ function sidebar(hide) {
 // --- хранение пачки: одна доска в браузере — перезагрузка страницы её не теряет -----------------------------------
 function save() {
   localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes,
-    round: P.round, cv: P.cv, shapes: P.shapes }));
+    round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found }));
   hold();
 }
 function load() {
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
-  P.frames = (b.frames || []).filter((f) => f && f.path);
+  P.frames = (b.frames || []).filter((f) => f && f.path).map((f) => (f.auto ? { ...f, h: windowHeight(f.w) } : f));   // до 0.4.1 рамка тянулась по высоте документа
+  P.picked = b.picked || {};
+  P.found = b.found || {};
   P.pins = b.pins || [];
   P.changes = b.changes || [];
   P.drawings = b.drawings || [];
@@ -187,7 +189,7 @@ function addFrame(path, focus) {
   let f = P.frames.find((q) => q.path === path);
   if (!f) {
     const w = 1440;
-    f = { path, ...nextSpot(P.frames, w), w, h: 900, auto: true };
+    f = { path, ...nextSpot(P.frames, w), w, h: windowHeight(w), auto: true };
     P.frames.push(f);
   }
   P.focus = path;
@@ -210,6 +212,7 @@ function sizeFrame(path, w) {
   const f = P.frames.find((q) => q.path === path);
   if (!f) return;
   f.w = w;
+  if (f.auto) f.h = windowHeight(w);
   save();
   paint();
   ui?.cv.reloadFrame(path);
@@ -267,7 +270,7 @@ function handle(file, m, ep = epOf(file)) {
   const frame = P.frames.find((f) => f.path === file);
   if (m.t === "ready") {
     ep.ready = true;
-    if (frame && frame.auto && m.dh) { frame.h = frameHeight(m.dh); ui.cv.paint(); if (P.cv.auto) ui.cv.fit(); }
+    if (frame && frame.auto && frame.h !== windowHeight(frame.w)) { frame.h = windowHeight(frame.w); ui.cv.paint(); if (P.cv.auto) ui.cv.fit(); }
     tellEp(ep, { t: "theme", theme: theme() });
     ui.cv.scaleTo(ep);
     syncEp(ep);
@@ -369,6 +372,7 @@ function addNote(x, y) {
   ui.cv.focusNote(n.id);
 }
 
+const recipient = (file) => recipientOf(file, { picked: P.picked, authors: P.authors, found: P.found, frames: P.frames });
 const app = {
   get P() { return P; },
   get hub() { return hub; },
@@ -383,7 +387,7 @@ const app = {
   noteChanged: () => { hold(); paintCard(); paintComments(); },
   recent: () => recentHtml(P.items),
   handle, visible: () => P.shown,
-  recipient: (file) => authorOf(file),
+  recipient, recipients: () => [...P.ok].sort(), pickRecipient, ensureAuthor,
   close() { location.hash = P.back && !P.back.startsWith("#/x/" + ID) ? P.back : "#/"; },
   toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; paint(); },
 };
@@ -406,6 +410,7 @@ function markSent() {
 async function sendOne(pin) {
   if (P.busy) return;
   const to = authorOf(pin.file);
+  if (!to) { P.note = "Выберите, кому отправить комментарий"; return paint(); }
   const text = message({ path: pin.file, round: P.round, views: views(), comments: [pin], changes: [] });
   if (!text) return;
   P.busy = true;
@@ -435,12 +440,46 @@ async function sendBatch() {
 }
 
 // --- кому уходит разговор: специалист макета ---------------------------------------------------------------------
-// автор макета — кто писал файл (или последним назвал его) в лентах сессий хаба; нет автора — дизайнер
-const authorOf = (file) => (P.authors.find((a) => a.path === file) || {}).session || P.frames.find((f) => f.path === file)?.author || DEFAULT_SESSION;
+// получатель макета — кто писал файл: в живой ленте, затем в истории сессий (лента отдаёт только хвост), затем назвавший; нет никого —
+// выбирает владелец (список в окне комментария), «дизайнера» молча не подставляем
+const authorOf = (file) => recipient(file).session;
 function wanted() {
   if (P.pinned && P.pinned.focus === P.focus) return P.session;   // выбрали вручную — держим, пока открыт тот же макет
   P.pinned = null;
-  return P.focus ? authorOf(P.focus) : DEFAULT_SESSION;
+  return (P.focus && authorOf(P.focus)) || P.session;
+}
+// кто писал файл, когда в живой ленте записи нет: листаем историю сессий назад (/api/history), сначала назвавшие файл и дизайнер
+const looked = new Map();   // путь → когда искали (раз в 10 мин)
+async function ensureAuthor(file) {
+  if (!file || recipient(file).how === "wrote" || recipient(file).how === "picked") return;
+  if (Date.now() - (looked.get(file) || 0) < 600000) return;
+  looked.set(file, Date.now());
+  const { near, far } = searchOrder(file, P.authors, [...P.ok], DEFAULT_SESSION);
+  const budget = { n: 24 };
+  for (const [names, pages] of [[near, 6], [far, 2]]) {
+    for (const name of names) {
+      let before = 1e12;
+      for (let i = 0; i < pages && budget.n-- > 0; i++) {
+        let r = null;
+        try { r = await (await fetch(`/api/history?${new URLSearchParams({ session: name, before: String(before), n: "500" })}`)).json(); } catch { return; }
+        if (!r || !Array.isArray(r.items)) break;
+        if (wroteAt(r.items, file)) {
+          P.found[file] = name;
+          save();
+          if (ui) { ui.cv.refreshEditor(); paint(); }
+          return;
+        }
+        if (!r.more || !r.items.length) break;
+        before = r.items[0].seq;
+      }
+    }
+  }
+}
+function pickRecipient(file, name) {
+  if (!name) return;
+  P.picked[file] = name;
+  save();
+  paint();
 }
 function setSession(name) {
   if (!name || name === P.session) return;
@@ -603,6 +642,7 @@ function paint() {
   const snap = ui.snap || hub.snapshot() || {};
   scanDesigns(snap);
   setSession(wanted());
+  if (P.focus && P.shown) ensureAuthor(P.focus);
   const sig = JSON.stringify(theme());
   if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: JSON.parse(sig) }); }
   ui.title.textContent = P.focus ? frameTitle(P.focus).replace(/\.html?$/i, "") || "Hub Design" : "Hub Design";
