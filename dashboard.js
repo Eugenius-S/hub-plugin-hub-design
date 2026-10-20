@@ -5,11 +5,11 @@ import { CANVAS_ICONS as CI } from "./icons.js";
 
 // пресет — новый файл этого вида: чат уходит специалисту вида, в поле ввода ложится заготовка «новый <вид>: …»
 export const PRESETS = [
-  { id: "slides", title: "Презентация", badge: "Новое", to: "designer", lead: "новая презентация: " },
-  { id: "design", title: "Дизайн", badge: "Новое", to: "designer", lead: "новый дизайн: " },
+  { id: "slides", title: "Презентация", to: "designer", lead: "новая презентация: " },
+  { id: "design", title: "Дизайн", to: "designer", lead: "новый дизайн: " },
   { id: "codebase", title: "Дизайн в коде", to: "designer", lead: "новый дизайн в коде проекта: " },
   { id: "system", title: "Дизайн-система", to: "designer", lead: "новая дизайн-система: " },
-  { id: "motion", title: "Анимация", badge: "Бета", to: "animator", lead: "новая анимация: " },
+  { id: "motion", title: "Анимация", to: "animator", lead: "новая анимация: " },
 ];
 export const TABS = [["all", "Все"], ["mine", "Мои"], ["others", "Чужие"]];
 export const SORTS = [["recent", "Сначала новые"], ["name", "По названию"]];
@@ -42,7 +42,7 @@ export const editedText = (f, now) => {
 // рисунки пресетов — как плитки в Claude Design, на цветах темы
 const ART = {
   slides: '<i class="a-card" style="left:14%;top:20%;width:72%;height:60%"><i class="a-bar" style="left:9%;top:14%;width:52%;height:13%"></i><i class="a-line" style="left:9%;top:44%;width:40%;height:8%"></i><i class="a-line" style="left:9%;top:62%;width:30%;height:8%"></i><i class="a-pic" style="left:66%;top:42%;width:24%;height:30%"></i></i>',
-  design: '<i class="a-card" style="left:36%;top:6%;width:30%;height:88%;border-radius:12px"><i class="a-dot" style="left:16%;top:30%"></i><i class="a-line" style="left:40%;top:32%;width:44%;height:6%"></i><i class="a-dot" style="left:16%;top:50%"></i><i class="a-line" style="left:40%;top:52%;width:34%;height:6%"></i></i>',
+  design: '<i class="a-card a-phone"><i class="a-line a-notch"></i><i class="a-dot a-pd" style="top:24%"></i><i class="a-line" style="left:42%;top:25.5%;width:42%;height:5%"></i><i class="a-dot a-pd" style="top:41%"></i><i class="a-line" style="left:42%;top:42.5%;width:30%;height:5%"></i><i class="a-dot a-pg" style="left:30%"></i><i class="a-dot a-pg" style="left:46%"></i><i class="a-dot a-pg" style="left:62%"></i></i>',
   codebase: '<i class="a-card" style="left:44%;top:14%;width:36%;height:40%;opacity:.8"></i><i class="a-term" style="left:16%;top:38%;width:50%;height:48%"><b>&gt;_</b></i>',
   system: '<i class="a-card" style="left:14%;top:14%;width:72%;height:72%"><i class="a-sw s1" style="left:10%;top:14%"></i><i class="a-sw s2" style="left:30%;top:14%"></i><i class="a-sw s3" style="left:50%;top:14%"></i><i class="a-sw s4" style="left:70%;top:14%"></i><i class="a-bar" style="left:10%;top:58%;width:42%;height:10%"></i><i class="a-line" style="left:10%;top:76%;width:80%;height:8%"></i></i>',
   motion: '<i class="a-card" style="left:14%;top:16%;width:72%;height:68%"><i class="a-ball b1"></i><i class="a-ball b2"></i><i class="a-ball b3"></i><i class="a-ball b4"></i></i>',
@@ -125,7 +125,6 @@ export function createDashboard(app) {
     const art = el("span", "hdd-art a-" + p.id);
     art.innerHTML = ART[p.id];
     const label = el("span", "hdd-plabel", p.title);
-    if (p.badge) label.append(el("span", "hdd-badge " + (p.badge === "Бета" ? "beta" : "new"), p.badge));
     const sub = el("span", "hdd-psub");
     sub.hidden = true;
     b.append(art, label, sub);

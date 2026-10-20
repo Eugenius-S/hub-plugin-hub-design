@@ -24,8 +24,6 @@
 .hdd-preset:hover .hdd-art{box-shadow:var(--shadow-lift);transform:translateY(-1px)}
 .hdd-preset:focus-visible .hdd-art{outline:2px solid var(--ring);outline-offset:2px}
 .hdd-plabel{display:flex;align-items:center;flex-wrap:wrap;gap:0 6px;font-size:var(--text-base);line-height:22px}
-.hdd-badge{font-size:var(--text-xs);line-height:18px;padding:0 6px;border-radius:var(--radius-sm);background:var(--muted);color:var(--muted-foreground)}
-.hdd-badge.new{background:color-mix(in oklab,var(--primary) 14%,var(--card));color:var(--primary)}
 .a-slides{--art:color-mix(in oklab,var(--foreground) 9%,var(--muted))}
 .a-design{--art:color-mix(in oklab,var(--primary) 16%,var(--muted))}
 .a-codebase{--art:color-mix(in oklab,var(--foreground) 6%,var(--muted))}
@@ -38,6 +36,10 @@
 .hdd-art .a-pic{border-radius:4px;background:color-mix(in oklab,var(--primary) 30%,var(--card))}
 .hdd-art .a-dot{width:11px;height:11px;border-radius:99px;background:color-mix(in oklab,var(--primary) 55%,var(--card))}
 .hdd-art .a-term{background:#111;border-radius:7px;color:#fff;font-size:12px;padding:8px 9px;font-family:var(--font-mono)}
+.hdd-art .a-phone{left:28%;top:7%;width:44%;height:86%;border-radius:9px;box-shadow:0 0 0 1.5px color-mix(in oklab,var(--foreground) 22%,var(--card)),0 2px 6px color-mix(in oklab,var(--foreground) 8%,transparent)}
+.hdd-art .a-notch{left:36%;top:5%;width:28%;height:3.5%}
+.hdd-art .a-pd{left:14%;width:8px;height:8px}
+.hdd-art .a-pg{top:89%;width:4px;height:4px;background:color-mix(in oklab,var(--primary) 30%,var(--card))}
 .hdd-art .a-sw{width:12px;height:12px;border-radius:3px}
 .hdd-art .s1{background:var(--primary)}
 .hdd-art .s2{background:color-mix(in oklab,var(--primary) 40%,var(--card))}
