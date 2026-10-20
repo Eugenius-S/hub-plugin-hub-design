@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -492,4 +492,37 @@ test("колонки в панели: cssValue кладёт целое 1–24 в
 test("describeChange: колонки сетки — «3 → 4» с исходной записью", () => {
   const c = { sel: ".g", dx: 0, dy: 0, css: { "grid-template-columns": { from: "repeat(3, minmax(0,1fr))", to: "repeat(4, minmax(0, 1fr))" } } };
   assert.match(describeChange(c), /колонки сетки 3 → 4 \(grid-template-columns: repeat\(3, minmax\(0,1fr\)\) → repeat\(4, minmax\(0, 1fr\)\)\)/);
+});
+
+test("сетки рамки: значения зажаты в пределы, лишнее отбрасывается", () => {
+  const g = normGrid({ kind: "диагональ", count: 99, gutter: -5, margin: "40", color: "красный" });
+  assert.deepEqual(g, { id: "", kind: "columns", count: 24, gutter: 0, margin: 40, color: "#ff3b30" });
+  assert.equal(normGrid({ color: "#ABCDEF" }).color, "#abcdef");
+  assert.equal(normGrids(Array.from({ length: 9 }, () => ({}))).length, GRIDS_MAX);
+  assert.deepEqual(normGrids(null), []);
+  assert.equal(newGrid([]).color, "#ff3b30");
+  assert.equal(newGrid([{}, {}]).color, "#30d158");
+});
+
+test("gridRects: колонки, строки и клетки укладываются в рамку", () => {
+  const cols = gridRects({ kind: "columns", count: 4, gutter: 20, margin: 40 }, 1000, 600);
+  assert.equal(cols.length, 4);
+  assert.deepEqual(cols[0], [40, 0, 215, 600]);   // (1000 − 80 − 60) / 4
+  assert.equal(cols[3][0] + cols[3][2], 960);
+  const rows = gridRects({ kind: "rows", count: 3, gutter: 0, margin: 0 }, 900, 300);
+  assert.deepEqual(rows, [[0, 0, 900, 100], [0, 100, 900, 100], [0, 200, 900, 100]]);
+  const cells = gridRects({ kind: "grid", count: 5, gutter: 0, margin: 0 }, 500, 300);
+  assert.equal(cells.length, 15);
+  assert.deepEqual(cells[0], [0, 0, 100, 100]);
+  assert.deepEqual(gridRects({ kind: "columns", count: 10, gutter: 100, margin: 0 }, 500, 300), []);   // не умещается — пусто, не отрицательные полосы
+});
+
+test("message: сетки рамки — часть вида рамки, одной строкой после заголовка", () => {
+  const grids = [{ kind: "columns", count: 12, gutter: 24, margin: 80, color: "#0a84ff" }];
+  const t = message({ path: "/d/a.html", round: 2, view: { w: 1280, h: 800, grids }, comments: [{ text: "шире", x: 1, y: 2, w: 3, h: 4, ex: 5, ey: 6 }], changes: [] });
+  const lines = t.split("\n");
+  assert.match(lines[0], /^Правки к дизайну/);
+  assert.equal(lines[1], "Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): колонки 12 (зазор 24, поле 80, цвет #0a84ff).");
+  assert.ok(!message({ path: "/d/a.html", round: 2, view: { w: 1, h: 1 }, comments: [{ text: "x", x: 1, y: 2, w: 3, h: 4, ex: 5, ey: 6 }], changes: [] }).includes("Сетка поверх"));
+  assert.equal(describeGrids([{ kind: "grid", count: 8 }]), "клетки 8 (зазор 16, поле 0, цвет #ff3b30)");
 });

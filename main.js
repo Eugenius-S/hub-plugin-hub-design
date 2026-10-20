@@ -163,7 +163,7 @@ const draftNotes = () => P.notes.filter((n) => n.state === "draft" && String(n.t
 const draftTweaks = () => P.tweaks.filter((t) => t.state === "draft" && tweakEffect(t));
 const draftErrs = () => P.errs.filter((e) => e.state === "draft" && normErrors(e.items).length);
 const drafts = () => draftCount(draftPins(), draftChanges(), draftDrawings(), draftNotes(), draftTweaks(), draftErrs());
-const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h: f.h }]));
+const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h: f.h, grids: f.gridsOff ? [] : f.grids }]));
 // выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок «Отправить дизайнеру» не включает
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),

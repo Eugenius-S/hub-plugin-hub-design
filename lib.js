@@ -330,6 +330,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   for (const f of files) {
     const v = views[f] || view || { w: 0, h: 0 };
     const lines = [`Правки к дизайну \`${f}\` (Hub Design, раунд ${round}; окно ${v.w}×${v.h} px, координаты — от верхнего левого угла страницы).`];
+    if (normGrids(v.grids).length) lines.push(`Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): ${describeGrids(v.grids)}.`);
     let n = 0;
     for (const c of comments.filter((x) => of(x) === f)) {
       if (!String(c.text || "").trim()) continue;
@@ -373,6 +374,40 @@ export function message({ path, round, view, views = {}, comments, changes, draw
 
 // выделенный на холсте элемент одной строкой — чтобы «сделай этот блок шире» работало без пина
 export const selectedLine = (s) => (s && s.sel ? `Выделено: ${s.file} \`${s.sel}\` ${s.tag || "элемент"}${s.label ? ` «${cut(s.label)}»` : ""}` : "");
+
+// сетки поверх рамки (только на холсте): columns — полосы по ширине, rows — по высоте, grid — квадратные клетки (сторона = ширина колонки)
+export const GRIDS_MAX = 6, GRID_KINDS = ["columns", "rows", "grid"], GRID_LIMITS = { count: [1, 24], gutter: [0, 200], margin: [0, 400] };
+export const GRID_TITLES = { columns: "Колонки", rows: "Строки", grid: "Клетки" };
+export const GRID_COLORS = ["#ff3b30", "#0a84ff", "#30d158", "#ff9f0a", "#bf5af2"];
+const clampInt = (v, [lo, hi], dflt) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt; };
+export function normGrid(g) {
+  const o = g && typeof g === "object" ? g : {};
+  return {
+    id: String(o.id || ""),
+    kind: GRID_KINDS.includes(o.kind) ? o.kind : "columns",
+    count: clampInt(o.count, GRID_LIMITS.count, 12),
+    gutter: clampInt(o.gutter, GRID_LIMITS.gutter, 16),
+    margin: clampInt(o.margin, GRID_LIMITS.margin, 0),
+    color: /^#[0-9a-f]{6}$/i.test(String(o.color || "")) ? String(o.color).toLowerCase() : GRID_COLORS[0],
+  };
+}
+export const normGrids = (list) => (Array.isArray(list) ? list.slice(0, GRIDS_MAX).map(normGrid) : []);
+export const newGrid = (list) => normGrid({ id: "g" + Date.now().toString(36) + (list || []).length, kind: "columns", color: GRID_COLORS[(list || []).length % GRID_COLORS.length] });
+// прямоугольники сетки в координатах рамки w×h: [x, y, w, h]
+export function gridRects(g, w, h) {
+  const { kind, count, gutter, margin } = normGrid(g);
+  const out = [];
+  const along = kind === "rows" ? h : w;
+  const size = (along - 2 * margin - (count - 1) * gutter) / count;
+  if (!(size > 0) || !(w > 0) || !(h > 0)) return out;
+  if (kind === "columns") for (let i = 0; i < count; i++) out.push([margin + i * (size + gutter), 0, size, h]);
+  else if (kind === "rows") for (let i = 0; i < count; i++) out.push([0, margin + i * (size + gutter), w, size]);
+  else for (let y = margin; y + size <= h - margin + 0.01 && out.length < 4000; y += size + gutter) for (let i = 0; i < count; i++) out.push([margin + i * (size + gutter), y, size, size]);
+  return out;
+}
+export function describeGrids(list) {
+  return normGrids(list).map((g) => `${GRID_TITLES[g.kind].toLowerCase()} ${g.count} (зазор ${g.gutter}, поле ${g.margin}, цвет ${g.color})`).join("; ");
+}
 
 // ошибки макета (window.onerror, unhandledrejection): уникальные по тексту, текст обрезан, в пачку — не больше ERR_MAX
 export const ERR_MAX = 5, ERR_CUT = 300;

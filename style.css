@@ -144,6 +144,18 @@
 /* меню, окно добавления фрейма, редактор комментария */
 .hdc-pop{position:absolute;z-index:10;min-width:176px;max-width:300px;max-height:60%;overflow:auto;padding:4px;background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-2),0 0 0 1px var(--border)}
 .hdc-pop.wide{width:320px}
+.hdc-pop.grids{width:420px;max-width:none}
+.hdc-grow{display:flex;align-items:center;gap:var(--space-2);padding:4px 6px}
+.hdc-grow select{width:96px;min-width:0}
+.hdc-gnum{display:flex;flex-direction:column;gap:1px;font-size:10px;color:var(--muted-foreground);flex:1;min-width:0}
+.hdc-gnum input{width:100%;min-width:0;padding:3px 4px}
+.hdc-gcolor{width:28px;height:28px;padding:0;border:0;background:none;flex:none}
+.hdc-gx{width:24px;height:24px;border:0;background:none;color:var(--muted-foreground);border-radius:var(--radius-xs);flex:none}
+.hdc-gx:hover{background:var(--muted);color:var(--foreground)}
+.hdc-gshow{display:flex;align-items:center;gap:var(--space-2);padding:6px 10px}
+.hdc-mi:disabled{opacity:.5;cursor:default}
+.hdc-grids{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.hdc-grids svg{display:block}
 .hdc-mi{display:flex;align-items:center;gap:var(--space-2);width:100%;border:0;background:none;text-align:left;padding:6px 10px;border-radius:var(--radius-sm)}
 .hdc-mi:hover{background:var(--muted)}
 .hdc-mh{padding:6px 10px 2px;font-size:var(--text-xs);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);font-weight:600}

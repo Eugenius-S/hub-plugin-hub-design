@@ -2,7 +2,7 @@
 // заметки и пины комментариев. Правки внутри фреймов делает agent.js, а пачку копит main.js — холст только показывает
 // фреймы, ловит жесты и передаёт инструмент. Чистая математика вида — в lib.js (тесты tests/lib.test.mjs).
 import { CANVAS_ICONS as I } from "./icons.js";
-import { FRAME_TOP, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, isGone, nameOf, zoomAt } from "./lib.js";
+import { FRAME_TOP, GRIDS_MAX, GRID_KINDS, GRID_LIMITS, GRID_TITLES, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, gridRects, isGone, nameOf, newGrid, normGrid, normGrids, zoomAt } from "./lib.js";
 
 const FRAME_SIZES = SIZES.filter((s) => s.w);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2];
@@ -176,6 +176,19 @@ export function createCanvas(app) {
     const n = fr.get(f.path);
     if (!n) return;
     Object.assign(n.box.style, { left: f.x + "px", top: f.y + "px", width: f.w + "px", height: f.h + "px" });
+    paintGrids(f, n);
+  }
+  // сетки поверх рамки: только на холсте, поверх макета, мыши не мешают; один <path> на сетку
+  function paintGrids(f, n) {
+    const grids = f.gridsOff ? [] : normGrids(f.grids);
+    const sig = JSON.stringify([grids, f.w, f.h]);
+    if (n.gridSig === sig) return;
+    n.gridSig = sig;
+    if (!grids.length) { if (n.grids) { n.grids.remove(); n.grids = null; } return; }
+    if (!n.grids) { n.grids = el("div", "hdc-grids"); n.box.append(n.grids); }
+    const f1 = (v) => Math.round(v * 100) / 100;
+    n.grids.innerHTML = `<svg width="${f.w}" height="${f.h}" viewBox="0 0 ${f.w} ${f.h}" xmlns="http://www.w3.org/2000/svg">` +
+      grids.map((g) => `<path fill="${g.color}" fill-opacity=".14" d="${gridRects(g, f.w, f.h).map(([x, y, w, h]) => `M${f1(x)} ${f1(y)}h${f1(w)}v${f1(h)}h${f1(-w)}z`).join("")}"/>`).join("") + "</svg>";
   }
   // ошибки макета: метка в подписи рамки и кнопка «Попросить исправить» (добавляет их в пачку)
   function paintErrs() {
@@ -344,8 +357,48 @@ export function createCanvas(app) {
     const f = P.frames.find((q) => q.path === path);
     const head = el("div", "hdc-mh", "Ширина окна");
     openPop(anchor, [head, ...FRAME_SIZES.map((s) => item(s.label + " px" + (f.w === s.w ? "  ✓" : ""), () => app.sizeFrame(path, s.w))),
-      sep(), item("Перезагрузить", () => reloadFrame(path)), item("Показать крупно", () => focusOn(path)),
+      sep(), item("Сетки поверх рамки…", () => gridsMenu(path, anchor)),
+      item("Перезагрузить", () => reloadFrame(path)), item("Показать крупно", () => focusOn(path)),
       item("Убрать с холста", () => app.removeFrame(path))], "", "right");
+  }
+  // сетки рамки: до GRIDS_MAX штук, правятся здесь и живут на холсте (в макет не попадают, дизайнеру — строкой в виде рамки)
+  function gridsMenu(path, anchor) {
+    const f = P.frames.find((q) => q.path === path);
+    if (!f) return;
+    const redo = () => { app.save(); gridsMenu(path, anchor); };
+    const list = normGrids(f.grids);
+    const set = (next) => { f.grids = next; redo(); };
+    const rows = list.map((g, i) => {
+      const row = el("div", "hdc-grow");
+      const kind = el("select");
+      for (const k of GRID_KINDS) { const o = el("option", null, GRID_TITLES[k]); o.value = k; kind.append(o); }
+      kind.value = g.kind;
+      kind.addEventListener("change", () => set(list.map((q, j) => (j === i ? { ...q, kind: kind.value } : q))));
+      const num = (key, label) => {
+        const inp = el("input");
+        inp.type = "number"; inp.min = String(GRID_LIMITS[key][0]); inp.max = String(GRID_LIMITS[key][1]); inp.value = String(g[key]);
+        inp.title = label;
+        inp.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") inp.blur(); });
+        inp.addEventListener("change", () => set(list.map((q, j) => (j === i ? { ...q, [key]: normGrid({ [key]: inp.value })[key] } : q))));
+        const w = el("label", "hdc-gnum");
+        w.append(el("span", null, label), inp);
+        return w;
+      };
+      const color = el("input", "hdc-gcolor");
+      color.type = "color"; color.value = g.color; color.title = "Цвет";
+      color.addEventListener("change", () => set(list.map((q, j) => (j === i ? { ...q, color: color.value } : q))));
+      row.append(kind, num("count", "Число"), num("gutter", "Зазор"), num("margin", "Поле"), color, btn("hdc-gx", "×", "Убрать сетку", () => set(list.filter((_, j) => j !== i))));
+      return row;
+    });
+    const add = btn("hdc-mi", [el("span", null, "+ Добавить сетку")], null, () => set([...list, newGrid(list)]));
+    add.disabled = list.length >= GRIDS_MAX;
+    const show = el("label", "hdc-gshow");
+    const cb = el("input"); cb.type = "checkbox"; cb.checked = !f.gridsOff;
+    cb.addEventListener("change", () => { f.gridsOff = !cb.checked; redo(); });
+    show.append(cb, el("span", null, "Показывать на холсте"));
+    closeMenu();
+    openPop(anchor, [el("div", "hdc-mh", `Сетки · ${nameOf(path)}`), ...(rows.length ? rows : [el("div", "hdc-mh", "Сеток пока нет")]), add, ...(list.length ? [show] : [])], "grids", "right");
+    menu = anchor;
   }
   function pagesMenu(anchor) {
     if (menu === anchor) return closeMenu();
