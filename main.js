@@ -3,9 +3,10 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { NEW_DESIGN, PROPS, SWATCHES, ago, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameTitle,
+import { NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameTitle,
   hasEffect, htmlAuthored, htmlPaths, message, nextSpot, recentHtml, recipientOf, searchOrder, toolMode, windowHeight, wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
+import { createDashboard, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
 const ID = "hub-design";
@@ -22,7 +23,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], ok: new Set(), picked: {}, found: {}, pinned: null, back: "", openFrom: null, sent: 0,
+  authors: [], ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, homeWho: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -34,6 +35,7 @@ const getKey = (k) => localStorage.getItem(STORE + k) ?? localStorage.getItem(OL
 export default function register(h) {
   hub = h;
   hub.addStyle("style.css");
+  hub.addStyle("dashboard.css");
   addEventListener("message", onFrame);
   // адрес до Hub Design: «✕» возвращает туда (нет — на главную)
   let prev = location.hash;
@@ -193,6 +195,10 @@ function addFrame(path, focus) {
     P.frames.push(f);
   }
   P.focus = path;
+  P.home = false;
+  dropStub();
+  P.preset = null;
+  P.homeWho = null;
   save();
   paint();
   if (focus && ui) { if (P.frames.length === 1) ui.cv.fit(); else ui.cv.focusOn(path); }
@@ -443,7 +449,10 @@ async function sendBatch() {
 // получатель макета — кто писал файл: в живой ленте, затем в истории сессий (лента отдаёт только хвост), затем назвавший; нет никого —
 // выбирает владелец (список в окне комментария), «дизайнера» молча не подставляем
 const authorOf = (file) => recipient(file).session;
+// стартовый экран: чат со специалистом выбранного вида (пресет) или выбранным вручную, иначе с дизайнером
+const home = () => P.home || !P.frames.length;
 function wanted() {
+  if (home()) return P.homeWho || (P.preset && P.preset.to) || DEFAULT_SESSION;
   if (P.pinned && P.pinned.focus === P.focus) return P.session;   // выбрали вручную — держим, пока открыт тот же макет
   P.pinned = null;
   return (P.focus && authorOf(P.focus)) || P.session;
@@ -582,7 +591,8 @@ function build(root) {
   const top = el("div", "hd-top");
   const logo = el("span", "hd-logo"); logo.innerHTML = ICONS.logo;
   const title = el("span", "hd-title", "Hub Design");
-  top.append(logo, title);
+  const homeBtn = button("hd-home", [logo, title], "Стартовый экран: пресеты и прошлые файлы", () => { P.home = true; P.preset = null; P.homeWho = null; P.tab = "chat"; dropStub(); paint(); });
+  top.append(homeBtn);
   const tabs = el("div", "hd-tabs");
   const tabChat = button("hd-tab", "Чат", null, () => { P.tab = "chat"; paint(); });
   const tabComments = button("hd-tab", "Комментарии", null, () => { P.tab = "comments"; paint(); });
@@ -595,10 +605,10 @@ function build(root) {
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: "Опишите, что нужно изменить…",
-    prefix: (text) => { const b = batchText(); return b ? b + "\n\n" + text : P.frames.length ? text : NEW_DESIGN + text; },
+    prefix: (text) => { if (home()) return NEW_DESIGN + text; const b = batchText(); return b ? b + "\n\n" + text : text; },
     onSent: () => {
-      if (!P.frames.length) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // нет макетов — это задача на новый
-      if (drafts() > 0) markSent();
+      if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // на стартовом экране написали — это задача на новый макет
+      else if (drafts() > 0) markSent();
     },
   });
   const strip = el("div", "strip-host");
@@ -607,7 +617,7 @@ function build(root) {
   const who = el("select", "hd-who");
   who.title = "Кому уходят правки";
   who.addEventListener("change", () => {
-    P.pinned = { focus: P.focus };
+    if (home()) P.homeWho = who.value; else P.pinned = { focus: P.focus };
     setSession(who.value);
     paint();
   });
@@ -620,12 +630,16 @@ function build(root) {
   const right = el("div", "hd-right");
   const cv = createCanvas(app);
   const props = el("div", "hd-props");
-  const files = el("div", "hd-files");
-  right.append(cv.node, props, files);
+  const dash = createDashboard({
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(path, { raw: true }), files: () => P.authors,
+    mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => addFrame(path, true), openPath: (path) => addFrame(path, true),
+    preset: (p) => startPreset(p),
+  });
+  right.append(cv.node, props, dash.node);
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, title, tabChat, tabComments, chat, list, banner, chips, strip, input, who, note, cv, props, files, last: {} };
+  return { root, wrap, title, tabChat, tabComments, chat, list, banner, chips, strip, input, who, note, cv, props, dash, last: {} };
 }
 
 function render(root, snap) {
@@ -645,7 +659,7 @@ function paint() {
   if (P.focus && P.shown) ensureAuthor(P.focus);
   const sig = JSON.stringify(theme());
   if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: JSON.parse(sig) }); }
-  ui.title.textContent = P.focus ? frameTitle(P.focus).replace(/\.html?$/i, "") || "Hub Design" : "Hub Design";
+  ui.title.textContent = P.focus && !home() ? frameTitle(P.focus).replace(/\.html?$/i, "") || "Hub Design" : "Hub Design";
   ui.tabChat.classList.toggle("on", P.tab === "chat");
   ui.tabComments.classList.toggle("on", P.tab === "comments");
   const live = P.pins.filter((p) => p.state !== "done" && String(p.text || "").trim()).length + P.changes.filter((c) => c.state !== "done" && hasEffect(c)).length +
@@ -656,7 +670,8 @@ function paint() {
   ui.note.textContent = P.note;
   ui.note.hidden = !P.note;
   ui.cv.paint();
-  ui.files.hidden = P.frames.length > 0 || P.alive === false;
+  ui.dash.node.hidden = !home();
+  if (home()) ui.dash.paint();
 
   // кому: агенты и сессии хаба, дизайнер первым
   const names = (snap.sessions || []).filter((s) => s.kind !== "hub" && s.role !== "executor").map((s) => s.name);
@@ -669,7 +684,6 @@ function paint() {
     ui.who.value = P.session;
   }
 
-  paintFiles();
   paintQueue(snap);
   paintProps();
   paintCard();
@@ -677,32 +691,26 @@ function paint() {
   paintChat();
 }
 
-// пустой холст: все макеты (HTML из сессий хаба) карточками на выбор; написали сразу — это новый макет
-function paintFiles() {
-  const list = P.authors.slice(0, 30);
-  const sig = list.map((d) => d.path + d.session + d.last).join("|") + "#" + Math.floor(Date.now() / 60000);
-  if (ui.last.files === sig) return;
-  ui.last.files = sig;
-  const el = hub.el;
-  const pathIn = el("input", "hd-path");
-  pathIn.placeholder = "Открыть по пути: /…/index.html";
-  pathIn.value = ui.last.pathValue || "";
-  pathIn.addEventListener("input", () => { ui.last.pathValue = pathIn.value; });
-  pathIn.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") addFrame(pathIn.value, true); });
-  const cards = list.map((d) => {
-    const who = el("span", "hd-dwho", d.session);
-    const c = button("hd-dcard", [el("span", "hd-dico", ""), el("span", "hd-dname", baseName(d.path).replace(/\.html?$/i, "")),
-      el("span", "hd-ddir", d.path.split("/").slice(-3, -1).join("/")), el("span", "hd-dmeta", ""), ], d.path, () => addFrame(d.path, true));
-    c.querySelector(".hd-dico").innerHTML = CI.file;
-    c.querySelector(".hd-dmeta").append(who, el("span", "hd-dago", ago(d.last)));
-    return c;
-  });
-  const box = el("div", "hd-fbox");
-  box.append(el("h3", null, "Макеты"),
-    el("div", "hd-fhint", cards.length ? "Выберите макет, чтобы открыть его на холсте. Или напишите слева, что нужно, — дизайнер сделает новый." : "Макетов пока нет. Напишите слева, что нужно, — дизайнер сделает новый."),
-    pathIn);
-  if (cards.length) { const grid = el("div", "hd-dgrid"); grid.append(...cards); box.insertBefore(grid, pathIn); }
-  ui.files.replaceChildren(box);
+// заготовка пресета, которую владелец не тронул, не переезжает в чат макета и не липнет к новой задаче
+function dropStub() {
+  const ta = ui && ui.input.node.querySelector("textarea");
+  if (ta && isStub(ta.value)) { ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); }
+}
+
+// пресет на стартовом экране: чат уходит специалисту вида, в поле — заготовка «новый <вид>: …», курсор в поле
+function startPreset(p) {
+  P.preset = p;
+  P.homeWho = null;
+  P.tab = "chat";
+  setSession(wanted());
+  const ta = ui.input.node.querySelector("textarea");
+  if (ta) {
+    ta.value = stubText(ta.value, p.lead);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  paint();
+  ui.input.focus();
+  if (ta) ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 // очередь сообщений к получателю — как полоса над полем в чате хаба: «Отправить сейчас» (если занят) и «Убрать»
@@ -737,7 +745,7 @@ function paintQueue(snap) {
 
 // панель стилей справа: цвет заливки и текста, остальные свойства выбранного элемента
 function paintProps() {
-  const open = P.propsOpen && P.frames.length > 0;
+  const open = P.propsOpen && P.frames.length > 0 && !home();
   ui.props.hidden = !open;
   const sig = JSON.stringify([open, P.sel]);
   if (!open || ui.last.props === sig || ui.props.contains(document.activeElement) && ui.last.propsSel === (P.sel && P.sel.sel)) return;
