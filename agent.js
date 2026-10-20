@@ -6,7 +6,12 @@
   window.__canvasAgent = true;
   const ORIGINS = (window.__canvas && window.__canvas.origins) || [];
   let hubOrigin = null;
-  let mode = "view";      // view | comment | edit | draw
+  let mode = "view";      // view | comment | edit | draw | text
+  let tool = "select";    // инструмент холста: select | hand | text | note | comment | pencil | shape
+  let shape = "free";     // что рисует «draw»: free | arrow | rect | oval
+  let external = false;   // внутри холста: колесо, клавиши и редактор комментария уходят на страницу хаба
+  let inv = 1;            // 1 / масштаб холста: рамки и пины остаются одного размера на экране
+  let T = null;           // цвета хаба (переменных темы во фрейме нет — ядро присылает значениями)
   let pins = [];
   let drawings = [];
   let propList = [];      // свойства, значения которых нужны панели «Правка»
@@ -26,39 +31,38 @@
   const send = (msg) => { if (hubOrigin) parent.postMessage({ canvas: 1, ...msg }, hubOrigin); };
 
   // --- оверлей в тени: стили дизайна его не трогают, его — дизайн -------------------------------------------------
-  const BLUE = "#3b6fd4", CORAL = "#d97757";
   const host = document.createElement("div");
   host.setAttribute("data-canvas-overlay", "");
   host.style.cssText = "all:initial;position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;";
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `<style>
-    :host{all:initial}
-    *{box-sizing:border-box;font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
-    .hover{position:fixed;pointer-events:none;border:1px solid ${BLUE};background:rgba(59,111,212,.06);display:none}
-    .hover i{position:absolute;left:-1px;top:-19px;background:${BLUE};color:#fff;font-style:normal;font-size:11px;padding:1px 6px;border-radius:3px;white-space:nowrap;max-width:360px;overflow:hidden;text-overflow:ellipsis}
-    .sel,.frame{position:fixed;border:2px solid ${BLUE};display:none;pointer-events:none}
-    .sel .grip{position:absolute;right:-6px;bottom:-6px;width:10px;height:10px;background:#fff;border:2px solid ${BLUE};border-radius:2px;pointer-events:auto;cursor:nwse-resize}
-    .sel .bar{position:absolute;left:-2px;top:-24px;display:flex;gap:3px;pointer-events:auto}
-    .sel .bar span,.sel .bar button{background:${BLUE};color:#fff;border:0;border-radius:3px;font-size:11px;padding:2px 6px;white-space:nowrap}
+    :host{all:initial;--a:#3b6fd4;--on:#fff;--bg:#fff;--fg:#1f1e1d;--bd:#d8d4cb;--mu:#8a8780;--s:1}
+    *{box-sizing:border-box;font:13px/1.35 var(--font,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif)}
+    .hover{position:fixed;pointer-events:none;outline:calc(1px * var(--s)) solid var(--a);background:color-mix(in srgb,var(--a) 7%,transparent);display:none}
+    .hover i{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;background:var(--a);color:var(--on);font-style:normal;font-size:11px;padding:1px 6px;border-radius:3px;white-space:nowrap;max-width:360px;overflow:hidden;text-overflow:ellipsis}
+    .sel,.frame{position:fixed;outline:calc(2px * var(--s)) solid var(--a);display:none;pointer-events:none}
+    .sel .grip{position:absolute;right:calc(-5px * var(--s));bottom:calc(-5px * var(--s));width:10px;height:10px;transform:scale(var(--s));background:var(--bg);border:2px solid var(--a);border-radius:2px;pointer-events:auto;cursor:nwse-resize}
+    .sel .bar{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;display:flex;gap:3px;pointer-events:auto;padding-bottom:2px}
+    .sel .bar span,.sel .bar button{background:var(--a);color:var(--on);border:0;border-radius:3px;font-size:11px;padding:2px 6px;white-space:nowrap}
     .sel .bar button{cursor:pointer}
-    .pin{position:absolute;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:12px;background:${CORAL};color:#fff;
+    .pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;transform:scale(var(--s));border-radius:13px 13px 13px 2px;background:var(--a);color:var(--on);
       display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;pointer-events:auto;cursor:pointer;
-      box-shadow:0 1px 5px rgba(0,0,0,.3);border:2px solid #fff}
-    .pin.sent{background:#a8a29e}
+      box-shadow:0 1px 5px rgba(0,0,0,.3);border:2px solid var(--bg)}
+    .pin.sent{background:var(--mu)}
     .nopin .pin{pointer-events:none}
     .pin.done{display:none}
-    .ed{position:absolute;width:300px;background:#fff;color:#1f1e1d;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.22),0 0 0 1px rgba(0,0,0,.06);padding:12px;pointer-events:auto}
+    .ed{position:absolute;width:300px;background:var(--bg);color:var(--fg);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.22),0 0 0 1px var(--bd);padding:12px;pointer-events:auto}
     .ed h4{margin:0 0 8px;font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
-    .ed h4 button{border:0;background:none;color:#8a8780;cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
-    .ed textarea{width:100%;min-height:62px;resize:vertical;border:1px solid #d8d4cb;border-radius:8px;padding:8px;outline:none;color:#1f1e1d;background:#fff}
-    .ed textarea:focus{border-color:#b9b4a8}
+    .ed h4 button{border:0;background:none;color:var(--mu);cursor:pointer;font-size:16px;line-height:1;padding:0 2px}
+    .ed textarea{width:100%;min-height:62px;resize:vertical;border:1px solid var(--bd);border-radius:8px;padding:8px;outline:none;color:var(--fg);background:var(--bg)}
+    .ed textarea:focus{border-color:var(--a)}
     .ed .row{display:flex;justify-content:space-between;margin-top:10px;gap:8px}
-    .ed button.b{border:1px solid #d8d4cb;border-radius:8px;padding:5px 12px;cursor:pointer;background:#fff;color:#1f1e1d}
-    .ed button.go{background:${CORAL};border-color:${CORAL};color:#fff}
-    .ed button.del{border:0;color:#8a8780;background:none;padding:5px 4px}
+    .ed button.b{border:1px solid var(--bd);border-radius:8px;padding:5px 12px;cursor:pointer;background:var(--bg);color:var(--fg)}
+    .ed button.go{background:var(--a);border-color:var(--a);color:var(--on)}
+    .ed button.del{border:0;color:var(--mu);background:none;padding:5px 4px}
     svg.draw{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
-    svg.draw path{fill:none;stroke:${CORAL};stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
-    svg.draw path.sent{stroke:#a8a29e}
+    svg.draw *{fill:none;stroke:var(--a);stroke-width:calc(3px * var(--s));stroke-linecap:round;stroke-linejoin:round}
+    svg.draw .sent{stroke:var(--mu)}
   </style><svg class="draw"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up" title="Выбрать родителя">↑</button><button class="rev" title="Вернуть как было">↺</button></div><div class="grip" title="Размер"></div></div><div class="pins"></div>`;
   const hoverBox = root.querySelector(".hover");
   const selBox = root.querySelector(".sel");
@@ -150,6 +154,7 @@
         n.dataset.id = p.id;
         n.addEventListener("pointerdown", (e) => { e.stopPropagation(); e.preventDefault(); });
         n.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); if (p.state === "draft") openEditor(n.dataset.id); });
+        n.addEventListener("wheel", wheelOut, { passive: false });
         pinsBox.append(n);
       }
       n.textContent = String(p.n);
@@ -161,12 +166,21 @@
     if (ed && !pins.some((p) => p.id === ed.dataset.id && p.state === "draft")) { ed.remove(); framed = null; }
     place();
   }
+  const NS = "http://www.w3.org/2000/svg";
+  const arrowPath = (a, b) => {
+    const ang = Math.atan2(b.y - a.y, b.x - a.x), h = 14;
+    const w = (d) => `${Math.round(b.x - h * Math.cos(ang + d))} ${Math.round(b.y - h * Math.sin(ang + d))}`;
+    return `M${a.x} ${a.y}L${b.x} ${b.y}M${w(-0.45)}L${b.x} ${b.y}L${w(0.45)}`;
+  };
   function drawDrawings() {
     svg.replaceChildren(...drawings.filter((d) => d.state !== "done").map((d) => {
-      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      p.setAttribute("d", d.path.map((pt, i) => `${i ? "L" : "M"}${pt[0]} ${pt[1]}`).join(""));
-      if (d.state === "sent") p.setAttribute("class", "sent");
-      return p;
+      const bx = d.box || {};
+      const n = d.kind === "box" ? document.createElementNS(NS, "rect") : d.kind === "oval" ? document.createElementNS(NS, "ellipse") : document.createElementNS(NS, "path");
+      if (d.kind === "box") Object.entries({ x: bx.x, y: bx.y, width: bx.w, height: bx.h, rx: 6 }).forEach(([k, v]) => n.setAttribute(k, v));
+      else if (d.kind === "oval") Object.entries({ cx: bx.x + bx.w / 2, cy: bx.y + bx.h / 2, rx: bx.w / 2, ry: bx.h / 2 }).forEach(([k, v]) => n.setAttribute(k, v));
+      else n.setAttribute("d", d.path.map((pt, i) => `${i ? "L" : "M"}${pt[0]} ${pt[1]}`).join(""));
+      if (d.state === "sent") n.setAttribute("class", "sent");
+      return n;
     }));
   }
   function place() {
@@ -205,6 +219,11 @@
     if (!p) return;
     root.querySelector(".ed")?.remove();
     framed = find(p.sel);
+    if (external) {   // окно комментария рисует страница хаба: во фрейме в масштабе холста оно стало бы крошечным
+      const at = pinXY(p);
+      send({ t: "editor", id, x: at.x - scrollX, y: at.y - scrollY });
+      return;
+    }
     const ed = document.createElement("div");
     ed.className = "ed";
     ed.dataset.id = id;
@@ -319,8 +338,8 @@
   function select(el) {
     selected = el;
     if (el) selBox.querySelector(".bar span").textContent = short(el);
-    selBox.querySelector(".grip").style.display = mode === "edit" ? "" : "none";
-    selBox.querySelector(".bar").style.display = mode === "edit" ? "" : "none";
+    selBox.querySelector(".grip").style.display = mode === "edit" && el ? "" : "none";
+    selBox.querySelector(".bar").style.display = mode === "edit" && el ? "" : "none";
     place();
     sendSelected();
   }
@@ -383,10 +402,22 @@
   }
 
   // --- рисование от руки -------------------------------------------------------------------------------------------
+  function finishShape(a, b, kind) {
+    const bx = Math.min(a[0], b[0]), by = Math.min(a[1], b[1]), bw = Math.abs(b[0] - a[0]), bh = Math.abs(b[1] - a[1]);
+    if (kind !== "arrow" && (bw < 8 || bh < 8)) return;
+    if (kind === "arrow" && Math.hypot(bw, bh) < 12) return;
+    const cx = Math.min(Math.max(bx + bw / 2 - scrollX, 0), innerWidth - 1), cy = Math.min(Math.max(by + bh / 2 - scrollY, 0), innerHeight - 1);
+    const el = at(cx, cy);
+    send({ t: "draw", drawing: { kind, sel: pickable(el) ? selector(el) : "", label: pickable(el) ? label(el) : "",
+      box: { x: Math.round(bx), y: Math.round(by), w: Math.round(bw), h: Math.round(bh) }, from: { x: Math.round(a[0]), y: Math.round(a[1]) },
+      to: { x: Math.round(b[0]), y: Math.round(b[1]) }, path: [[Math.round(a[0]), Math.round(a[1])], [Math.round(b[0]), Math.round(b[1])]] } });
+  }
   function finishStroke() {
     const pts = stroke.pts;
     stroke.node.remove();
+    const kindWas = stroke.kind;
     stroke = null;
+    if (kindWas === "rect" || kindWas === "oval" || kindWas === "arrow") return finishShape(pts[0], pts[pts.length - 1], kindWas === "rect" ? "box" : kindWas);
     const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
     const bx = Math.min(...xs), by = Math.min(...ys), bw = Math.max(...xs) - bx, bh = Math.max(...ys) - by;
     let len = 0;
@@ -403,12 +434,25 @@
       box: { x: bx, y: by, w: bw, h: bh }, from: { x: a[0], y: a[1] }, to: { x: b[0], y: b[1] }, path } });
   }
 
+  function paintShape(node, kind, a, b) {
+    if (kind === "arrow") return node.setAttribute("d", arrowPath({ x: a[0], y: a[1] }, { x: b[0], y: b[1] }));
+    const bx = Math.min(a[0], b[0]), by = Math.min(a[1], b[1]), bw = Math.abs(b[0] - a[0]), bh = Math.abs(b[1] - a[1]);
+    const set = kind === "rect" ? { x: bx, y: by, width: bw, height: bh, rx: 6 } : { cx: bx + bw / 2, cy: by + bh / 2, rx: bw / 2, ry: bh / 2 };
+    Object.entries(set).forEach(([k, v]) => node.setAttribute(k, v));
+  }
+
   // --- события документа: в режимах коммента, правки и рисунка клики дизайну не достаются --------------------------
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
   addEventListener("pointermove", (e) => {
     if (stroke) {
-      stroke.pts.push([e.clientX + scrollX, e.clientY + scrollY]);
-      stroke.node.setAttribute("d", stroke.pts.map((pt, i) => `${i ? "L" : "M"}${pt[0]} ${pt[1]}`).join(""));
+      const cur = [e.clientX + scrollX, e.clientY + scrollY];
+      if (stroke.kind === "free") {
+        stroke.pts.push(cur);
+        stroke.node.setAttribute("d", stroke.pts.map((pt, i) => `${i ? "L" : "M"}${pt[0]} ${pt[1]}`).join(""));
+      } else {
+        stroke.pts = [stroke.pts[0], cur];
+        paintShape(stroke.node, stroke.kind, stroke.pts[0], cur);
+      }
       return stop(e);
     }
     if (drag) {
@@ -429,15 +473,17 @@
     if (e.target.isContentEditable) return;
     stop(e);
     if (mode === "draw") {
-      const node = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const node = document.createElementNS(NS, shape === "rect" ? "rect" : shape === "oval" ? "ellipse" : "path");
       svg.append(node);
-      stroke = { pts: [[e.clientX + scrollX, e.clientY + scrollY]], node };
+      stroke = { kind: shape, pts: [[e.clientX + scrollX, e.clientY + scrollY]], node };
       return;
     }
     const el = e.target;
     if (!pickable(el)) return;
+    if (mode === "text") { if (textLeaf(el)) { select(el); textEdit(el); } return; }
     if (mode === "edit") {
       if (selected !== el) select(el);
+      else if (e.detail > 1) return;
       const s = track(el);
       drag = { kind: "move", el, sx: e.clientX, sy: e.clientY, bx: s.dx, by: s.dy, moved: false, before: snap(el) };
     }
@@ -470,10 +516,38 @@
     stop(e);
     if (mode === "edit" && pickable(e.target) && textLeaf(e.target)) { select(e.target); textEdit(e.target); }
   }, true);
+  const wheelOut = (e) => {
+    if (!external) return;
+    e.preventDefault();
+    send({ t: "wheel", x: e.clientX, y: e.clientY, dx: e.deltaX, dy: e.deltaY, ctrl: e.ctrlKey || e.metaKey });
+  };
+  addEventListener("wheel", wheelOut, { passive: false });
+  // клавиши холста, пока фокус во фрейме: пробел, буквы инструментов, Esc, масштаб, отмена
+  const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+  const KEYS = /^[vhtncprf0]$/i;
+  const keyOut = (down) => (e) => {
+    if (!external || typing(e.target) || ours(e.target)) return;
+    const mod = e.metaKey || e.ctrlKey;
+    const mine = e.key === " " || e.key === "Escape" || (!mod && !e.altKey && (KEYS.test(e.key) || e.key === "!" || (e.shiftKey && e.key === "1"))) ||
+      (mod && (/^[zZ=+\-]$/.test(e.key)));
+    if (!mine) return;
+    e.preventDefault();
+    send({ t: "key", k: e.key, down, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
+  };
   addEventListener("keydown", (e) => {
     if (e.key === "Escape" && mode !== "view") { select(null); showHover(null); }
+    keyOut(true)(e);
   }, true);
+  addEventListener("keyup", keyOut(false), true);
   addEventListener("scroll", () => send({ t: "scroll", x: scrollX, y: scrollY }), { passive: true });
+
+  // цвета хаба: рамки и пины в цвете акцента темы, окошки — в её фоне и шрифте
+  function applyTheme(t) {
+    if (!t) return;
+    T = t;
+    const set = (k, v) => v && host.style.setProperty(k, v);
+    set("--a", t.primary); set("--on", t.onPrimary); set("--bg", t.bg); set("--fg", t.fg); set("--bd", t.border); set("--mu", t.muted); set("--font", t.font);
+  }
 
   // --- связь со страницей хаба -------------------------------------------------------------------------------------
   addEventListener("message", (e) => {
@@ -482,15 +556,28 @@
     if (m.t === "hello") {
       hubOrigin = e.origin;
       if (m.props) propList = m.props;
-      send({ t: "ready", path, w: innerWidth, h: innerHeight });
+      external = !!m.external;
+      if (m.theme) applyTheme(m.theme);
+      send({ t: "ready", path, w: innerWidth, h: innerHeight, dh: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) });
       sendHistory();
       watch();
     } else if (m.t === "mode") {
       mode = m.mode;
-      pinsBox.classList.toggle("nopin", mode === "edit" || mode === "draw");
-      document.documentElement.style.cursor = mode === "comment" ? "crosshair" : mode === "draw" ? "crosshair" : "";
+      tool = m.tool || tool;
+      if (m.shape) shape = m.shape;
+      pinsBox.classList.toggle("nopin", mode === "edit" || mode === "draw" || mode === "text");
+      document.documentElement.style.cursor = mode === "comment" || mode === "draw" ? "crosshair" : mode === "text" ? "text" : "";
       select(mode === "edit" ? selected : null);
       showHover(null);
+    } else if (m.t === "scale") {
+      inv = 1 / Math.max(0.05, m.k || 1);
+      host.style.setProperty("--s", String(inv));
+    } else if (m.t === "theme") {
+      applyTheme(m.theme);
+    } else if (m.t === "deselect") {
+      select(null);
+    } else if (m.t === "unframe") {
+      framed = null;
     } else if (m.t === "pins") {
       pins = m.pins || [];
       drawings = m.drawings || [];

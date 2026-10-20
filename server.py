@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_PORT = int(os.environ.get("HUB_WEB_PORT") or 8787)
@@ -186,15 +186,17 @@ class Handler(BaseHTTPRequestHandler):
             real = from_url(url.path)
             if not allowed(real):
                 return self.say(404, {"error": "no file"})
-            return self.file(real)
+            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")))
         self.say(404, {"error": "no page"})
 
-    def file(self, real):
+    def file(self, real, raw=False, download=False):
+        """raw — HTML как на диске, без agent.js (показать во весь экран, скачать); download — ещё и как вложение."""
         kind = TYPES[os.path.splitext(real)[1].lower()]
         if real.lower().endswith(HTML):
             with open(real, "rb") as f:
-                body = inject(f.read())
-            self.head(200, kind, len(body))
+                body = f.read() if raw else inject(f.read())
+            extra = {"Content-Disposition": "attachment; filename*=UTF-8''" + quote(os.path.basename(real))} if download else None
+            self.head(200, kind, len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
         size = os.path.getsize(real)
         start, end = 0, size - 1

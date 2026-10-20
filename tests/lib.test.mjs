@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PROPS, ZOOMS, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, frameHeight, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml } from "../lib.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -75,4 +75,64 @@ test("значения полей панели", () => {
   assert.equal(cssValue(f, ""), null);
   assert.ok(PROPS.every((g) => g.rows.every((r) => r.every((x) => x.p && x.kind))));
   assert.deepEqual(ZOOMS.slice(0, 2), [0, 50]);
+});
+
+test("зум к курсору: точка под курсором стоит на месте", () => {
+  const v = { x: 40, y: 30, k: 1 };
+  const z = zoomAt(v, 2, 300, 200);
+  assert.equal(z.k, 2);
+  // сцена-точка под курсором до и после
+  assert.equal((300 - v.x) / v.k, (300 - z.x) / z.k);
+  assert.equal((200 - v.y) / v.k, (200 - z.y) / z.k);
+  assert.equal(zoomAt(v, 1000, 0, 0).k, CANVAS_MAX);
+  assert.equal(zoomAt(v, 0.0001, 0, 0).k, CANVAS_MIN);
+});
+
+test("вписать фреймы: все влезают и по центру, не крупнее 100%", () => {
+  const frames = [{ x: 0, y: 0, w: 1440, h: 900 }, { x: 1520, y: 0, w: 390, h: 844 }];
+  const v = fitView(frames, 1000, 700);
+  assert.ok(v.k < 1);
+  assert.ok(v.x >= 0 && v.x + 1910 * v.k <= 1000 + 0.5);
+  assert.ok(v.y + 900 * v.k <= 700 + 0.5);
+  assert.equal(fitView([{ x: 0, y: 0, w: 100, h: 100 }], 1000, 700).k, 1);
+  assert.equal(fitView([], 1000, 700).k, 1);
+});
+
+test("новый фрейм — справа от последнего с зазором", () => {
+  assert.deepEqual(nextSpot([], 1440), { x: 0, y: 0 });
+  assert.deepEqual(nextSpot([{ x: 0, y: 0, w: 1440, h: 900 }], 390), { x: 1520, y: 0 });
+});
+
+test("высота фрейма, подпись, режимы инструментов, цвета", () => {
+  assert.equal(frameHeight(100), 400);
+  assert.equal(frameHeight(99999), 8000);
+  assert.equal(frameHeight(), 900);
+  assert.equal(frameTitle("/a/b/index.html"), "index.html");
+  assert.equal(frameTitle("C:\\a\\b.html"), "b.html");
+  assert.equal(toolMode("select"), "edit");
+  assert.equal(toolMode("comment"), "comment");
+  assert.equal(toolMode("pencil"), "draw");
+  assert.equal(toolMode("shape"), "draw");
+  assert.equal(toolMode("text"), "text");
+  assert.equal(toolMode("hand"), "view");
+  assert.equal(toolMode("нет"), "view");
+  assert.ok(SWATCHES.length >= 8 && SWATCHES.every((c) => /^#[0-9a-f]{6}$/.test(c)));
+});
+
+test("пачка с нескольких фреймов — разделами по файлам, заметки отдельно", () => {
+  const text = message({
+    path: "/a.html", round: 2, views: { "/a.html": { w: 1440, h: 900 }, "/b.html": { w: 390, h: 844 } },
+    comments: [{ file: "/a.html", text: "Крупнее", sel: ".h1", label: "Привет", x: 10, y: 20, w: 100, h: 40, ex: 0, ey: 0 },
+      { file: "/b.html", text: "Цвет", sel: ".btn", x: 5, y: 6, w: 80, h: 30, ex: 0, ey: 0 }],
+    changes: [], notes: [{ text: "Общая мысль" }, { text: "  " }],
+    drawings: [{ file: "/b.html", kind: "oval", box: { x: 1, y: 2, w: 30, h: 40 }, from: { x: 0, y: 0 }, to: { x: 0, y: 0 } },
+      { file: "/b.html", kind: "box", box: { x: 5, y: 6, w: 70, h: 80 }, from: { x: 0, y: 0 }, to: { x: 0, y: 0 } }],
+  });
+  assert.match(text, /дизайну `\/a\.html`/);
+  assert.match(text, /дизайну `\/b\.html`[^]*окно 390×844/);
+  assert.match(text, /обведена овалом/);
+  assert.match(text, /выделена рамкой/);
+  assert.match(text, /Заметка на холсте Общая мысль/);
+  assert.ok(!text.includes("  \n"));
+  assert.equal(draftCount([{ text: "x" }], [], [{}, {}], [{ text: "n" }, { text: "" }]), 4);
 });

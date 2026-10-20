@@ -81,6 +81,17 @@ class Server(unittest.TestCase):
         self.assertIn("frame-ancestors 'self' http://localhost:", r.getheader("Content-Security-Policy"))
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
 
+    def test_raw_html_has_no_agent_and_download_is_attachment(self):
+        page = self.url(os.path.join(os.path.realpath(SITE), "index.html"))
+        r, body = self.get(page + "?raw=1")
+        self.assertEqual(r.status, 200)
+        self.assertNotIn(b"__canvas", body)
+        self.assertIsNone(r.getheader("Content-Disposition"))
+        r, body = self.get(page + "?raw=1&dl=1")
+        self.assertIn("attachment", r.getheader("Content-Disposition"))
+        self.assertIn("index.html", r.getheader("Content-Disposition"))
+        self.assertNotIn(b"__canvas", body)
+
     def test_agent_served(self):
         r, body = self.get("/__canvas/agent.js")
         self.assertEqual(r.status, 200)

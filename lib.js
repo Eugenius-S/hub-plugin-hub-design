@@ -121,33 +121,92 @@ export function describeDrawing(d) {
   const near = d.sel ? ` около \`${d.sel}\`${d.label ? ` «${cut(d.label)}»` : ""}` : "";
   if (d.kind === "arrow") return `стрелка от x ${px(d.from.x)}, y ${px(d.from.y)} к x ${px(d.to.x)}, y ${px(d.to.y)}${near}`;
   if (d.kind === "loop") return `обведена область ${area}${near}`;
+  if (d.kind === "oval") return `обведена овалом область ${area}${near}`;
+  if (d.kind === "box") return `выделена рамкой область ${area}${near}`;
   return `отмечена область ${area}${near}`;
 }
 
-// сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки; файл правит он сам
-export function message({ path, round, view, comments, changes, drawings = [] }) {
-  const lines = [`Правки к дизайну \`${path}\` (Hub Design, раунд ${round}; окно ${view.w}×${view.h} px, координаты — от верхнего левого угла страницы).`];
-  let n = 0;
-  for (const c of comments) {
-    if (!String(c.text || "").trim()) continue;
-    n += 1;
-    const el = c.sel ? `\`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}` : "точка";
-    lines.push(`${n}. Коммент к ${el}, точка x ${px(c.x)}, y ${px(c.y)} (элемент ${px(c.w)}×${px(c.h)} в x ${px(c.ex)}, y ${px(c.ey)}): ${String(c.text).trim()}`);
+// сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки, заметки; файл правит он сам.
+// Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [] }) {
+  const files = [];
+  const add = (f) => { if (!files.includes(f)) files.push(f); };
+  const of = (x) => x.file || path;
+  [...comments, ...changes, ...drawings].forEach((x) => add(of(x)));
+  const blocks = [];
+  for (const f of files) {
+    const v = views[f] || view || { w: 0, h: 0 };
+    const lines = [`Правки к дизайну \`${f}\` (Hub Design, раунд ${round}; окно ${v.w}×${v.h} px, координаты — от верхнего левого угла страницы).`];
+    let n = 0;
+    for (const c of comments.filter((x) => of(x) === f)) {
+      if (!String(c.text || "").trim()) continue;
+      n += 1;
+      const el = c.sel ? `\`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}` : "точка";
+      lines.push(`${n}. Коммент к ${el}, точка x ${px(c.x)}, y ${px(c.y)} (элемент ${px(c.w)}×${px(c.h)} в x ${px(c.ex)}, y ${px(c.ey)}): ${String(c.text).trim()}`);
+    }
+    const mine = changes.filter((x) => of(x) === f);
+    for (const c of mine) {
+      const what = describeChange(c);
+      if (!what) continue;
+      n += 1;
+      lines.push(`${n}. Поправил руками \`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}: ${what}.`);
+    }
+    for (const d of drawings.filter((x) => of(x) === f)) {
+      n += 1;
+      lines.push(`${n}. Рисунок от руки: ${describeDrawing(d)}${String(d.text || "").trim() ? ` — ${String(d.text).trim()}` : ""}.`);
+    }
+    if (!n) continue;
+    if (mine.some(hasEffect)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
+    blocks.push(lines.join("\n"));
   }
-  for (const c of changes) {
-    const what = describeChange(c);
-    if (!what) continue;
-    n += 1;
-    lines.push(`${n}. Поправил руками \`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}: ${what}.`);
+  const said = notes.filter((x) => String(x.text || "").trim());
+  if (said.length) {
+    blocks.push((blocks.length ? "" : `Заметки с холста Hub Design (раунд ${round}):\n`) + said.map((x, i) => `${blocks.length ? "Заметка на холсте" : i + 1 + "."} ${cut(x.text, 500)}`).join("\n"));
   }
-  for (const d of drawings) {
-    n += 1;
-    lines.push(`${n}. Рисунок от руки: ${describeDrawing(d)}${String(d.text || "").trim() ? ` — ${String(d.text).trim()}` : ""}.`);
-  }
-  if (!n) return "";
-  if (changes.some(hasEffect)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
-  return lines.join("\n");
+  return blocks.join("\n\n");
 }
 
-export const draftCount = (comments, changes, drawings = []) =>
-  comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length;
+export const draftCount = (comments, changes, drawings = [], notes = []) =>
+  comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length +
+  notes.filter((n) => String(n.text || "").trim()).length;
+
+// --- холст: вид, масштаб, раскладка фреймов -------------------------------------------------------------------------
+export const CANVAS_MIN = 0.05, CANVAS_MAX = 4;
+export const clampK = (k) => Math.min(CANVAS_MAX, Math.max(CANVAS_MIN, k));
+
+// колесо: масштаб вокруг точки (px, py) в координатах сцены; точка под курсором остаётся на месте
+export function zoomAt(v, factor, px, py) {
+  const k = clampK(v.k * factor);
+  const r = k / v.k;
+  return { k, x: px - (px - v.x) * r, y: py - (py - v.y) * r };
+}
+
+// вписать фреймы в окно сцены W×H с полями; не крупнее 100%
+export function fitView(frames, W, H, pad = 56) {
+  if (!frames.length || W < 10 || H < 10) return { x: pad, y: pad + 28, k: 1 };
+  const x0 = Math.min(...frames.map((f) => f.x)), y0 = Math.min(...frames.map((f) => f.y));
+  const x1 = Math.max(...frames.map((f) => f.x + f.w)), y1 = Math.max(...frames.map((f) => f.y + f.h));
+  const top = 28;   // подпись над фреймом
+  const k = clampK(Math.min(1, (W - pad * 2) / Math.max(1, x1 - x0), (H - pad * 2 - top) / Math.max(1, y1 - y0)));
+  return { k, x: (W - (x1 - x0) * k) / 2 - x0 * k, y: Math.max(pad, (H - top - (y1 - y0) * k) / 2) + top - y0 * k };
+}
+
+// где поставить новый фрейм: справа от последнего, с зазором
+export function nextSpot(frames, w, gap = 80) {
+  if (!frames.length) return { x: 0, y: 0 };
+  const last = frames.reduce((a, f) => (f.x + f.w > a.x + a.w ? f : a), frames[0]);
+  return { x: last.x + last.w + gap, y: last.y };
+}
+
+// высота фрейма по высоте документа
+export const frameHeight = (docH) => Math.min(8000, Math.max(400, Math.round(Number(docH) || 900)));
+
+// подпись фрейма: имя файла без .html
+export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
+
+// тема кнопок холста: инструмент → режим скрипта в дизайне
+export const TOOLS = { select: "edit", hand: "view", text: "text", note: "view", comment: "comment", pencil: "draw", shape: "draw" };
+export const toolMode = (tool) => TOOLS[tool] || "view";
+
+// быстрые цвета панели стилей
+export const SWATCHES = ["#0b0b0b", "#52514e", "#ffffff", "#d97757", "#e5484d", "#f5a524", "#30a46c", "#257de0", "#6e56cf", "#e93d82", "#faf9f6", "#1f1e1d"];
