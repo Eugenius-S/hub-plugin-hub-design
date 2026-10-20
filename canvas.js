@@ -177,6 +177,21 @@ export function createCanvas(app) {
     if (!n) return;
     Object.assign(n.box.style, { left: f.x + "px", top: f.y + "px", width: f.w + "px", height: f.h + "px" });
   }
+  // ошибки макета: метка в подписи рамки и кнопка «Попросить исправить» (добавляет их в пачку)
+  function paintErrs() {
+    for (const f of P.frames) {
+      const n = fr.get(f.path);
+      if (!n) continue;
+      const s = app.errState(f.path);
+      n.err.hidden = !s;
+      if (!s) continue;
+      const word = s.n === 1 ? "Ошибка в макете" : `Ошибок в макете: ${s.n}`;
+      const act = s.state === "draft" ? "Добавлено в правки" : s.state === "sent" ? "Отправлено дизайнеру" : "Попросить исправить";
+      n.err.textContent = `⚠ ${word} · ${act}`;
+      n.err.disabled = !!s.state;
+      n.err.title = s.state ? "" : "Добавить ошибки в пачку правок";
+    }
+  }
   function placeLabels() {
     for (const f of P.frames) {
       const n = fr.get(f.path);
@@ -207,7 +222,9 @@ export function createCanvas(app) {
       document.body.append(a); a.click(); a.remove();
     });
     const play = btn("hdc-lb", svg("play12"), "Смотреть", () => app.play(f.path));
-    label.append(title, tweak, dl, play);
+    const err = btn("hdc-err", "", "", () => app.askFix(f.path));
+    err.hidden = true;
+    label.append(title, err, tweak, dl, play);
     label.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button") || e.button !== 0) return;
       e.preventDefault();
@@ -231,7 +248,7 @@ export function createCanvas(app) {
     gone.append(goneMsg, goneActs);
     gone.addEventListener("pointerdown", (e) => e.stopPropagation());
     labels.append(gone);
-    const n = { box, iframe, label, title, ep, gone, goneMsg, shown: false };
+    const n = { box, iframe, label, title, err, ep, gone, goneMsg, shown: false };
     fr.set(f.path, n);
     app.register(ep);
     if (!isGone(app.fileState(f.path))) { iframe.src = app.fileUrl(f.path) + "&t=" + Date.now(); n.shown = true; }
@@ -518,13 +535,14 @@ export function createCanvas(app) {
     empty.hidden = P.alive !== false;
     empty.textContent = P.alive === false ? P.note : "";
     placeLabels();
+    paintErrs();
     placeEditor();
   }
   new ResizeObserver(() => { fitBar(); if (view.auto && P.frames.length) fit(); else placeEditor(); }).observe(stage);
   apply();
 
   return {
-    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, openEditor, refreshEditor, closeEditor, focusOn, focusNote, openAdd, scaleTo: pushScale, closeMenu,
+    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, paintErrs, openEditor, refreshEditor, closeEditor, focusOn, focusNote, openAdd, scaleTo: pushScale, closeMenu,
     frame: (path) => fr.get(path), size,
   };
 }

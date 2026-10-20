@@ -204,6 +204,20 @@ class Inject(unittest.TestCase):
         out = server.inject(b"<body><!-- </body> --></body>")
         self.assertTrue(out.endswith(b"</script></body>"))
 
+    def test_early_catcher_first_after_head(self):
+        tag = server.EARLY_TAG
+        self.assertIn(b"<head>" + tag + b"<title>", server.inject(b"<!doctype html><html><HEAD><title>x</title></HEAD><body></body></html>").replace(b"<HEAD>", b"<head>"))
+        self.assertTrue(server.inject(b"<html lang=ru><body>x</body>").startswith(b"<html lang=ru>" + tag))
+        self.assertTrue(server.inject(b"<!DOCTYPE html><p>x</p>").startswith(b"<!DOCTYPE html>" + tag))   # doctype остаётся первым — иначе режим совместимости
+        self.assertTrue(server.inject(b"<p>x</p>").startswith(tag))
+        self.assertEqual(server.inject(b"<head></head><body></body>").count(tag), 1)
+
+    def test_early_js_is_served_and_catches_errors_not_console(self):
+        src = open(os.path.join(server.HERE, "early.js"), encoding="utf-8").read()
+        self.assertIn('addEventListener("error"', src)
+        self.assertIn('addEventListener("unhandledrejection"', src)
+        self.assertNotIn("console.error", src.replace("не console.error", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

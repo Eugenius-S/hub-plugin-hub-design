@@ -3,7 +3,7 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
+import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight,
   describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -23,7 +23,7 @@ const specs = new Map();   // файл → {list: разобранные кру�
 const eps = new Map();   // фрейм → {id, path, iframe, ready}: у каждого фрейма свой agent.js
 const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
-  frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
+  frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
   authors: [], have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
 };
@@ -117,7 +117,7 @@ function sidebar(hide) {
 
 // --- хранение пачки: одна доска в браузере — перезагрузка страницы её не теряет -----------------------------------
 function save() {
-  localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks,
+  localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks, errs: P.errs,
     round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found }));
   hold();
 }
@@ -133,6 +133,7 @@ function load() {
   P.drawings = b.drawings || [];
   P.notes = b.notes || [];
   P.tweaks = b.tweaks || [];
+  P.errs = b.errs || [];
   P.round = b.round || 1;
   try { P.asked = JSON.parse(localStorage.getItem(STORE + "asked") || "{}") || {}; } catch { P.asked = {}; }
   if (b.cv) P.cv = { x: 56, y: 84, k: 1, auto: true, ...b.cv };
@@ -160,12 +161,13 @@ const draftChanges = () => P.changes.filter((c) => c.state === "draft");
 const draftDrawings = () => P.drawings.filter((d) => d.state === "draft");
 const draftNotes = () => P.notes.filter((n) => n.state === "draft" && String(n.text || "").trim());
 const draftTweaks = () => P.tweaks.filter((t) => t.state === "draft" && tweakEffect(t));
-const drafts = () => draftCount(draftPins(), draftChanges(), draftDrawings(), draftNotes(), draftTweaks());
+const draftErrs = () => P.errs.filter((e) => e.state === "draft" && normErrors(e.items).length);
+const drafts = () => draftCount(draftPins(), draftChanges(), draftDrawings(), draftNotes(), draftTweaks(), draftErrs());
 const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h: f.h }]));
 // выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок «Отправить дизайнеру» не включает
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
-  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), ...extra }));
+  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), ...extra }));
 const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 
 // получателя не помним между открытиями: им управляет открытый макет (wanted); перенос из чата — поверх
@@ -279,8 +281,10 @@ function removeFrame(path, keepDrafts = false) {
     P.changes = P.changes.filter((c) => c.file !== path);
     P.drawings = P.drawings.filter((d) => d.file !== path);
     P.tweaks = P.tweaks.filter((t) => t.file !== path);
+    P.errs = P.errs.filter((e) => e.file !== path);
   }
   specs.delete(path);
+  liveErrs.delete(path);
   if (P.focus === path) P.focus = "";
   if (P.sel?.file === path) P.sel = null;
   renumber();
@@ -303,6 +307,7 @@ function clearDrafts() {
   P.drawings = P.drawings.filter((d) => d.state !== "draft");
   P.notes = P.notes.filter((n) => n.state !== "draft");
   P.tweaks = P.tweaks.filter((t) => t.state !== "draft");
+  P.errs = P.errs.filter((e) => e.state !== "draft");
   if (ui.tw.contains(document.activeElement)) document.activeElement.blur();
   P.sel = null;
   renumber();
@@ -358,6 +363,13 @@ function handle(file, m, ep = epOf(file)) {
     const keep = P.changes.filter((c) => c.file === file && c.state !== "done");
     if (keep.length) tellEp(ep, { t: "apply", changes: keep });
     readTweaks(file, ep, m.tweaks);
+    liveErrs.delete(file);   // макет загрузился заново — свежий список пришлёт он сам
+    ui.cv.paintErrs();
+    return;
+  }
+  if (m.t === "errors") {
+    liveErrs.set(file, normErrors(m.errors));
+    ui.cv.paintErrs();
     return;
   }
   if (m.t === "wheel") return ui.cv.wheel(ep, m);
@@ -410,6 +422,7 @@ function handle(file, m, ep = epOf(file)) {
     for (const d of P.drawings) if (mine(d) && d.state === "sent") d.state = "done";
     for (const c of P.changes) if (mine(c) && c.state === "sent") c.state = "done";
     P.tweaks = P.tweaks.filter((t) => !mine(t) || t.state !== "sent");   // значения по умолчанию теперь в самом файле
+    P.errs = P.errs.filter((e) => !mine(e) || e.state !== "sent");
     P.pins = P.pins.filter((p) => !mine(p) || p.state !== "done" || p.round >= P.round - 3);
     P.drawings = P.drawings.filter((d) => !mine(d) || d.state !== "done");
     P.changes = P.changes.filter((c) => !mine(c) || c.state !== "done");
@@ -476,7 +489,7 @@ const recipient = (file) => recipientOf(file, { picked: P.picked, authors: P.aut
 const app = {
   get P() { return P; },
   get hub() { return hub; },
-  saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
+  errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
   fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), v: "1" }),
@@ -505,6 +518,8 @@ function markSent() {
   for (const c of draftChanges()) c.state = "sent";
   for (const d of draftDrawings()) d.state = "sent";
   for (const t of draftTweaks()) t.state = "sent";
+  for (const e of draftErrs()) e.state = "sent";
+  P.errs = P.errs.filter((e) => e.state !== "draft");
   P.tweaks = P.tweaks.filter((t) => t.state !== "draft");
   for (const n of P.notes) if (n.state === "draft" && String(n.text || "").trim()) n.state = "sent";
   P.pins = P.pins.filter((p) => p.state !== "draft" || p.text.trim());   // пустые пины не нужны
@@ -898,6 +913,24 @@ function paintProps() {
   ui.pbody.replaceChildren(...kids);
 }
 // --- крутилки макета ---------------------------------------------------------------------------------------------
+// ошибки макета: живой список (agent.js шлёт его с загрузки и по мере появления) и то, что из него уже в пачке (P.errs)
+const liveErrs = new Map();
+const errsKey = (items) => normErrors(items).map((x) => x.text).join("\n");
+function errState(file) {
+  const items = liveErrs.get(file) || [];
+  if (!items.length) return null;
+  const mine = P.errs.find((e) => e.file === file && e.state !== "done" && errsKey(e.items) === errsKey(items));
+  return { n: items.length, state: mine ? mine.state : "" };
+}
+function askFix(file) {
+  const items = liveErrs.get(file) || [];
+  if (!items.length) return;
+  P.errs = P.errs.filter((e) => e.file !== file || e.state !== "draft");
+  P.errs.push({ file, items, state: "draft" });
+  save();
+  paint();
+}
+
 // agent.js при загрузке макета присылает объявление #hub-tweaks и текущие значения; разбор — lib.normTweaks. Значения лежат в P.tweaks
 // (черновик → отправлено) и после перезагрузки рамки применяются заново
 function readTweaks(file, ep, decl) {
@@ -1066,6 +1099,7 @@ function paintCard() {
     ...P.changes.filter((c) => c.state === "draft" && hasEffect(c)).map((c) => ({ text: `${c.label || c.sel}: ${describeChange(c)}`, ic: "edit", del: () => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); } })),
     ...P.drawings.filter((d) => d.state === "draft").map((d) => ({ text: describeDrawing(d), ic: "draw", del: () => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: "Заметка: " + d.text, ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
+    ...draftErrs().map((e) => ({ text: `Ошибки макета: ${normErrors(e.items).length}`, ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
     ...draftTweaks().map((t) => ({ text: describeTweak(t), ic: "edit", del: () => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); } })),
   ];
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
@@ -1093,7 +1127,8 @@ function paintComments() {
   const drawings = P.drawings.filter((d) => d.state !== "done");
   const notes = P.notes.filter((n) => String(n.text || "").trim());
   const tweaks = P.tweaks.filter((t) => t.state !== "done" && tweakEffect(t));
-  const sig = JSON.stringify([pins, changes, drawings, notes, tweaks]);
+  const errs = P.errs.filter((e) => e.state !== "done" && normErrors(e.items).length);
+  const sig = JSON.stringify([pins, changes, drawings, notes, tweaks, errs]);
   if (ui.last.comments === sig) return;
   ui.last.comments = sig;
   const el = hub.el;
@@ -1118,6 +1153,12 @@ function paintComments() {
   for (const t of tweaks) {
     const li = el("div", "hd-citem " + t.state);
     li.append(el("b", "hd-n edit", "⚙"), el("span", "hd-ct", describeTweak(t)));
+    rows.push(li);
+  }
+  for (const e of errs) {
+    const li = el("div", "hd-citem " + e.state);
+    li.append(el("b", "hd-n edit", "⚠"), el("span", "hd-ct", `Ошибки макета: ${normErrors(e.items).length}`));
+    li.title = normErrors(e.items).map((x) => x.text).join("\n");
     rows.push(li);
   }
   for (const n of notes) {

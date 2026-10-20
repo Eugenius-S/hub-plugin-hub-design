@@ -575,6 +575,18 @@
     if (selected) place();
   }
 
+  // --- ошибки макета: список собирает early.js (с самой загрузки), сюда — только отправка странице -------------------
+  let errTimer = 0, errSent = "";
+  function sendErrors() {
+    errTimer = 0;
+    const items = (window.__hdErrors || []).slice(-10);
+    const key = JSON.stringify(items);
+    if (key === errSent) return;
+    errSent = key;
+    send({ t: "errors", errors: items });
+  }
+  window.__hdOnError = () => { if (!errTimer) errTimer = setTimeout(sendErrors, 300); };
+
   // --- связь со страницей хаба -------------------------------------------------------------------------------------
   addEventListener("message", (e) => {
     const m = e.data;
@@ -586,6 +598,8 @@
       if (m.theme) applyTheme(m.theme);
       send({ t: "ready", path, tweaks: tweaksDecl(), w: innerWidth, h: innerHeight, dh: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) });
       sendHistory();
+      errSent = "";
+      sendErrors();
       watch();
     } else if (m.t === "mode") {
       mode = m.mode;

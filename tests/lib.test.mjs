@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -431,4 +431,31 @@ test("выделенное: строка «Выделено: файл `селе�
   assert.equal(selectedLine({ file: "/d/a/index.html", sel: "p", tag: "p", label: "я".repeat(200) }).length < 120, true);
   assert.equal(selectedLine(null), "");
   assert.equal(selectedLine({ file: "/a.html", sel: null }), "");
+});
+
+test("normErrors: уникальные, обрезаны, без пустых и «Script error.»", () => {
+  const long = "x".repeat(900);
+  const r = normErrors([{ text: "TypeError: a is null", where: "app.js:12" }, { text: "TypeError: a is null" }, { text: "" }, { text: "Script error." }, { text: long }, "строкой"]);
+  assert.deepEqual(r.map((e) => e.text.length > 100 ? "long" : e.text), ["TypeError: a is null", "long", "строкой"]);
+  assert.equal(r[1].text.length, ERR_CUT);
+  assert.deepEqual(normErrors(null), []);
+});
+
+test("describeErrors: до пяти, остальное — «и ещё K»", () => {
+  const items = Array.from({ length: 8 }, (_, i) => ({ text: `Ошибка ${i}`, where: i ? "" : "a.js:3" }));
+  const t = describeErrors(items);
+  assert.match(t, /^Ошибки в макете \(8\):/);
+  assert.match(t, /• Ошибка 0 \(a\.js:3\)/);
+  assert.equal(t.split("\n").length, 1 + ERR_MAX + 1);
+  assert.match(t, /и ещё 3$/);
+  assert.equal(describeErrors([]), "");
+});
+
+test("message и draftCount: ошибки макета — один пункт пачки", () => {
+  const errors = [{ file: "/d/a.html", items: [{ text: "ReferenceError: x is not defined", where: "a.html:9" }, { text: "Необработанный отказ промиса: Error: boom" }] }];
+  const t = message({ path: "/d/a.html", round: 1, view: { w: 100, h: 100 }, comments: [], changes: [], errors });
+  assert.match(t, /^Правки к дизайну `\/d\/a\.html`/);
+  assert.match(t, /\n1\. Ошибки в макете \(2\):\n  • ReferenceError: x is not defined \(a\.html:9\)\n  • Необработанный отказ промиса: Error: boom/);
+  assert.equal(draftCount([], [], [], [], [], errors), 1);
+  assert.equal(draftCount([], [], [], [], [], [{ file: "x", items: [] }]), 0);
 });

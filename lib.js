@@ -291,11 +291,11 @@ export const tweakEffect = (c) => c.from !== c.to;
 
 // сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки, заметки; файл правит он сам.
 // Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
-export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [] }) {
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [] }) {
   const files = [];
   const add = (f) => { if (!files.includes(f)) files.push(f); };
   const of = (x) => x.file || path;
-  [...comments, ...changes, ...drawings, ...tweaks.filter(tweakEffect)].forEach((x) => add(of(x)));
+  [...comments, ...changes, ...drawings, ...tweaks.filter(tweakEffect), ...errors.filter((x) => normErrors(x.items).length)].forEach((x) => add(of(x)));
   const blocks = [];
   for (const f of files) {
     const v = views[f] || view || { w: 0, h: 0 };
@@ -323,6 +323,12 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       n += 1;
       lines.push(`${n}. ${describeTweak(c)}.`);
     }
+    for (const e of errors.filter((x) => of(x) === f)) {
+      const t = describeErrors(e.items);
+      if (!t) continue;
+      n += 1;
+      lines.push(`${n}. ${t}`);
+    }
     if (!n) continue;
     if (turned.length) lines.push("Крутилки — это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.");
     if (mine.some(hasEffect)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
@@ -338,9 +344,29 @@ export function message({ path, round, view, views = {}, comments, changes, draw
 // выделенный на холсте элемент одной строкой — чтобы «сделай этот блок шире» работало без пина
 export const selectedLine = (s) => (s && s.sel ? `Выделено: ${s.file} \`${s.sel}\` ${s.tag || "элемент"}${s.label ? ` «${cut(s.label)}»` : ""}` : "");
 
-export const draftCount = (comments, changes, drawings = [], notes = [], tweaks = []) =>
+// ошибки макета (window.onerror, unhandledrejection): уникальные по тексту, текст обрезан, в пачку — не больше ERR_MAX
+export const ERR_MAX = 5, ERR_CUT = 300;
+export function normErrors(raw) {
+  const out = [], seen = new Set();
+  for (const e of Array.isArray(raw) ? raw : []) {
+    const text = cut(e && typeof e === "object" ? e.text : e, ERR_CUT);
+    if (!text || text === "Script error." || seen.has(text)) continue;
+    seen.add(text);
+    out.push({ text, where: cut(e && e.where, 80) });
+  }
+  return out;
+}
+export function describeErrors(items) {
+  const list = normErrors(items);
+  if (!list.length) return "";
+  const shown = list.slice(0, ERR_MAX).map((e) => `  • ${e.text}${e.where ? ` (${e.where})` : ""}`);
+  if (list.length > ERR_MAX) shown.push(`  • и ещё ${list.length - ERR_MAX}`);
+  return `Ошибки в макете (${list.length}):\n${shown.join("\n")}`;
+}
+
+export const draftCount = (comments, changes, drawings = [], notes = [], tweaks = [], errors = []) =>
   comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length + tweaks.filter(tweakEffect).length +
-  notes.filter((n) => String(n.text || "").trim()).length;
+  notes.filter((n) => String(n.text || "").trim()).length + errors.filter((e) => normErrors(e.items).length).length;
 
 // --- холст: вид, масштаб, раскладка фреймов -------------------------------------------------------------------------
 export const CANVAS_MIN = 0.05, CANVAS_MAX = 4;

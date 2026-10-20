@@ -144,7 +144,21 @@ def inject(body):
     at = low.rfind(b"</body>")
     if at < 0:
         at = low.rfind(b"</html>")
-    return body + tag if at < 0 else body[:at] + tag + body[at:]
+    body = body + tag if at < 0 else body[:at] + tag + body[at:]
+    return early(body)
+
+
+EARLY_TAG = b'<script src="/__canvas/early.js"></script>'
+_open_tags = [re.compile(rb"<head(?:\s[^>]*)?>", re.I), re.compile(rb"<html(?:\s[^>]*)?>", re.I), re.compile(rb"<!doctype[^>]*>", re.I)]
+
+
+def early(body):
+    """Ловец ошибок (early.js) — самым первым скриптом: после <head> (или <html>, doctype), без них — в начало."""
+    for rx in _open_tags:
+        m = rx.search(body)
+        if m:
+            return body[:m.end()] + EARLY_TAG + body[m.end():]
+    return EARLY_TAG + body
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -191,8 +205,8 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         if url.path == "/__canvas/ping":
             return self.say(200, {"ok": True, "v": version()})
-        if url.path == "/__canvas/agent.js":
-            with open(os.path.join(HERE, "agent.js"), "rb") as f:
+        if url.path in ("/__canvas/agent.js", "/__canvas/early.js"):
+            with open(os.path.join(HERE, url.path.rsplit("/", 1)[1]), "rb") as f:
                 body = f.read()
             self.head(200, TYPES[".js"], len(body))
             return self.wfile.write(body) if self.command != "HEAD" else None
