@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, goneText, isGone, mergeTimeline, slimItems, timelineQuery } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery } from "../lib.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -246,4 +246,12 @@ test("«Убрать» из очереди: сначала «Отменить»,
   await bad.send("m4");
   assert.equal(bad.get("m4").failed, true);                       // ошибка видна, можно повторить
   assert.ok(changes > 0);
+});
+
+test("Exit Hub Design: в чат специалиста, с кем шёл разговор; нет его — откуда пришли; иначе главная", () => {
+  assert.equal(exitTarget("designer", ["designer", "animator"], "#/s/hub", "hub-design"), "#/s/designer");
+  assert.equal(exitTarget("мой агент", ["мой агент"], "", "hub-design"), "#/s/%D0%BC%D0%BE%D0%B9%20%D0%B0%D0%B3%D0%B5%D0%BD%D1%82");
+  assert.equal(exitTarget("designer", ["animator"], "#/s/hub", "hub-design"), "#/s/hub");               // designer в хабе нет
+  assert.equal(exitTarget("designer", [], "#/x/hub-design?a=1", "hub-design"), "#/");                  // «назад» — сам плагин: не петляем
+  assert.equal(exitTarget("", undefined, "", "hub-design"), "#/");
 });

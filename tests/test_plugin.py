@@ -118,6 +118,22 @@ class Scripts(unittest.TestCase):
         self.assertIn("isGone(app.fileState(c.path))", dash)             # и превью не грузит
         self.assertNotIn("hdd-ghost", dash)
 
+    def test_exit_and_close_052(self):
+        # 0.5.2: ✕ — свой островок и закрывает макет; «Exit Hub Design» — справа снизу, выход в чат специалиста
+        with open(os.path.join(HERE, "canvas.js"), encoding="utf-8") as f:
+            canvas = f.read()
+        self.assertIn('el("div", "hdc-card hdc-x")', canvas)
+        self.assertIn("xIsland.append(closeB)", canvas)
+        self.assertNotIn("top.append(playTop, panel, zoomB, closeB)", canvas)
+        with open(os.path.join(HERE, "main.js"), encoding="utf-8") as f:
+            main = f.read()
+        self.assertIn('"Exit Hub Design"', main)
+        self.assertIn("exitTarget(P.session", main)
+        self.assertIn("removeFrame(path, true)", main)                   # закрытие макета не стирает черновики комментариев
+        with open(os.path.join(HERE, "style.css"), encoding="utf-8") as f:
+            css = f.read()
+        self.assertIn(".hd-exit{position:absolute;right:var(--space-3);bottom:var(--space-3)", css)
+
 
 if __name__ == "__main__":
     unittest.main()

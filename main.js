@@ -3,7 +3,7 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, fileUrl, frameTitle,
+import { NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, fileUrl, frameTitle,
   goneText, hasEffect, htmlAuthored, htmlPaths, isGone, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, timelineQuery, toolMode, windowHeight,
   wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -248,11 +248,13 @@ function addFrame(path, focus) {
   paint();
   if (focus && ui) { if (P.frames.length === 1) ui.cv.fit(); else ui.cv.focusOn(path); }
 }
-function removeFrame(path) {
+function removeFrame(path, keepDrafts = false) {
   P.frames = P.frames.filter((f) => f.path !== path);
-  P.pins = P.pins.filter((p) => p.file !== path);
-  P.changes = P.changes.filter((c) => c.file !== path);
-  P.drawings = P.drawings.filter((d) => d.file !== path);
+  if (!keepDrafts) {
+    P.pins = P.pins.filter((p) => p.file !== path);
+    P.changes = P.changes.filter((c) => c.file !== path);
+    P.drawings = P.drawings.filter((d) => d.file !== path);
+  }
   if (P.focus === path) P.focus = "";
   if (P.sel?.file === path) P.sel = null;
   renumber();
@@ -439,7 +441,14 @@ const app = {
   recent: () => recentHtml(P.items),
   handle, visible: () => P.shown,
   recipient, recipients: () => [...P.ok].sort(), pickRecipient, ensureAuthor,
-  close() { location.hash = P.back && !P.back.startsWith("#/x/" + ID) ? P.back : "#/"; },
+  // ✕ закрывает открытый макет (его комментарии и правки остаются черновиками) и ведёт на стартовый дашборд
+  close() {
+    const path = P.focus || (P.frames[0] && P.frames[0].path);
+    if (path) removeFrame(path, true);
+    goHome();
+  },
+  // «Exit Hub Design»: выйти из вида в чат специалиста, с которым шёл разговор
+  exit() { location.hash = exitTarget(P.session, [...P.ok], P.back, ID); },
   toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; paint(); },
 };
 
@@ -678,11 +687,12 @@ function build(root) {
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path), openPath: (path) => openChecked(path),
     preset: (p) => startPreset(p),
   });
-  right.append(cv.node, props, dash.node);
+  const exitB = button("hd-exit", "Exit Hub Design", "Выйти из Hub Design в чат: " + P.session, () => app.exit());
+  right.append(cv.node, props, dash.node, exitB);
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, title, tabChat, tabComments, chat, list, banner, chips, strip, input, who, note, cv, props, dash, last: {} };
+  return { root, wrap, right, exitB, title, tabChat, tabComments, chat, list, banner, chips, strip, input, who, note, cv, props, dash, last: {} };
 }
 
 function render(root, snap) {
@@ -805,6 +815,8 @@ function paintQueue(snap) {
 function paintProps() {
   const open = P.propsOpen && P.frames.length > 0 && !home();
   ui.props.hidden = !open;
+  ui.right.classList.toggle("props", open);
+  ui.exitB.title = "Выйти из Hub Design в чат: " + P.session;
   const sig = JSON.stringify([open, P.sel]);
   if (!open || ui.last.props === sig || ui.props.contains(document.activeElement) && ui.last.propsSel === (P.sel && P.sel.sel)) return;
   ui.last.props = sig;

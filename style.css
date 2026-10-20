@@ -60,6 +60,9 @@
 
 /* правая часть: холст, справа панель стилей */
 .hd-right{flex:1;display:flex;min-width:0;min-height:0;position:relative}
+.hd-exit{position:absolute;right:var(--space-3);bottom:var(--space-3);z-index:40;border:0;background:var(--card);color:var(--foreground);font-weight:500;padding:8px 14px;border-radius:var(--radius-lg);box-shadow:var(--shadow-lift)}
+.hd-exit:hover{background:var(--muted)}
+.hd-right.props .hd-exit{right:calc(280px + var(--space-3))}
 .hd-props{width:280px;flex:none;border-left:1px solid var(--border);overflow:auto;padding:var(--space-3) var(--space-3) var(--space-5);background:var(--card);position:relative;z-index:6}
 .hd-phint{color:var(--muted-foreground);padding:var(--space-3) 4px}
 .hd-pel{font-size:var(--text-xs);color:var(--muted-foreground);margin:4px 0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -110,8 +113,9 @@
 /* плавающие панели: слева сверху инструменты, справа сверху показ, панель и масштаб */
 .hdc-card{position:absolute;z-index:5;display:flex;align-items:center;gap:2px;padding:4px;background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-lift)}
 .hdc-bar{left:var(--space-3);top:var(--space-3)}
-.hdc-top{right:var(--space-3);top:var(--space-3)}
-@container (max-width:520px){.hdc-top{top:60px}}
+.hdc-x{right:var(--space-3);top:var(--space-3)}
+.hdc-top{right:calc(var(--space-3) * 2 + 40px);top:var(--space-3)}
+@container (max-width:520px){.hdc-top{top:60px;right:var(--space-3)}}
 .hdc-tool,.hdc-pages,.hdc-zoom,.hdc-more{border:0;background:none;color:var(--foreground);border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;gap:4px}
 .hdc-tool{width:32px;height:32px;padding:0}
 .hdc-tool:hover,.hdc-pages:hover,.hdc-zoom:hover,.hdc-more:hover{background:var(--muted)}
@@ -165,4 +169,3 @@ html.hs-hidden .hd-top{padding-left:56px}
   html.hs-hidden .hd-top{padding-left:var(--space-4)}
   html.hs-hidden .hdc-bar{left:56px;top:var(--space-3)}
 }
-.hdc-close{margin-left:var(--space-1)}

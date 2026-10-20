@@ -359,3 +359,9 @@ export function createCancels({ post, isQueued, onChange, delay = 6000, setT = s
   };
   return api;
 }
+
+// куда ведёт «Exit Hub Design»: в чат того, с кем шёл разговор (он есть в хабе), иначе туда, откуда пришли (не из самого плагина), иначе на главную
+export function exitTarget(session, known, back, id) {
+  if (session && (known || []).includes(session)) return "#/s/" + encodeURIComponent(session);
+  return back && !String(back).startsWith("#/x/" + id) ? back : "#/";
+}

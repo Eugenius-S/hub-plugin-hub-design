@@ -31,7 +31,8 @@ export function createCanvas(app) {
   const bar = el("div", "hdc-card hdc-bar");
   const top = el("div", "hdc-card hdc-top");
   const pop = el("div", "hdc-pop");
-  root.append(stage, bar, top, pop);
+  const xIsland = el("div", "hdc-card hdc-x");   // ✕ — отдельный островок: закрыть открытый макет
+  root.append(stage, bar, top, xIsland, pop);
   pop.hidden = true;
 
   const view = P.cv;
@@ -469,8 +470,9 @@ export function createCanvas(app) {
   const panel = btn("hdc-tool", svg("panel"), "Панель стилей", () => app.toggleProps());
   const zoomText = el("span", null, "100%");
   const zoomB = btn("hdc-zoom", [zoomText, svg("chev12")], "Масштаб", (e) => zoomMenu(e.currentTarget));
-  const closeB = btn("hdc-tool hdc-close", hub.icon ? hub.icon("close") : svg("close"), "Закрыть Hub Design", () => app.close());
-  top.append(playTop, panel, zoomB, closeB);
+  const closeB = btn("hdc-tool hdc-close", hub.icon ? hub.icon("close") : svg("close"), "Закрыть макет — на стартовый экран", () => app.close());
+  top.append(playTop, panel, zoomB);
+  xIsland.append(closeB);
 
   // --- рисуем состояние ----------------------------------------------------------------------------------------------
   function paint() {
