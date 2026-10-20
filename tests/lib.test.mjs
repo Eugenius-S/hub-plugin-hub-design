@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, goneText, isGone, mergeTimeline, slimItems, timelineQuery } from "../lib.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -177,4 +177,73 @@ test("Write макета ушёл за хвост ленты: ищем его в
   assert.equal(wroteAt([{ kind: "out", ts: 9, text: "/d/kolo/index.html" }], "/d/kolo/index.html"), 0);
   const o = searchOrder("/d/kolo/index.html", [{ path: "/d/kolo/index.html", session: "gen-1" }], ["writer", "gen-1", "designer"]);
   assert.deepEqual(o, { near: ["gen-1", "designer"], far: ["writer"] });
+});
+
+test("путь с пробелами берётся целиком из кавычек, обрубки и хвосты относительных путей — нет (0.5.1: «{error: no file}» в рамке)", () => {
+  const real = "/Users/me/Disk/!!Work/!!! 2M DESIGN/!Проекты/smm/weekly/weekly-2026-10-17.html";
+  assert.deepEqual(htmlPaths(`Откроется: \`${real}\` и Threads/analytics/weekly/weekly-2026-10-17.html`), [real]);
+  assert.deepEqual(htmlPaths(`лежит в ${real} рядом`), []);     // без кавычек пробел обрывает путь — гадать про хвост нельзя
+  assert.deepEqual(htmlPaths("файл /a/b.html, и 'C:\\Мои файлы\\x.html' и /c/d.htm."), ["/a/b.html", "C:\\Мои файлы\\x.html", "/c/d.htm"]);
+  assert.deepEqual(htmlPaths("see ./x/a.html and ../b.html and weekly/a.html"), []);   // относительные не абсолютные
+});
+
+test("макеты по событиям: лента перечитывается, как только вырос её номер правки, без выдержки по времени", () => {
+  const cache = new Map([["gen-1", { rev: 5, epoch: 1, items: [] }]]);
+  assert.deepEqual(dueSessions(["gen-1", "gen-2"], { "gen-1": 5, "gen-2": 3 }, 1, cache), ["gen-2"]);   // новая сессия — сразу
+  assert.deepEqual(dueSessions(["gen-1"], { "gen-1": 6 }, 1, cache), ["gen-1"]);                        // номер вырос — сразу, не через 20 с
+  assert.deepEqual(dueSessions(["gen-1"], { "gen-1": 5 }, 2, cache), ["gen-1"]);                        // ядро перезапущено — заново
+  assert.equal(dueSessions.length, 4);                                                                  // времени среди аргументов нет
+});
+
+test("перечитываем только изменённые строки: since — прошлый номер правки, ответ ядра дописывается к хранимому", () => {
+  assert.deepEqual(timelineQuery("gen-1", undefined, 7), { session: "gen-1", since: "0", epoch: "7" });
+  assert.deepEqual(timelineQuery("gen-1", { rev: 5, epoch: 7, items: [] }, 7), { session: "gen-1", since: "5", epoch: "7" });
+  assert.equal(timelineQuery("gen-1", { rev: 5, epoch: 6, items: [] }, 7).since, "0");                  // чужая эпоха — с нуля
+  const w = { kind: "tool", name: "Write", ts: 1, input: { file_path: "/d/a.html" } };
+  const first = mergeTimeline(undefined, { epoch: 7, rev: 5, full: true, items: [w, { kind: "out", ts: 2, text: "привет" }] }, 5);
+  assert.deepEqual(first.items.map((i) => i.input.file_path), ["/d/a.html"]);                            // про HTML только
+  const next = mergeTimeline(first, { epoch: 7, rev: 9, full: false, items: [{ kind: "tool", name: "Write", ts: 3, input: { file_path: "/d/b.html" } }, w] }, 9);
+  assert.equal(next.rev, 9);
+  assert.deepEqual(next.items.map((i) => i.input.file_path), ["/d/a.html", "/d/b.html"]);                // дубль строки не множится
+  const whole = mergeTimeline(next, { epoch: 8, rev: 2, full: true, items: [] }, 2);
+  assert.deepEqual(whole.items, []);                                                                     // ядро отдало ленту целиком — прежнее не держим
+  assert.equal(slimItems([{ kind: "tool", name: "Read", input: { file_path: "/a.css" } }]).length, 0);
+});
+
+test("пропавший файл: понятная строка с путём", () => {
+  assert.equal(isGone("missing"), true);
+  assert.equal(isGone("denied"), true);
+  assert.equal(isGone("ok"), false);
+  assert.equal(isGone(undefined), false);                                                                // ещё не спрашивали — не пугаем
+  assert.equal(goneText("missing", "/d/weekly.html"), "Файл не найден: /d/weekly.html");
+  assert.match(goneText("denied", "/d/x.html"), /вне папок/);
+});
+
+test("«Убрать» из очереди: сначала «Отменить», настоящая отмена — через 6 секунд, отмена владельца её отзывает", async () => {
+  const timers = [], posts = [];
+  let queued = true, changes = 0;
+  const c = createCancels({ post: async (url, body) => { posts.push([url, body]); return {}; }, isQueued: () => queued, onChange: () => changes++,
+    setT: (fn, ms) => { timers.push({ fn, ms }); return timers.length - 1; }, clearT: (i) => { timers[i].fn = null; } });
+  c.start("designer", { id: "m1", text: "правка" });
+  assert.equal(timers[0].ms, 6000);
+  assert.deepEqual(posts, []);                                    // сразу ничего не убрано
+  assert.equal(c.sig(), "m1p");
+  c.undo("m1");                                                   // передумал
+  assert.equal(timers[0].fn, null);
+  assert.equal(c.get("m1"), undefined);
+  assert.deepEqual(posts, []);
+  c.start("designer", { id: "m2", text: "ещё" });
+  await timers[1].fn();                                           // 6 секунд прошли
+  assert.deepEqual(posts, [["/api/queue/cancel", { session: "designer", id: "m2" }]]);
+  assert.equal(c.get("m2").done, true);
+  queued = false;
+  c.start("designer", { id: "m3", text: "ушло само" });
+  await timers[2].fn();
+  assert.equal(posts.length, 1);                                  // уже не в очереди — отмену не шлём
+  assert.equal(c.get("m3"), undefined);
+  const bad = createCancels({ post: async () => ({ error: "нет" }), isQueued: () => true, onChange() {}, setT: () => 0, clearT() {} });
+  bad.start("s", { id: "m4", text: "x" });
+  await bad.send("m4");
+  assert.equal(bad.get("m4").failed, true);                       // ошибка видна, можно повторить
+  assert.ok(changes > 0);
 });

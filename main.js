@@ -3,8 +3,9 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, frameTitle,
-  hasEffect, htmlAuthored, htmlPaths, message, nextSpot, recentHtml, recipientOf, searchOrder, toolMode, windowHeight, wroteAt } from "./lib.js";
+import { NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, fileUrl, frameTitle,
+  goneText, hasEffect, htmlAuthored, htmlPaths, isGone, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, timelineQuery, toolMode, windowHeight,
+  wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { createDashboard, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
@@ -23,7 +24,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, homeWho: null, back: "", openFrom: null, sent: 0,
+  authors: [], have: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, homeWho: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -177,7 +178,51 @@ async function ping() {
     P.note = `Процесс плагина не отвечает на ${origin()}. Перезапустите плагин: hub restart ext:${ID}`;
   }
   paint();
+  if (P.alive) verifyAll();
   if (P.alive && was === false) reloadAll();
+}
+
+// --- файлы макетов на месте ---------------------------------------------------------------------------------------
+// процесс плагина говорит по каждому пути: ok | missing | denied. Спрашиваем по событиям: список макетов изменился, открыли дашборд или файл,
+// перезагрузили рамку — не по таймеру. Пропавший файл — пометка на карточке и понятная строка в рамке, не сырой ответ сервера.
+const abs = (p) => String(p).trim().replace(/^~(?=\/)/, homeGuess());
+const fileState = (path) => P.have[abs(path)];
+async function verify(paths, force = false) {
+  if (P.alive !== true || !local()) return;
+  const want = [...new Set(paths.map(abs).filter(Boolean))].filter((p) => force || !(p in P.have));
+  let changed = false;
+  for (let i = 0; i < want.length; i += 40) {
+    const part = want.slice(i, i + 40);
+    let r = null;
+    try {
+      const res = await fetch(origin() + "/__canvas/have?" + new URLSearchParams(part.map((p) => ["path", p])), { cache: "no-store" });
+      r = res.ok ? await res.json() : null;
+    } catch { /* процесс не отвечает — это покажет ping */ }
+    if (!r) return;
+    for (const p of part) if (r[p] && P.have[p] !== r[p]) { P.have[p] = r[p]; changed = true; }
+  }
+  if (changed) paint();
+}
+const verifyAll = () => verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);
+// вернулись во вкладку или к окну — файлы могли поменять мимо хаба
+window.addEventListener("focus", () => { if (P.shown) verifyAll(); });
+document.addEventListener("visibilitychange", () => { if (P.shown && !document.hidden) verifyAll(); });
+function goHome() {
+  P.home = true; P.preset = null; P.homeWho = null; P.tab = "chat";
+  dropStub();
+  verifyAll();
+  paint();
+}
+// открыть макет на холсте: сначала убедиться, что файл есть — вместо пустой рамки владелец читает, чего не хватает
+async function openChecked(path, focus = true) {
+  await verify([path], true);
+  const st = fileState(path);
+  if (isGone(st)) {
+    P.note = goneText(st, abs(path));
+    return paint();
+  }
+  P.note = "";
+  addFrame(path, focus);
 }
 
 // --- фреймы ------------------------------------------------------------------------------------------------------
@@ -388,7 +433,7 @@ const app = {
   fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), v: "1" }),
   play: (path) => { if (path) window.open(fileUrl(origin(), path), "_blank", "noopener"); },
   focusFrame: (path) => { if (P.focus !== path) { P.focus = path; paint(); } },
-  addFrame, removeFrame, sizeFrame, setTool, deselect, undo, addNote,
+  addFrame: openChecked, fileState, verify, goHome, removeFrame, sizeFrame, setTool, deselect, undo, addNote,
   removeNote: (id) => { P.notes = P.notes.filter((n) => n.id !== id); save(); paint(); },
   noteChanged: () => { hold(); paintCard(); paintComments(); },
   recent: () => recentHtml(P.items),
@@ -497,35 +542,33 @@ function setSession(name) {
   P.rev = -1;
   if (ui) { ui.input.set({ to: name }); ui.last.chat = ""; ui.last.queue = ""; pullChat(hub.snapshot() || {}); }
 }
-// макеты по лентам сессий хаба. В снимке лент нет (страница берёт ленту открытой сессии сама) — тянем /api/timeline каждой
-// сессии, но редко: лента изменилась (timeline_rev) и прошло ≥ 20 с, по три запроса разом; хранится только то, что про HTML
-const tl = new Map();   // сессия → {rev, at, items}
+// макеты по лентам сессий хаба: по событиям страницы. В снимке лент нет (страницу открытой сессии она берёт сама) — когда номер правки
+// ленты сессии в снимке вырос, тянем у ядра только изменённые строки (since); хранится только то, что про HTML. Таймера нет
+const tl = new Map();   // сессия → {rev, epoch, items}
 let scanning = false;
-const slim = (items) => (items || []).filter((it) => (it.kind === "tool" && /\.html?$/i.test((it.input || {}).file_path || (it.input || {}).path || ""))
-  || (it.kind === "file" && /\.html?$/i.test(it.path || "")) || (it.kind === "out" && htmlPaths(it.text).length))
-  .map((it) => ({ kind: it.kind, name: it.name, ts: it.ts, path: it.path, input: it.input && { file_path: (it.input.file_path || it.input.path) },
-    text: it.kind === "out" ? htmlPaths(it.text).join(" ") : undefined }));
 function recompute() {
   const lines = Object.fromEntries([...tl].map(([k, v]) => [k, v.items]));
   P.authors = htmlAuthored(lines, (n) => !P.ok.has(n));
   openFromSession();
   openNewDesign();
+  verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);   // лента изменилась — файл мог пропасть (rm, mv дизайнером)
 }
 async function scanDesigns(snap) {
   P.ok = new Set((snap.sessions || []).filter((x) => x.kind !== "hub" && x.role !== "executor").map((x) => x.name));
   if (scanning || !P.shown) return;
   const revs = snap.timeline_rev || {};
-  const gap = P.openNew ? 3000 : 20000;
-  const due = [...P.ok].filter((n) => { const c = tl.get(n); return !c || (c.rev !== (revs[n] ?? 0) && Date.now() - c.at > gap); });
+  const due = dueSessions([...P.ok], revs, snap.epoch, tl);
   if (!due.length) { if (ui.last.authors !== P.authors.length + "#" + P.ok.size) { ui.last.authors = P.authors.length + "#" + P.ok.size; recompute(); } return; }
   scanning = true;
   const queue = [...due];
   const worker = async () => {
     for (let n = queue.shift(); n; n = queue.shift()) {
+      const cached = tl.get(n);
       try {
-        const res = await fetch(`/api/timeline?${new URLSearchParams({ session: n, since: "0" })}`);
-        if (res.ok) tl.set(n, { rev: revs[n] ?? 0, at: Date.now(), items: slim((await res.json()).items) });
-      } catch { /* следующий снимок повторит */ }
+        const res = await fetch(`/api/timeline?${new URLSearchParams(timelineQuery(n, cached, snap.epoch))}`);
+        if (res.ok) { tl.set(n, mergeTimeline(cached, await res.json(), revs[n] ?? 0)); continue; }
+      } catch { /* ниже: не перечитываем, пока лента не изменится снова */ }
+      tl.set(n, { items: [], ...cached, rev: revs[n] ?? 0, epoch: snap.epoch });   // сбой не должен гнать запросы по кругу
     }
   };
   await Promise.all([worker(), worker(), worker()]);
@@ -591,7 +634,7 @@ function build(root) {
   const top = el("div", "hd-top");
   const logo = el("span", "hd-logo"); logo.innerHTML = ICONS.logo;
   const title = el("span", "hd-title", "Hub Design");
-  const homeBtn = button("hd-home", [logo, title], "Стартовый экран: пресеты и прошлые файлы", () => { P.home = true; P.preset = null; P.homeWho = null; P.tab = "chat"; dropStub(); paint(); });
+  const homeBtn = button("hd-home", [logo, title], "Стартовый экран: пресеты и прошлые файлы", goHome);
   top.append(homeBtn);
   const tabs = el("div", "hd-tabs");
   const tabChat = button("hd-tab", "Чат", null, () => { P.tab = "chat"; paint(); });
@@ -631,8 +674,8 @@ function build(root) {
   const cv = createCanvas(app);
   const props = el("div", "hd-props");
   const dash = createDashboard({
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(path, { raw: true }), files: () => P.authors,
-    mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => addFrame(path, true), openPath: (path) => addFrame(path, true),
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => P.authors,
+    fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path), openPath: (path) => openChecked(path),
     preset: (p) => startPreset(p),
   });
   right.append(cv.node, props, dash.node);
@@ -713,12 +756,19 @@ function startPreset(p) {
   if (ta) ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
-// очередь сообщений к получателю — как полоса над полем в чате хаба: «Отправить сейчас» (если занят) и «Убрать»
+// очередь сообщений к получателю — как полоса над полем в чате хаба: «Отправить сейчас» (если занят) и «Убрать»; «Убрать» не сразу:
+// 6 секунд строка «Убрано из очереди · Отменить», настоящая отмена уходит потом (так же в очереди самого хаба)
+const cancels = createCancels({
+  post: (url, body) => hub.post(url, body),
+  isQueued: (id) => ((hub.snapshot() || {}).messages || {})[id]?.state === "queued",
+  onChange: () => { if (ui) { ui.last.queue = ""; paintQueue(ui.snap || hub.snapshot() || {}); } },
+});
 function paintQueue(snap) {
   const s = (snap.sessions || []).find((x) => x.name === P.session) || {};
   const msgs = snap.messages || {};
   const queued = P.items.filter((it) => it.kind === "in" && (msgs[it.id] || {}).state === "queued");
-  const sig = P.session + "#" + queued.map((it) => it.id + (s.state === "busy" ? "b" + (msgs[it.id].injectable ? 1 : 0) : "") + (msgs[it.id].removable === false ? "x" : "")).join();
+  for (const [id, e] of cancels.rows) if ((e.done || e.failed) && !queued.some((it) => it.id === id)) cancels.rows.delete(id);   // ушло из очереди — строка не нужна
+  const sig = P.session + "#" + cancels.sig() + "#" + queued.map((it) => it.id + (s.state === "busy" ? "b" + (msgs[it.id].injectable ? 1 : 0) : "") + (msgs[it.id].removable === false ? "x" : "")).join();
   if (ui.last.queue === sig) return;
   ui.last.queue = sig;
   ui.strip.hidden = !queued.length;
@@ -734,10 +784,18 @@ function paintQueue(snap) {
     const m = msgs[it.id] || {};
     const row = el("div", "strip-row");
     row.dataset.k = "queue";
+    const gone = cancels.get(it.id);
+    if (gone) {
+      row.append(el("span", "k", gone.failed ? "Не убрано" : "Убрано из очереди"), el("span", "t", clip(it.text, 70)));
+      if (gone.failed) row.append(act("Повторить", "quiet", () => cancels.send(it.id)));
+      else if (!gone.done) row.append(act("Отменить", "quiet", () => cancels.undo(it.id)));
+      box.append(row);
+      return;
+    }
     if (i === 0) row.append(el("span", "k", `В очереди · ${queued.length}`));
     row.append(el("span", "t", clip(it.text, 90)));
     if (s.state === "busy" && m.injectable) row.append(act("Отправить сейчас", "", () => hub.post("/api/inject", { session: P.session, id: it.id })));
-    if (m.removable !== false) row.append(act("Убрать", "quiet", () => hub.post("/api/queue/cancel", { session: P.session, id: it.id })));
+    if (m.removable !== false) row.append(act("Убрать", "quiet", () => cancels.start(P.session, it)));
     box.append(row);
   });
   ui.strip.replaceChildren(box);
@@ -905,7 +963,7 @@ function paintChat() {
       const at = rest.indexOf(p);
       if (at < 0) continue;
       body.append(document.createTextNode(rest.slice(0, at)));
-      body.append(button("hd-link", baseName(p), "Показать на холсте: " + p, () => addFrame(p, true)));
+      body.append(button("hd-link", baseName(p), "Показать на холсте: " + p, () => openChecked(p)));
       rest = rest.slice(at + p.length);
     }
     body.append(document.createTextNode(rest));

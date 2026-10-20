@@ -126,6 +126,34 @@ class Server(unittest.TestCase):
         r, _ = self.get("/__canvas/stat?path=" + os.path.join(os.path.realpath(OUT), "x.html"))
         self.assertEqual(r.status, 404)
 
+    def test_have_tells_ok_missing_denied_for_the_hub_page_only(self):
+        ok = os.path.join(os.path.realpath(SITE), "index.html")
+        gone = os.path.join(os.path.realpath(SITE), "weekly", "weekly-2026-10-17.html")
+        out = os.path.join(os.path.realpath(OUT), "x.html")
+        nowhere = "/!Проекты/Icons8/analytics/weekly/weekly-2026-10-17.html"
+        from urllib.parse import urlencode
+        q = "/__canvas/have?" + urlencode([("path", p) for p in (ok, gone, out, nowhere)])
+        r, body = self.get(q, headers={"Origin": "http://localhost:8787"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(json.loads(body), {ok: "ok", gone: "missing", out: "denied", nowhere: "missing"})
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
+        r, _ = self.get(q, headers={"Origin": "http://evil.example"})
+        self.assertIsNone(r.getheader("Access-Control-Allow-Origin"))   # читать ответ может только страница хаба
+        r, _ = self.get(q, headers={"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)
+
+    def test_missing_document_is_a_page_not_raw_json(self):
+        gone = os.path.join(os.path.realpath(SITE), "weekly", "a&b.html")
+        r, body = self.get(self.url(gone))
+        self.assertEqual(r.status, 404)
+        self.assertIn("text/html", r.getheader("Content-Type"))
+        self.assertIn("Файл не найден", body.decode())
+        self.assertIn("a&amp;b.html", body.decode())                    # путь экранирован
+        self.assertNotIn("no file", body.decode())
+        self.assertIn("frame-ancestors", r.getheader("Content-Security-Policy"))   # в рамке показывается
+        r, body = self.get(self.url(os.path.join(os.path.realpath(SITE), "gone.png")))
+        self.assertEqual(json.loads(body), {"error": "no file"})        # не документ — как было
+
     def test_range_for_video(self):
         r, body = self.get(self.url(os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")), headers={"Range": "bytes=10-19"})
         self.assertEqual(r.status, 206)

@@ -21,10 +21,21 @@ export function fileUrl(origin, path) {
   return `${origin}/f/${p.split("/").map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s))).join("/")}`;
 }
 
-const HTML_PATH = /(?:~|\/|[A-Za-z]:[\\/])[^\s"'`<>()\[\]{}|,;*]*?\.html?(?![\w])/g;
+// путь в кавычках может быть с пробелами («…/!!Work/!!! 2M DESIGN/…/a.html»); без кавычек пробел обрывает путь, а откусывать от него хвост нельзя:
+// «/analytics/weekly/a.html» из «Threads/analytics/weekly/a.html» — несуществующий файл, а на холсте он сырой ответ сервера (0.5.1)
+const QUOTED_PATH = /(["'`])((?:~|\/|[A-Za-z]:[\\/])[^"'`\n<>]*?\.html?)\1/gu;
+const HTML_PATH = /(?<![\p{L}\p{N}_\/.~:!-])(?:~|\/|[A-Za-z]:[\\/])[^\s"'`<>()\[\]{}|,;*]*?\.html?(?![\w])/gu;
 
 export function htmlPaths(text) {
-  return [...String(text || "").matchAll(HTML_PATH)].map((m) => m[0]).filter((p) => !p.includes("://"));
+  const src = String(text || "");
+  const found = [];
+  let rest = src;
+  for (const m of src.matchAll(QUOTED_PATH)) {
+    found.push([m.index + 1, m[2]]);
+    rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(m.index + m[0].length);
+  }
+  for (const m of rest.matchAll(HTML_PATH)) found.push([m.index, m[0]]);
+  return found.sort((a, b) => a[0] - b[0]).map((x) => x[1]).filter((p) => !p.includes("://"));
 }
 
 // HTML-файлы, с которыми работала сессия: что писала и правила, что прислала, что назвала — свежие первыми
@@ -283,3 +294,68 @@ export function ago(ts, now = Date.now() / 1000) {
 
 // слова владельца перед текстом, когда макета ещё нет: дизайнер делает новый, а не правит открытый
 export const NEW_DESIGN = "Новый макет (Hub Design): ";
+
+// --- макеты по лентам сессий: по событиям, без таймера ------------------------------------------------------------
+// В ленте остаётся только то, что про HTML. Страница тянет ленту сессии, когда её номер правки в снимке вырос (событие), и берёт только
+// изменённые строки (since); весь набор — когда у ядра другая эпоха или оно отдало ленту целиком.
+const isHtml = (p) => /\.html?$/i.test(p || "");
+export function slimItems(items) {
+  return (items || []).filter((it) => (it.kind === "tool" && isHtml((it.input || {}).file_path || (it.input || {}).path))
+    || (it.kind === "file" && isHtml(it.path)) || (it.kind === "out" && htmlPaths(it.text).length))
+    .map((it) => ({ kind: it.kind, name: it.name, ts: it.ts, path: it.path, input: it.input && { file_path: (it.input.file_path || it.input.path) },
+      text: it.kind === "out" ? htmlPaths(it.text).join(" ") : undefined }));
+}
+// кого перечитать: ленты, чей номер правки вырос с прошлого раза (или сменилась эпоха ядра)
+export const dueSessions = (names, revs, epoch, cache) => names.filter((n) => {
+  const c = cache.get(n);
+  return !c || c.epoch !== epoch || c.rev < (revs[n] ?? 0);
+});
+export const timelineQuery = (name, cached, epoch) => ({ session: name, since: String(cached && cached.epoch === epoch ? cached.rev : 0), ...(epoch != null ? { epoch: String(epoch) } : {}) });
+const keyOf = (it) => [it.kind, it.name, it.ts, it.path, (it.input || {}).file_path, it.text].join("|");
+export function mergeTimeline(cached, res, rev) {
+  const fresh = slimItems(res.items);
+  const whole = !cached || res.full !== false || cached.epoch !== res.epoch;
+  const seen = new Set();
+  const items = (whole ? fresh : cached.items.concat(fresh)).filter((it) => { const k = keyOf(it); return !seen.has(k) && seen.add(k); });
+  return { rev: typeof res.rev === "number" ? res.rev : rev, epoch: res.epoch, items };
+}
+
+// --- файл макета на месте ------------------------------------------------------------------------------------------
+// состояние от процесса плагина: ok | missing (нет на диске) | denied (вне папок сессий и проектов хаба, показать нечем)
+export const isGone = (state) => state === "missing" || state === "denied";
+export const goneText = (state, path) => (state === "denied" ? `Файл вне папок проектов и сессий хаба, плагин его не покажет: ${path}` : `Файл не найден: ${path}`);
+
+// --- «Убрать» из очереди с отменой ---------------------------------------------------------------------------------
+// как в очереди ядра: сообщение не убирается сразу, а на delay мс получает строку «Убрано · Отменить»; настоящая отмена уходит по истечении
+export function createCancels({ post, isQueued, onChange, delay = 6000, setT = setTimeout, clearT = clearTimeout }) {
+  const rows = new Map();
+  const api = {
+    rows,
+    get: (id) => rows.get(id),
+    start(session, it) {
+      if (rows.has(it.id)) return;
+      const e = { session, text: it.text, failed: false, done: false, timer: null };
+      rows.set(it.id, e);
+      e.timer = setT(() => api.send(it.id), delay);
+      onChange();
+    },
+    undo(id) {
+      const e = rows.get(id);
+      if (e) clearT(e.timer);
+      rows.delete(id);
+      onChange();
+    },
+    async send(id) {
+      const e = rows.get(id);
+      if (!e || e.done) return;
+      e.timer = null;
+      if (!isQueued(id)) { rows.delete(id); return onChange(); }   // сообщение уже ушло само — не трогаем
+      e.failed = false;
+      const r = await post("/api/queue/cancel", { session: e.session, id });
+      if (r && r.error) e.failed = true; else e.done = true;
+      onChange();
+    },
+    sig: () => [...rows].map(([id, e]) => id + (e.failed ? "f" : e.done ? "d" : "p")).join(),
+  };
+  return api;
+}

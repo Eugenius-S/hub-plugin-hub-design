@@ -1,6 +1,6 @@
 // Hub Design: стартовый экран, как дашборд Claude Design: заголовок, вкладки «Все / Мои / Чужие», поиск, вид и сортировка,
 // ряд пресетов (новый файл этого вида) и прошлые макеты карточками с живым превью. Цвета, шрифты и тень — тема хаба.
-import { ago, frameTitle } from "./lib.js";
+import { ago, frameTitle, isGone } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
 // пресет — новый файл этого вида: чат уходит специалисту вида, в поле ввода ложится заготовка «новый <вид>: …»
@@ -48,7 +48,7 @@ const ART = {
   motion: '<i class="a-card" style="left:14%;top:16%;width:72%;height:68%"><i class="a-ball b1"></i><i class="a-ball b2"></i><i class="a-ball b3"></i><i class="a-ball b4"></i></i>',
 };
 
-// createDashboard(app): app = { hub, files(), mine(), alive(), fileUrl(path), open(path), preset(p), openPath(path) }
+// createDashboard(app): app = { hub, files(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path) }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
   const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false };
@@ -129,7 +129,7 @@ export function createDashboard(app) {
     }
   }, { root, rootMargin: "200px" });
   function load(c) {
-    const want = c.visible && app.alive() && !S.list;
+    const want = c.visible && app.alive() && !S.list && !isGone(app.fileState(c.path));
     if (want && !c.frame.src && [...cards.values()].filter((x) => x.frame.src).length < LIVE_MAX) {
       c.frame.src = app.fileUrl(c.path);
       c.shot.dataset.live = "1";
@@ -168,7 +168,8 @@ export function createDashboard(app) {
   }
   function paintFiles() {
     const all = app.files();
-    const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() });
+    // макеты, чьих файлов нет (или плагин их показать не может), в списке не показываем вовсе; открытый на холсте — сообщением в рамке
+    const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() }).filter((f) => !isGone(app.fileState(f.path)));
     const nodes = rows.map((f) => {
       const c = card(f);
       c.text.textContent = [f.session, editedText(f)].filter(Boolean).join(" · ");

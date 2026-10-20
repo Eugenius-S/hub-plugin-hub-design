@@ -95,6 +95,29 @@ class Scripts(unittest.TestCase):
             css = f.read()
         self.assertIn(".hd-card .bar{flex-wrap:nowrap", css)        # поле ввода в узкой колонке — одной строкой
 
+    def test_gaps_051(self):
+        # 0.5.1: автор макета — по событиям (без выдержки 20 с), файл на месте (пометка и сообщение), «Убрать» из очереди — с «Отменить»
+        with open(os.path.join(HERE, "main.js"), encoding="utf-8") as f:
+            main = f.read()
+        self.assertNotIn("20000", main)                                  # выдержки по времени нет
+        self.assertNotIn("setInterval", main)
+        self.assertIn("dueSessions(", main)                              # лента перечитывается, когда вырос её номер правки
+        self.assertIn("timelineQuery(", main)                            # и только изменённые строки
+        self.assertIn("/__canvas/have", main)                            # есть ли файл — спрашиваем у процесса плагина
+        self.assertIn("async function openChecked(", main)               # открыть на холсте — после проверки, не пустая рамка
+        self.assertIn("cancels.start(P.session, it)", main)              # «Убрать» откладывается
+        self.assertIn('"Отменить"', main)
+        self.assertNotIn('hub.post("/api/queue/cancel"', main)           # прямой отмены без передумать больше нет
+        with open(os.path.join(HERE, "canvas.js"), encoding="utf-8") as f:
+            canvas = f.read()
+        self.assertIn('"К дашборду"', canvas)                            # в рамке без файла — выход на дашборд
+        self.assertIn("goneText(", canvas)
+        with open(os.path.join(HERE, "dashboard.js"), encoding="utf-8") as f:
+            dash = f.read()
+        self.assertIn("!isGone(app.fileState(f.path))", dash)            # макет без файла в списке не показывается
+        self.assertIn("isGone(app.fileState(c.path))", dash)             # и превью не грузит
+        self.assertNotIn("hdd-ghost", dash)
+
 
 if __name__ == "__main__":
     unittest.main()

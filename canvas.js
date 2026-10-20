@@ -2,7 +2,7 @@
 // заметки и пины комментариев. Правки внутри фреймов делает agent.js, а пачку копит main.js — холст только показывает
 // фреймы, ловит жесты и передаёт инструмент. Чистая математика вида — в lib.js (тесты tests/lib.test.mjs).
 import { CANVAS_ICONS as I } from "./icons.js";
-import { SIZES, fitView, frameTitle, zoomAt } from "./lib.js";
+import { SIZES, fitView, frameTitle, goneText, isGone, zoomAt } from "./lib.js";
 
 const FRAME_SIZES = SIZES.filter((s) => s.w);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2];
@@ -180,6 +180,7 @@ export function createCanvas(app) {
       const n = fr.get(f.path);
       if (!n) continue;
       Object.assign(n.label.style, { left: view.x + f.x * view.k + "px", top: view.y + f.y * view.k - 28 + "px", width: Math.max(176, f.w * view.k) + "px" });
+      Object.assign(n.gone.style, { left: view.x + f.x * view.k + "px", top: view.y + f.y * view.k + "px", width: f.w * view.k + "px", height: f.h * view.k + "px" });
     }
   }
   function makeFrame(f) {
@@ -218,10 +219,20 @@ export function createCanvas(app) {
     label.addEventListener("pointerup", (e) => { stage.dispatchEvent(new PointerEvent("pointerup", e)); });
     label.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) focusOn(f.path); });
     labels.append(label);
-    const n = { box, iframe, label, title, ep };
+    // файла нет — вместо сырого ответа сервера в рамке понятная строка и два выхода (0.5.1); рамка поверх фрейма, в экранных координатах
+    const gone = el("div", "hdc-gone");
+    gone.hidden = true;
+    const goneMsg = el("div", "hdc-gone-msg");
+    const goneActs = el("div", "hdc-gone-acts");
+    goneActs.append(btn("btn small", "К дашборду", "Вернуться к списку макетов", () => app.goHome()),
+      btn("btn small quiet", "Убрать с холста", null, () => app.removeFrame(f.path)));
+    gone.append(goneMsg, goneActs);
+    gone.addEventListener("pointerdown", (e) => e.stopPropagation());
+    labels.append(gone);
+    const n = { box, iframe, label, title, ep, gone, goneMsg, shown: false };
     fr.set(f.path, n);
     app.register(ep);
-    iframe.src = app.fileUrl(f.path) + "&t=" + Date.now();
+    if (!isGone(app.fileState(f.path))) { iframe.src = app.fileUrl(f.path) + "&t=" + Date.now(); n.shown = true; }
     return n;
   }
   function dropFrame(path) {
@@ -230,11 +241,27 @@ export function createCanvas(app) {
     app.unregister(n.ep.id);
     n.box.remove();
     n.label.remove();
+    n.gone.remove();
     fr.delete(path);
   }
   function reloadFrame(path) {
     const n = fr.get(path);
-    if (n) { n.ep.ready = false; n.iframe.src = app.fileUrl(path) + "&t=" + Date.now(); }
+    if (!n) return;
+    app.verify([path], true);
+    if (isGone(app.fileState(path))) return;
+    n.ep.ready = false;
+    n.iframe.src = app.fileUrl(path) + "&t=" + Date.now();
+    n.shown = true;
+  }
+  // файл пропал или вернулся: рамку гасим и показываем причину, вернулся — грузим снова
+  function showGone(f, n) {
+    const state = app.fileState(f.path);
+    const gone = isGone(state);
+    n.gone.hidden = !gone;
+    if (gone) {
+      n.goneMsg.textContent = goneText(state, f.path);
+      if (n.shown) { n.iframe.src = "about:blank"; n.ep.ready = false; n.shown = false; }
+    } else if (!n.shown) reloadFrame(f.path);
   }
 
   function focusNote(id) {
@@ -457,6 +484,7 @@ export function createCanvas(app) {
       layoutFrame(f);
       n.box.classList.toggle("focus", P.focus === f.path);
       n.label.classList.toggle("focus", P.focus === f.path);
+      showGone(f, n);
     }
     const ids = new Set(P.notes.map((n) => n.id));
     for (const [id, d] of notes) if (!ids.has(id)) { d.node.remove(); notes.delete(id); }

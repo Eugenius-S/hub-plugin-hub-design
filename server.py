@@ -4,6 +4,7 @@
 Свой адрес, а не страница хаба: скрипты дизайна работают как в браузере (шрифты, видео, анимации), но не с правами
 страницы хаба. Отдаёт только файлы веба внутри папок сессий и проектов хаба, без скрытых; встраивать себя — только
 странице хаба; запрос с чужого сайта — отказ."""
+import html
 import json
 import os
 import re
@@ -29,6 +30,7 @@ HTML = (".html", ".htm")
 ROOTS_TTL = 15
 WATCH_FILES = 2000   # файлов в папке дизайна, чьё время правки смотрит /__canvas/stat
 CHUNK = 256 * 1024
+HAVE_MAX = 60   # путей в одном вопросе «есть ли файлы»
 DRIVE = re.compile(r"^[A-Za-z]:$")
 
 
@@ -113,6 +115,23 @@ def newest(html):
     return best
 
 
+def file_state(path):
+    """ok — отдадим; missing — файла нет на диске; denied — есть, но вне папок сессий и проектов хаба или скрытый: показать нечем."""
+    real = os.path.realpath(path)
+    if allowed(real):
+        return "ok"
+    return "denied" if os.path.exists(real) else "missing"
+
+
+def gone_page(real, state):
+    """Вместо сырого {"error": "no file"} в рамке и на карточке — страница с названием файла и причиной."""
+    why = "Файл не найден" if state == "missing" else "Файл вне папок проектов и сессий хаба, плагин его не покажет"
+    body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;display:flex;align-items:center;justify-content:center;'
+            'height:100vh;font:14px system-ui,sans-serif;color:#555;background:#f4f4f5;text-align:center"><div><p style="font-size:16px;color:#222">%s</p>'
+            '<p style="max-width:560px;overflow-wrap:anywhere">%s</p></div>' % (why, why, html.escape(real))).encode()
+    return body
+
+
 def page_origins():
     return [f"http://localhost:{WEB_PORT}", f"http://127.0.0.1:{WEB_PORT}"]
 
@@ -177,6 +196,14 @@ class Handler(BaseHTTPRequestHandler):
                 body = f.read()
             self.head(200, TYPES[".js"], len(body))
             return self.wfile.write(body) if self.command != "HEAD" else None
+        if url.path == "/__canvas/have":
+            # есть ли файлы макетов: страница хаба спрашивает по своему origin (CORS только для неё), по одному слову на путь
+            paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
+            origin = self.headers.get("Origin")
+            extra = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else None
+            body = json.dumps({p: file_state(p) for p in paths}, ensure_ascii=False).encode()
+            self.head(200, "application/json; charset=utf-8", len(body), extra)
+            return self.wfile.write(body) if self.command != "HEAD" else None
         if url.path == "/__canvas/stat":
             real = os.path.realpath(q.get("path", ""))
             if not real.lower().endswith(HTML) or not allowed(real):
@@ -185,6 +212,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith("/f/"):
             real = from_url(url.path)
             if not allowed(real):
+                if real.lower().endswith(HTML):   # документ в рамке: человеческая страница, не JSON
+                    body = gone_page(real, file_state(real))
+                    self.head(404, TYPES[".html"], len(body))
+                    return self.wfile.write(body) if self.command != "HEAD" else None
                 return self.say(404, {"error": "no file"})
             return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")))
         self.say(404, {"error": "no page"})
