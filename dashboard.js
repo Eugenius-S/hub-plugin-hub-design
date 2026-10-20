@@ -119,7 +119,7 @@ export function createDashboard(app) {
     b.dataset.preset = p.id;
     const art = el("span", "hdd-art a-" + p.id);
     art.innerHTML = ART[p.id];
-    const label = el("span", "hdd-plabel", p.title);
+    const label = el("span", "hdd-plabel", p.title.replace("-", "\u2011").replace(" в ", " в\u00a0"));   // перенос — только между словами, не по дефису и не после «в»
     const sub = el("span", "hdd-psub");
     sub.hidden = true;
     b.append(art, label, sub);
@@ -142,8 +142,7 @@ export function createDashboard(app) {
   const fit = (c) => {
     const w = c.shot.clientWidth, h = c.shot.clientHeight;
     if (!w || !h) return;
-    const k = Math.min(w / 1440, h / 900);
-    c.frame.style.transform = `translate(-50%,-50%) scale(${k})`;
+    c.frame.style.transform = `scale(${w / 1440})`;   // по ширине, без полей по бокам: нижняя часть обрезается
   };
   const sizes = new ResizeObserver((rows) => { for (const r of rows) { const c = [...cards.values()].find((x) => x.shot === r.target); if (c) fit(c); } });
   const seen = new IntersectionObserver((rows) => {

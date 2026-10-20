@@ -7,6 +7,7 @@ import { FRAME_TOP, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, is
 const FRAME_SIZES = SIZES.filter((s) => s.w);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2];
 const TOOL_KEYS = { v: "select", h: "hand", t: "text", n: "note", c: "comment", p: "pencil", r: "shape" };
+const BAR_GAP = 12;
 const SHAPES = { pencil: [["free", "Карандаш", "free"], ["arrow", "Стрелка", "arrow"]], shape: [["rect", "Прямоугольник", "rect"], ["oval", "Овал", "oval"]] };
 
 export function createCanvas(app) {
@@ -464,7 +465,24 @@ export function createCanvas(app) {
   const shapes = group("shape", "Фигуры (R)");
   tools.pencil = pencil.main;
   tools.shape = shapes.main;
-  bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.note, tools.comment, pencil.wrap, shapes.wrap);
+  // не хватает места до правой группы — карандаш и фигуры уходят в меню «ещё» (между группами всегда ≥ BAR_GAP px)
+  const ovf = btn("hdc-tool hdc-ovf", svg("more"), "Ещё: карандаш и фигуры", () => {
+    if (menu === ovf) return closeMenu();
+    const kids = [];
+    for (const tool of ["pencil", "shape"]) {
+      if (kids.length) kids.push(sep());
+      for (const [id, name, ic] of SHAPES[tool]) kids.push(item(name + (P.tool === tool && P.shapes[tool] === id ? "  ✓" : ""), () => { P.shapes[tool] = id; app.setTool(tool, id); }, svg(ic)));
+    }
+    openPop(ovf, kids);
+  });
+  ovf.hidden = true;
+  bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.note, tools.comment, pencil.wrap, shapes.wrap, ovf);
+  function fitBar() {
+    bar.classList.remove("compact");
+    ovf.hidden = true;
+    const sameRow = top.offsetTop < bar.offsetTop + bar.offsetHeight;
+    if (sameRow && bar.offsetLeft + bar.offsetWidth + BAR_GAP > top.offsetLeft) { bar.classList.add("compact"); ovf.hidden = false; }
+  }
 
   const playTop = btn("hdc-tool", svg("play"), "Показать выбранный фрейм во весь экран", () => app.play(P.focus || (P.frames[0] && P.frames[0].path)));
   const panel = btn("hdc-tool", svg("panel"), "Панель стилей", () => app.toggleProps());
@@ -479,6 +497,7 @@ export function createCanvas(app) {
     chrome();
     for (const [tool, b] of Object.entries(tools)) b.classList.toggle("on", P.tool === tool);
     panel.classList.toggle("on", P.propsOpen);
+    ovf.classList.toggle("on", P.tool === "pencil" || P.tool === "shape");
     const live = new Set(P.frames.map((f) => f.path));
     for (const path of [...fr.keys()]) if (!live.has(path)) dropFrame(path);
     for (const f of P.frames) {
@@ -501,7 +520,7 @@ export function createCanvas(app) {
     placeLabels();
     placeEditor();
   }
-  new ResizeObserver(() => { if (view.auto && P.frames.length) fit(); else placeEditor(); }).observe(stage);
+  new ResizeObserver(() => { fitBar(); if (view.auto && P.frames.length) fit(); else placeEditor(); }).observe(stage);
   apply();
 
   return {

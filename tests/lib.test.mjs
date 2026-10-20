@@ -316,6 +316,13 @@ test("дашборд: пути чужой ОС и без корня не пок�
   assert.equal(rows[0].session, "designer");
 });
 
+test("дашборд: у макета только с холста — автор и время правки файла, не пустая строка", () => {
+  const rows = dashboardFiles([], [{ path: "/Users/me/kolo/index.html" }], ["/Users/me"], { who: () => "designer", time: () => 1000 });
+  assert.equal(rows[0].session, "designer");
+  assert.equal(rows[0].last, 1000);
+  assert.equal(dashboardFiles([], [{ path: "/Users/me/k.html" }], ["/Users/me"])[0].session, "");
+});
+
 test("первый фрейм — ниже тулбара минимум на 24 px, подпись над ним тоже", () => {
   assert.ok(FRAME_TOP - LABEL_H - LABEL_GAP >= TOOLBAR_BOTTOM + 24);
   for (const [W, H] of [[900, 500], [1000, 700], [1600, 1000], [500, 300]]) {

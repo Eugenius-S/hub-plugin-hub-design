@@ -24,7 +24,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], have: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
+  authors: [], have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -203,6 +203,22 @@ async function verify(paths, force = false) {
     for (const p of part) if (r[p] && P.have[p] !== r[p]) { P.have[p] = r[p]; changed = true; }
   }
   if (changed) paint();
+  loadTimes(want.filter((p) => P.have[p] === "ok"));
+}
+// когда правили файлы — для строки «изменён …» у макетов, которых нет в лентах сессий (открыты только на холсте)
+async function loadTimes(paths) {
+  let changed = false;
+  for (let i = 0; i < paths.length; i += 40) {
+    const part = paths.slice(i, i + 40);
+    let r = null;
+    try {
+      const res = await fetch(origin() + "/__canvas/times?" + new URLSearchParams(part.map((p) => ["path", p])), { cache: "no-store" });
+      r = res.ok ? await res.json() : null;
+    } catch { return; }
+    if (!r) return;
+    for (const p of part) if (r[p] && P.times[p] !== r[p]) { P.times[p] = r[p]; changed = true; }
+  }
+  if (changed) paint();
 }
 const verifyAll = () => verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);
 // вернулись во вкладку или к окну — файлы могли поменять мимо хаба
@@ -212,6 +228,7 @@ function goHome() {
   P.home = true; P.preset = null; P.homeWho = null; P.tab = "chat";
   dropStub();
   verifyAll();
+  for (const f of P.frames) ensureAuthor(f.path);
   paint();
 }
 // открыть макет на холсте: сначала убедиться, что файл есть — вместо пустой рамки владелец читает, чего не хватает
@@ -702,7 +719,7 @@ function build(root) {
   const cv = createCanvas(app);
   const props = el("div", "hd-props");
   const dash = createDashboard({
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => dashboardFiles(P.authors, P.frames, (hub.snapshot()?.sessions || []).map((x) => x.cwd)),
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => dashboardFiles(P.authors, P.frames, (hub.snapshot()?.sessions || []).map((x) => x.cwd), { who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path), openPath: (path) => openChecked(path),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });

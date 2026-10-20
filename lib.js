@@ -307,9 +307,13 @@ export function nativePath(path, cwds = []) {
 }
 
 // макеты для дашборда: авторы по лентам и те, что открыты на холсте (их писал не специалист хаба — Kolo, добавленный по пути)
-export function dashboardFiles(authors, frames, cwds) {
+export function dashboardFiles(authors, frames, cwds, { who = () => "", time = () => 0 } = {}) {
   const out = (authors || []).filter((a) => nativePath(a.path, cwds));
-  for (const f of frames || []) if (!out.some((a) => a.path === f.path)) out.push({ path: f.path, session: "", ts: 0, last: 0, wrote: false });
+  for (const f of frames || []) {
+    if (out.some((a) => a.path === f.path)) continue;
+    const t = Number(time(f.path)) || 0;   // открыт только на холсте: автор — кто писал файл (если известно), время — правка файла на диске
+    out.push({ path: f.path, session: who(f.path) || "", ts: t, last: t, wrote: false });
+  }
   return out;
 }
 

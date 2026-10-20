@@ -204,6 +204,22 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps({p: file_state(p) for p in paths}, ensure_ascii=False).encode()
             self.head(200, "application/json; charset=utf-8", len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
+        if url.path == "/__canvas/times":
+            # когда правили файлы макетов (для карточек стартового экрана): только те, что можно показать
+            paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
+            origin = self.headers.get("Origin")
+            extra = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else None
+            out = {}
+            for p in paths:
+                real = os.path.realpath(p)
+                try:
+                    if real.lower().endswith(HTML) and allowed(real):
+                        out[p] = newest(real)
+                except OSError:
+                    pass
+            body = json.dumps(out, ensure_ascii=False).encode()
+            self.head(200, "application/json; charset=utf-8", len(body), extra)
+            return self.wfile.write(body) if self.command != "HEAD" else None
         if url.path == "/__canvas/stat":
             real = os.path.realpath(q.get("path", ""))
             if not real.lower().endswith(HTML) or not allowed(real):

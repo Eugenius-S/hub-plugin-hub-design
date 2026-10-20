@@ -127,6 +127,8 @@
 .hdc-pages,.hdc-zoom{height:32px;padding:0 var(--space-2);font-weight:500;white-space:nowrap}
 .hdc-pages{margin-right:var(--space-1);padding-right:var(--space-3);border-right:1px solid var(--border);border-radius:var(--radius) 0 0 var(--radius)}
 .hdc-grp{display:inline-flex;align-items:center}
+.hdc-bar.compact .hdc-grp{display:none}
+.hdc-ovf[hidden]{display:none}
 .hdc-grp .hdc-tool{border-radius:var(--radius) 0 0 var(--radius)}
 .hdc-more{width:16px;height:32px;margin-left:-2px;border-radius:0 var(--radius) var(--radius) 0;color:var(--muted-foreground)}
 

@@ -142,6 +142,21 @@ class Server(unittest.TestCase):
         r, _ = self.get(q, headers={"Sec-Fetch-Site": "cross-site"})
         self.assertEqual(r.status, 403)
 
+    def test_times_give_edit_time_only_for_files_we_may_show(self):
+        ok = os.path.join(os.path.realpath(SITE), "index.html")
+        out = os.path.join(os.path.realpath(OUT), "x.html")
+        gone = os.path.join(os.path.realpath(SITE), "weekly", "nope.html")
+        from urllib.parse import urlencode
+        q = "/__canvas/times?" + urlencode([("path", p) for p in (ok, out, gone)])
+        r, body = self.get(q, headers={"Origin": "http://localhost:8787"})
+        self.assertEqual(r.status, 200)
+        got = json.loads(body)
+        self.assertEqual(list(got), [ok])
+        self.assertGreater(got[ok], 1e9)
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
+        r, _ = self.get(q, headers={"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)
+
     def test_missing_document_is_a_page_not_raw_json(self):
         gone = os.path.join(os.path.realpath(SITE), "weekly", "a&b.html")
         r, body = self.get(self.url(gone))
