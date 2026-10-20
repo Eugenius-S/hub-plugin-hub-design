@@ -2,7 +2,7 @@
 // заметки и пины комментариев. Правки внутри фреймов делает agent.js, а пачку копит main.js — холст только показывает
 // фреймы, ловит жесты и передаёт инструмент. Чистая математика вида — в lib.js (тесты tests/lib.test.mjs).
 import { CANVAS_ICONS as I } from "./icons.js";
-import { SIZES, fitView, frameTitle, goneText, isGone, zoomAt } from "./lib.js";
+import { FRAME_TOP, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, isGone, nameOf, zoomAt } from "./lib.js";
 
 const FRAME_SIZES = SIZES.filter((s) => s.w);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2];
@@ -180,7 +180,7 @@ export function createCanvas(app) {
     for (const f of P.frames) {
       const n = fr.get(f.path);
       if (!n) continue;
-      Object.assign(n.label.style, { left: view.x + f.x * view.k + "px", top: view.y + f.y * view.k - 28 + "px", width: Math.max(176, f.w * view.k) + "px" });
+      Object.assign(n.label.style, { left: view.x + f.x * view.k + "px", top: view.y + f.y * view.k - LABEL_H - LABEL_GAP + "px", width: Math.max(176, f.w * view.k) + "px" });
       Object.assign(n.gone.style, { left: view.x + f.x * view.k + "px", top: view.y + f.y * view.k + "px", width: f.w * view.k + "px", height: f.h * view.k + "px" });
     }
   }
@@ -188,7 +188,7 @@ export function createCanvas(app) {
     const box = el("div", "hdc-frame");
     box.dataset.path = f.path;
     const iframe = el("iframe", "hdc-iframe");
-    iframe.setAttribute("title", frameTitle(f.path));
+    iframe.setAttribute("title", nameOf(f.path));
     const ep = { id: "f:" + f.path, path: f.path, iframe, external: true, ready: false };
     iframe.addEventListener("load", () => app.hello(ep));
     box.append(iframe);
@@ -196,7 +196,7 @@ export function createCanvas(app) {
 
     const label = el("div", "hdc-label");
     label.dataset.path = f.path;
-    const title = el("span", "hdc-ltitle", frameTitle(f.path));
+    const title = el("span", "hdc-ltitle", nameOf(f.path));
     title.title = f.path;
     const tweak = btn("hdc-lb", svg("sliders"), "Размер, перезагрузка, убрать", (e) => frameMenu(f.path, e.currentTarget));
     const dl = btn("hdc-lb", svg("download"), "Скачать HTML", () => {
@@ -205,7 +205,7 @@ export function createCanvas(app) {
       a.download = frameTitle(f.path);
       document.body.append(a); a.click(); a.remove();
     });
-    const play = btn("hdc-play", [svg("play12"), document.createTextNode("PLAY")], "Открыть во весь экран", () => app.play(f.path));
+    const play = btn("hdc-lb", svg("play12"), "Смотреть", () => app.play(f.path));
     label.append(title, tweak, dl, play);
     label.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button") || e.button !== 0) return;
@@ -331,8 +331,8 @@ export function createCanvas(app) {
   }
   function pagesMenu(anchor) {
     if (menu === anchor) return closeMenu();
-    const rows = P.frames.map((f) => item(frameTitle(f.path), () => focusOn(f.path)));
-    openPop(anchor, [el("div", "hdc-mh", "Page 1"), ...(rows.length ? rows : [el("div", "hdc-mh", "Фреймов пока нет")])]);
+    const rows = P.frames.map((f) => item(nameOf(f.path), () => focusOn(f.path)));
+    openPop(anchor, [el("div", "hdc-mh", "Страница 1"), ...(rows.length ? rows : [el("div", "hdc-mh", "Фреймов пока нет")])]);
   }
   function zoomMenu(anchor) {
     if (menu === anchor) return closeMenu();
@@ -345,8 +345,8 @@ export function createCanvas(app) {
     if (!f) return;
     app.focusFrame(path);
     const { W, H } = size();
-    const k = Math.min(1, (W - 120) / f.w, (H - 140) / Math.min(f.h, H / 0.3));
-    setView({ k: Math.max(0.05, k), x: (W - f.w * k) / 2 - f.x * k, y: 72 - f.y * k });
+    const k = Math.min(1, (W - 120) / f.w, (H - FRAME_TOP - 40) / Math.min(f.h, H / 0.3));
+    setView({ k: Math.max(0.05, k), x: (W - f.w * k) / 2 - f.x * k, y: FRAME_TOP - f.y * k });
   }
   function openAdd() {
     const anchor = bar.querySelector('[data-tool="frame"]') || bar;
@@ -355,7 +355,7 @@ export function createCanvas(app) {
     input.placeholder = "Путь к HTML: /…/index.html";
     const go = () => { const v = input.value.trim(); if (v) { closeMenu(); app.addFrame(v, true); } };
     input.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") go(); });
-    const rows = app.recent().filter((p) => !P.frames.some((f) => f.path === p)).map((p) => item(frameTitle(p), () => app.addFrame(p, true)));
+    const rows = app.recent().filter((p) => !P.frames.some((f) => f.path === p)).map((p) => item(nameOf(p), () => app.addFrame(p, true)));
     openPop(anchor, [el("div", "hdc-mh", "Добавить фрейм"), input, ...(rows.length ? [el("div", "hdc-mh", "Последние HTML сессии"), ...rows] : [])], "wide");
     setTimeout(() => input.focus(), 0);
   }
@@ -438,7 +438,7 @@ export function createCanvas(app) {
   }
 
   // --- тулбар ---------------------------------------------------------------------------------------------------------
-  const pages = btn("hdc-pages", [el("span", null, "Page 1"), svg("chev12")], "Фреймы холста", (e) => pagesMenu(e.currentTarget));
+  const pages = btn("hdc-pages", [el("span", null, "Страница 1"), svg("chev12")], "Фреймы холста", (e) => pagesMenu(e.currentTarget));
   const toolBtn = (tool, ic, title, extra) => {
     const b = btn("hdc-tool", svg(ic), title, () => (tool === "frame" ? openAdd() : app.setTool(tool)));
     b.dataset.tool = tool;

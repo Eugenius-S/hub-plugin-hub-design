@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -277,4 +277,50 @@ test("сообщение хабу и его имя", () => {
   assert.equal(hubName([{ name: "x" }, { name: "main", kind: "hub" }]), "main");
   assert.equal(hubName([]), "hub");
   assert.equal(bannerText(NEEDED[0]), "Для Hub Design нужен дизайнер");
+});
+
+test("чат: «Вы» только у владельца, у остальных — имя; «—» не показываем", () => {
+  const items = [
+    { kind: "in", k: 1, text: "правь", from: { kind: "owner" } },
+    { kind: "in", k: 2, text: "от синка", from: { kind: "session", name: "hub-sync" }, sender: "hub-sync" },
+    { kind: "in", k: 3, text: "от ядра", from: { kind: "core" } },
+    { kind: "in", k: 4, text: "плагин", from: { kind: "plugin", name: "tg-posts" } },
+    { kind: "in", k: 5, text: "без поля", sender: "smm-regular" },
+    { kind: "in", k: 6, text: "слово владельца без метки" },
+    { kind: "out", k: 7, text: "готово" }, { kind: "out", k: 8, text: "—" }, { kind: "out", k: 9, text: " — " },
+  ];
+  const lines = chatLines(items, 40, "designer");
+  assert.deepEqual(lines.map((l) => [l.k, l.who, l.mine]), [[1, "Вы", true], [2, "hub-sync", false], [3, "ядро", false], [4, "плагин tg-posts", false],
+    [5, "smm-regular", false], [6, "Вы", true], [7, "designer", false]]);
+  assert.equal(whoOf({ kind: "in", sender: "ext:tg-posts" }), "tg-posts");
+});
+
+test("имя макета одно везде: index.html — по папке", () => {
+  assert.equal(nameOf("/d/kolo/index.html"), "kolo");
+  assert.equal(nameOf("C:\\d\\kolo\\index.html"), "kolo");
+  assert.equal(nameOf("/d/promo/landing.html"), "landing");
+  assert.equal(nameOf("index.html"), "index");
+});
+
+test("дашборд: пути чужой ОС и без корня не показываем, открытый на холсте — показываем", () => {
+  const mac = ["/Users/me/p", "/Users/me/q"];
+  assert.ok(nativePath("/Users/me/kolo/index.html", mac));
+  assert.ok(nativePath("~/x/a.html", mac));
+  assert.ok(!nativePath("C:\\Users\\jiraf\\kolo\\index.html", mac));
+  assert.ok(!nativePath("!Проекты/smm/a.html", mac));
+  assert.ok(nativePath("C:\\Users\\jiraf\\kolo\\index.html", ["C:\\Users\\jiraf"]));
+  assert.ok(!nativePath("/Users/me/a.html", ["C:\\Users\\jiraf"]));
+  const authors = [{ path: "C:\\Users\\jiraf\\kolo\\index.html", session: "designer", ts: 5, last: 5 }, { path: "/Users/me/a/a.html", session: "designer", ts: 6, last: 6 }];
+  const rows = dashboardFiles(authors, [{ path: "/Users/me/kolo/index.html" }, { path: "/Users/me/a/a.html" }], mac);
+  assert.deepEqual(rows.map((r) => r.path), ["/Users/me/a/a.html", "/Users/me/kolo/index.html"]);
+  assert.equal(rows[0].session, "designer");
+});
+
+test("первый фрейм — ниже тулбара минимум на 24 px, подпись над ним тоже", () => {
+  assert.ok(FRAME_TOP - LABEL_H - LABEL_GAP >= TOOLBAR_BOTTOM + 24);
+  for (const [W, H] of [[900, 500], [1000, 700], [1600, 1000], [500, 300]]) {
+    const v = fitView([{ x: 0, y: 0, w: 1440, h: 900 }], W, H);
+    assert.ok(v.y >= FRAME_TOP, `${W}×${H}: y ${v.y}`);
+  }
+  assert.ok(fitView([], 1000, 700).y >= FRAME_TOP);
 });

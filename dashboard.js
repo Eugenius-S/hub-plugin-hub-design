@@ -1,6 +1,6 @@
 // Hub Design: стартовый экран, как дашборд Claude Design: заголовок, вкладки «Все / Мои / Чужие», поиск, вид и сортировка,
 // ряд пресетов (новый файл этого вида) и прошлые макеты карточками с живым превью. Цвета, шрифты и тень — тема хаба.
-import { ago, bannerText, frameTitle, isGone } from "./lib.js";
+import { ago, bannerText, isGone, nameOf } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
 // пресет — новый файл этого вида: чат уходит специалисту вида, в поле ввода ложится заготовка «новый <вид>: …»
@@ -19,12 +19,7 @@ const STUBS = new Set(PRESETS.map((p) => p.lead));
 export const isStub = (text) => STUBS.has(text);
 export const stubText = (current, lead) => (!current.trim() || isStub(current) ? lead : current);
 
-// index.html называют по папке: «kolo», а не «index»
-export const nameOf = (path) => {
-  const parts = String(path).split(/[\\/]/).filter(Boolean);
-  const name = frameTitle(path).replace(/\.html?$/i, "");
-  return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
-};
+export { nameOf };
 
 // «Мои» — макеты, которые владелец держит на холсте; «Чужие» — остальные (их написали специалисты и сессии хаба)
 export function shown(files, { tab = "all", q = "", sort = "recent", mine = new Set() } = {}) {
@@ -209,7 +204,8 @@ export function createDashboard(app) {
     while (files.children.length > nodes.length) files.lastChild.remove();
     for (const [path, c] of cards) if (!all.some((f) => f.path === path)) { sizes.unobserve(c.shot); seen.unobserve(c.node); cards.delete(path); }
     empty.hidden = nodes.length > 0;
-    empty.textContent = all.length
+    // «Ничего не нашлось» — только когда владелец что-то искал или выбрал вкладку; на «Все» без поиска и без макетов — «Макетов пока нет»
+    empty.textContent = S.q.trim() || S.tab !== "all"
       ? "Ничего не нашлось."
       : "Макетов пока нет. Выберите вид выше или напишите слева, что нужно, — специалист сделает новый файл.";
     for (const c of cards.values()) { load(c); fit(c); }

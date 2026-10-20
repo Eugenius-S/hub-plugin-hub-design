@@ -116,12 +116,25 @@ export function searchOrder(file, authors, names, first = "designer") {
   return { near: all.filter((n) => head.has(n)), far: all.filter((n) => !head.has(n)) };
 }
 
-// строки разговора для чата: реплики владельца и сессии, присланные файлы; шаги инструментов и служебное — нет
-export function chatLines(items, limit = 60) {
+// кто автор строки ленты: «Вы» — владелец; другие сессии, ядро, хаб — по имени; ответ специалиста — имя сессии чата
+export function whoOf(it, session = "") {
+  if (it.kind === "out") return session;
+  const f = it.from;
+  if (f && f.kind && f.kind !== "owner") {
+    const w = { core: "ядро", hub: "хаб", schedule: "расписание", module: "модуль", plugin: "плагин" };
+    if (f.kind === "session") return f.name || it.sender || "сессия";
+    return w[f.kind] ? (f.name ? `${w[f.kind]} ${f.name}` : w[f.kind]) : f.kind;
+  }
+  if (!f && it.sender) return String(it.sender).replace(/^(mod|ext):/, "");
+  return "Вы";
+}
+
+// строки разговора для чата: реплики владельца и сессии, присланные файлы; шаги инструментов и служебное — нет; «—» (итог без слов) — нет
+export function chatLines(items, limit = 60, session = "") {
   return (items || [])
-    .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() || it.kind === "file")
+    .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && String(it.text).trim() !== "—" || it.kind === "file")
     .slice(-limit)
-    .map((it) => ({ k: it.k ?? it.seq, kind: it.kind, ts: it.ts,
+    .map((it) => ({ k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === "Вы",
       text: it.kind === "file" ? `${it.caption ? it.caption + "\n" : ""}${it.path}` : String(it.text) }));
 }
 
@@ -251,14 +264,18 @@ export function zoomAt(v, factor, px, py) {
   return { k, x: px - (px - v.x) * r, y: py - (py - v.y) * r };
 }
 
-// вписать фреймы в окно сцены W×H с полями; не крупнее 100%
+// верх первого фрейма на сцене: плавающий тулбар (12 + 40 px) + 24 px воздуха + подпись фрейма (28 px и зазор 4)
+export const TOOLBAR_BOTTOM = 52, TOOLBAR_GAP = 24, LABEL_H = 28, LABEL_GAP = 4;
+export const FRAME_TOP = TOOLBAR_BOTTOM + TOOLBAR_GAP + LABEL_H + LABEL_GAP;
+
+// вписать фреймы в окно сцены W×H с полями; не крупнее 100%; сверху — место под тулбар и подпись
 export function fitView(frames, W, H, pad = 56) {
-  if (!frames.length || W < 10 || H < 10) return { x: pad, y: pad + 28, k: 1 };
+  if (!frames.length || W < 10 || H < 10) return { x: pad, y: FRAME_TOP, k: 1 };
   const x0 = Math.min(...frames.map((f) => f.x)), y0 = Math.min(...frames.map((f) => f.y));
   const x1 = Math.max(...frames.map((f) => f.x + f.w)), y1 = Math.max(...frames.map((f) => f.y + f.h));
-  const top = 28;   // подпись над фреймом
-  const k = clampK(Math.min(1, (W - pad * 2) / Math.max(1, x1 - x0), (H - pad * 2 - top) / Math.max(1, y1 - y0)));
-  return { k, x: (W - (x1 - x0) * k) / 2 - x0 * k, y: Math.max(pad, (H - top - (y1 - y0) * k) / 2) + top - y0 * k };
+  const room = H - FRAME_TOP - pad;
+  const k = clampK(Math.min(1, (W - pad * 2) / Math.max(1, x1 - x0), room / Math.max(1, y1 - y0)));
+  return { k, x: (W - (x1 - x0) * k) / 2 - x0 * k, y: FRAME_TOP + Math.max(0, (room - (y1 - y0) * k) / 2) - y0 * k };
 }
 
 // где поставить новый фрейм: справа от последнего, с зазором
@@ -274,6 +291,27 @@ export const windowHeight = (w) => ({ 1440: 900, 1280: 800, 768: 1024, 390: 844 
 
 // подпись фрейма: имя файла без .html
 export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
+
+// имя макета везде одно: index.html называют по папке — «kolo», а не «index»
+export const nameOf = (path) => {
+  const parts = String(path).split(/[\\/]/).filter(Boolean);
+  const name = frameTitle(path).replace(/\.html?$/i, "");
+  return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
+};
+
+// какого вида пути у этой машины: по cwd сессий хаба. Путь другой ОС («C:\\…» на Маке, «!Проекты/…» без корня) на дашборде не показываем
+export function nativePath(path, cwds = []) {
+  const p = String(path || "");
+  const win = (cwds || []).some((c) => /^[A-Za-z]:[\\/]/.test(c || "")) && !(cwds || []).some((c) => String(c || "").startsWith("/"));
+  return win ? /^([A-Za-z]:[\\/]|\\\\)/.test(p) : /^(\/|~\/)/.test(p);
+}
+
+// макеты для дашборда: авторы по лентам и те, что открыты на холсте (их писал не специалист хаба — Kolo, добавленный по пути)
+export function dashboardFiles(authors, frames, cwds) {
+  const out = (authors || []).filter((a) => nativePath(a.path, cwds));
+  for (const f of frames || []) if (!out.some((a) => a.path === f.path)) out.push({ path: f.path, session: "", ts: 0, last: 0, wrote: false });
+  return out;
+}
 
 // тема кнопок холста: инструмент → режим скрипта в дизайне
 export const TOOLS = { select: "edit", hand: "view", text: "text", note: "view", comment: "comment", pencil: "draw", shape: "draw" };

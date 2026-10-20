@@ -3,7 +3,7 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, fileUrl, frameTitle,
+import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, timelineQuery, toolMode, windowHeight,
   wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -666,7 +666,7 @@ function build(root) {
   const tabs = el("div", "hd-tabs");
   const tabChat = button("hd-tab", "Чат", null, () => { P.tab = "chat"; paint(); });
   const tabComments = button("hd-tab", "Комментарии", null, () => { P.tab = "comments"; paint(); });
-  const tabPlus = button("hd-plus", "+", "Добавить HTML на холст", () => ui.cv.openAdd());
+  const tabPlus = button("hd-plus", [icon("file", "Добавить макет")], "Добавить HTML на холст", () => ui.cv.openAdd());
   tabs.append(tabChat, tabComments, tabPlus);
   const chat = el("div", "hd-chat");
   const list = el("div", "hd-comments");
@@ -702,7 +702,7 @@ function build(root) {
   const cv = createCanvas(app);
   const props = el("div", "hd-props");
   const dash = createDashboard({
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => P.authors,
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => dashboardFiles(P.authors, P.frames, (hub.snapshot()?.sessions || []).map((x) => x.cwd)),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path), openPath: (path) => openChecked(path),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });
@@ -731,7 +731,7 @@ function paint() {
   if (P.focus && P.shown) ensureAuthor(P.focus);
   const sig = JSON.stringify(theme());
   if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: JSON.parse(sig) }); }
-  ui.title.textContent = P.focus && !home() ? frameTitle(P.focus).replace(/\.html?$/i, "") || "Hub Design" : "Hub Design";
+  ui.title.textContent = P.focus && !home() ? nameOf(P.focus) || "Hub Design" : "Hub Design";
   ui.tabChat.classList.toggle("on", P.tab === "chat");
   ui.tabComments.classList.toggle("on", P.tab === "comments");
   const live = P.pins.filter((p) => p.state !== "done" && String(p.text || "").trim()).length + P.changes.filter((c) => c.state !== "done" && hasEffect(c)).length +
@@ -977,16 +977,15 @@ function paintComments() {
 }
 
 function paintChat() {
-  const lines = chatLines(P.items, 40);
-  const sig = P.session + ":" + lines.map((l) => l.k + ":" + l.text.length).join(",");
+  const lines = chatLines(P.items, 40, P.session);
+  const sig = P.session + ":" + lines.map((l) => l.k + ":" + l.text.length + ":" + l.who).join(",");
   if (ui.last.chat === sig) return;
   ui.last.chat = sig;
   const stick = ui.chat.scrollHeight - ui.chat.scrollTop - ui.chat.clientHeight < 40;
   const el = hub.el;
   ui.chat.replaceChildren(...lines.map((l) => {
-    const me = l.kind === "in";
-    const row = el("div", "hd-msg " + (me ? "me" : "them"));
-    if (me) row.append(el("div", "hd-who-name", "Вы"));
+    const row = el("div", "hd-msg " + (l.mine ? "me" : "them"));
+    if (l.who) row.append(el("div", "hd-who-name", l.who));
     const body = el("div", "hd-mbody");
     const text = l.text.length > 1500 ? l.text.slice(0, 1500) + "…" : l.text;
     // пути к HTML — ссылки: добавить фрейм на холст
