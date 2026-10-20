@@ -3,7 +3,7 @@
 // фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
 // или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
+import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight,
   describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -408,7 +408,7 @@ function handle(file, m, ep = epOf(file)) {
     P.changes = P.changes.filter((q) => !(q.file === file && q.sel === m.sel && q.state === "draft"));
   } else if (m.t === "selected") {
     if (m.sel) {
-      P.sel = { file, sel: m.sel, label: m.label, tag: m.tag, css: m.css || {}, flex: !!m.flex };
+      P.sel = { file, sel: m.sel, label: m.label, tag: m.tag, css: m.css || {}, flex: !!m.flex, grid: !!m.grid, kids: m.kids || 0, decl: m.decl || "" };
       P.focus = file;
       if (P.propsUser) P.propsOpen = true;
       for (const o of eps.values()) if (o !== ep) tellEp(o, { t: "deselect" });
@@ -900,6 +900,7 @@ function paintProps() {
     kids.push(colors);
     for (const g of PROPS) {
       if (g.flexOnly && !P.sel.flex) continue;
+      if (g.gridOnly && !P.sel.grid) continue;
       const sec = el("div", "hd-psec");
       sec.append(el("h4", null, g.title));
       for (const row of g.rows) {
@@ -907,6 +908,14 @@ function paintProps() {
         for (const f of row) r.append(field(f));
         sec.append(r);
       }
+      kids.push(sec);
+    }
+    if (!P.sel.flex && !P.sel.grid && P.sel.kids) {
+      const sec = el("div", "hd-psec");
+      sec.append(el("h4", null, "Раскладка"));
+      const r = el("div", "hd-prow");
+      r.append(button("btn small quiet", "Во flex", "display: flex — дети в ряд", () => wrapIn("flex")), button("btn small quiet", "В grid", "display: grid — две колонки", () => wrapIn("grid")));
+      sec.append(r);
       kids.push(sec);
     }
   }
@@ -1042,6 +1051,8 @@ function tweakRow(file, t, cur) {
   return row;
 }
 const setStyle = (prop, value) => { if (P.sel) tellFile(P.sel.file, { t: "style", prop, value }); };
+// «Обернуть во flex / grid»: делает выбранный блок контейнером (display), его дети раскладываются; для grid сразу две колонки
+const wrapIn = (kind) => { if (P.sel) tellFile(P.sel.file, { t: "style", set: kind === "grid" ? { display: "grid", "grid-template-columns": gridForm(2) } : { display: "flex" } }); };
 function colorRow(label, prop) {
   const el = hub.el;
   const cur = String((P.sel.css || {})[prop] ?? "").toLowerCase();
@@ -1079,6 +1090,11 @@ function field(f) {
     input = el("input"); input.value = cur;
     sw.addEventListener("input", () => { input.value = sw.value; apply(sw.value); });
     wrap.append(sw);
+    input.addEventListener("change", () => apply(input.value));
+  } else if (f.kind === "cols") {
+    input = el("input");
+    input.type = "number"; input.min = "1"; input.max = "24"; input.step = "1";
+    input.value = String(gridCols(P.sel.decl, cur) || "");
     input.addEventListener("change", () => apply(input.value));
   } else {
     input = el("input");

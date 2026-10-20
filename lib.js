@@ -158,6 +158,7 @@ export const PROPS = [
     [{ p: "gap", label: "Зазор", kind: "num" }, { p: "flex-direction", label: "Направл.", kind: "pick", options: ["row", "row-reverse", "column", "column-reverse"] }],
     [{ p: "justify-content", label: "Распред.", kind: "pick", options: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"] },
       { p: "align-items", label: "Выравн.", kind: "pick", options: ["flex-start", "center", "flex-end", "stretch", "baseline"] }]] },
+  { title: "Сетка", gridOnly: true, rows: [[{ p: "grid-template-columns", label: "Колонки", kind: "cols" }, { p: "gap", label: "Зазор", kind: "num" }]] },
   { title: "Блок", rows: [
     [{ p: "opacity", label: "Прозр.", kind: "num", unitless: true }, { p: "background-color", label: "Фон", kind: "color" }],
     [{ p: "padding-top", label: "Внутр. В", kind: "num" }, { p: "padding-right", label: "П", kind: "num" }],
@@ -171,6 +172,7 @@ export const PROPS = [
 export function cssValue(field, raw) {
   const v = String(raw ?? "").trim();
   if (!v) return null;
+  if (field.kind === "cols") return /^\d{1,2}$/.test(v) && +v >= 1 && +v <= GRID_MAX ? gridForm(+v) : null;
   if (field.kind === "num") {
     if (/^-?\d*\.?\d+$/.test(v)) return field.unitless ? v : v + "px";
     return /^-?\d*\.?\d+(px|em|rem|%|vw|vh)$/.test(v) ? v : null;
@@ -178,7 +180,35 @@ export function cssValue(field, raw) {
   return v;
 }
 
+// сетка: «Колонки: N» читаем из repeat(N, minmax(0,1fr)) (или repeat(N, 1fr)) и пишем обратно в той же форме
+export const GRID_MAX = 24;
+export const gridForm = (n) => `repeat(${n}, minmax(0, 1fr))`;
+export function parseGridCols(v) {
+  const m = /^repeat\(\s*(\d+)\s*,\s*(?:minmax\(\s*0(?:px)?\s*,\s*1fr\s*\)|1fr)\s*\)$/i.exec(String(v || "").trim());
+  return m && +m[1] >= 1 ? +m[1] : 0;
+}
+// число колонок: из записи в стиле макета, а нет такой — по числу дорожек вычисленного значения («300px 300px 300px»)
+export function gridCols(decl, computed) {
+  const n = parseGridCols(decl);
+  if (n) return n;
+  const t = String(computed || "").replace(/\[[^\]]*\]/g, " ").trim();
+  if (!t || t === "none") return 0;
+  let depth = 0, count = 0, inTok = false;
+  for (const ch of t) {
+    if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    if (/\s/.test(ch) && !depth) inTok = false;
+    else if (!inTok) { inTok = true; count += 1; }
+  }
+  return count;
+}
+
 const num = (v) => (/^-?\d*\.\d{3,}px$/.test(v) ? Math.round(parseFloat(v) * 100) / 100 + "px" : v);
+
+const describeCols = (v) => {
+  const a = gridCols(v.from, v.from), b = gridCols(v.to, v.to);
+  return `колонки сетки ${a || "—"} → ${b || "—"} (grid-template-columns: ${num(v.from)} → ${num(v.to)})`;
+};
 
 // одна правка «править» — словами и цифрами
 export function describeChange(c) {
@@ -192,7 +222,7 @@ export function describeChange(c) {
   }
   if (c.t != null && c.t !== c.t0) parts.push(`текст «${cut(c.t0, 200)}» → «${cut(c.t, 200)}»`);
   const css = Object.entries(c.css || {}).filter(([, v]) => v && v.from !== v.to);
-  if (css.length) parts.push("стиль: " + css.map(([p, v]) => `${p} ${num(v.from)} → ${num(v.to)}`).join(", "));
+  if (css.length) parts.push("стиль: " + css.map(([p, v]) => (p === "grid-template-columns" ? describeCols(v) : `${p} ${num(v.from)} → ${num(v.to)}`)).join(", "));
   return parts.join("; ");
 }
 

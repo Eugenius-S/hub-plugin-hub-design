@@ -322,6 +322,23 @@
     if (m[4] === "0") return "transparent";
     return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
   };
+  // что записано в стиле макета (инлайн или правило таблицы стилей): computed отдаёт уже раскрытые дорожки, а нужна форма repeat(N, …)
+  function declared(el, prop) {
+    let v = el.style.getPropertyValue(prop);
+    if (v) return v.trim();
+    const walk = (rules) => {
+      for (const r of rules) {
+        if (r.cssRules && (r.media ? matchMedia(r.media.mediaText).matches : !r.selectorText)) walk(r.cssRules);
+        if (!r.selectorText) continue;
+        let hit = false;
+        try { hit = el.matches(r.selectorText); } catch { /* чужой селектор */ }
+        const x = hit ? r.style.getPropertyValue(prop) : "";
+        if (x) v = x.trim();
+      }
+    };
+    for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch { /* чужой домен */ } }
+    return v;
+  }
   function sendSelected() {
     if (!selected) { send({ t: "selected", sel: null }); return; }
     const cs = getComputedStyle(selected);
@@ -331,7 +348,9 @@
       if (/color$/.test(p) || p === "color") v = hex(v);
       css[p] = v;
     }
-    send({ t: "selected", sel: selector(selected), label: label(selected), tag: selected.tagName.toLowerCase(), css, flex: /flex/.test(cs.display) });
+    const grid = /grid/.test(cs.display);
+    send({ t: "selected", sel: selector(selected), label: label(selected), tag: selected.tagName.toLowerCase(), css, flex: /flex/.test(cs.display), grid, kids: selected.children.length,
+      decl: grid ? declared(selected, "grid-template-columns") : "" });
   }
   function select(el) {
     selected = el;
@@ -360,12 +379,16 @@
     s.w = s.w ?? r.width; s.h = s.h ?? r.height;
   });
 
-  function setStyle(prop, value) {
+  function setStyle(prop, value) { setStyles({ [prop]: value }); }
+  function setStyles(map) {
     if (!selected) return;
     const s = track(selected);
     const before = snap(selected);
-    const from = s.css[prop] ? s.css[prop].from : getComputedStyle(selected).getPropertyValue(prop);
-    s.css[prop] = { from: /color$/.test(prop) || prop === "color" ? hex(from) : from, to: value };
+    for (const [prop, value] of Object.entries(map)) {
+      const was = prop === "grid-template-columns" ? declared(selected, prop) : "";
+      const from = s.css[prop] ? s.css[prop].from : was || getComputedStyle(selected).getPropertyValue(prop);
+      s.css[prop] = { from: /color$/.test(prop) || prop === "color" ? hex(from) : from, to: value };
+    }
     paintState(selected);
     commit(selected, before);
   }
@@ -638,7 +661,7 @@
       for (const el of [...touched]) if (state.get(el)?.sel === m.sel) revert(el);
       if (selected) sendSelected();
     } else if (m.t === "style") {
-      setStyle(m.prop, m.value);
+      if (m.set) setStyles(m.set); else setStyle(m.prop, m.value);
     } else if (m.t === "undo") {
       stepUndo();
     } else if (m.t === "redo") {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -458,4 +458,38 @@ test("message и draftCount: ошибки макета — один пункт �
   assert.match(t, /\n1\. Ошибки в макете \(2\):\n  • ReferenceError: x is not defined \(a\.html:9\)\n  • Необработанный отказ промиса: Error: boom/);
   assert.equal(draftCount([], [], [], [], [], errors), 1);
   assert.equal(draftCount([], [], [], [], [], [{ file: "x", items: [] }]), 0);
+});
+
+test("сетка: repeat(N, minmax(0,1fr)) → число колонок и обратно в той же форме", () => {
+  assert.equal(parseGridCols("repeat(3, minmax(0,1fr))"), 3);
+  assert.equal(parseGridCols("repeat( 4 , minmax(0px, 1fr) )"), 4);
+  assert.equal(parseGridCols("repeat(2, 1fr)"), 2);
+  assert.equal(parseGridCols("repeat(auto-fill, minmax(200px, 1fr))"), 0);
+  assert.equal(parseGridCols("1fr 2fr"), 0);
+  assert.equal(gridForm(5), "repeat(5, minmax(0, 1fr))");
+  assert.equal(parseGridCols(gridForm(5)), 5);
+});
+
+test("gridCols: из записи в стиле, иначе — по дорожкам вычисленного значения", () => {
+  assert.equal(gridCols("repeat(3, minmax(0, 1fr))", "100px 100px 100px"), 3);
+  assert.equal(gridCols("", "300px 300px 300px 300px"), 4);
+  assert.equal(gridCols("", "[a] 100px [b] minmax(10px, 1fr)"), 2);
+  assert.equal(gridCols("", "none"), 0);
+  assert.equal(gridCols("", ""), 0);
+});
+
+test("колонки в панели: cssValue кладёт целое 1–24 в форму repeat, остальное отклоняет", () => {
+  const f = PROPS.flatMap((g) => g.rows.flat()).find((x) => x.p === "grid-template-columns");
+  assert.equal(f.kind, "cols");
+  assert.equal(cssValue(f, "4"), "repeat(4, minmax(0, 1fr))");
+  assert.equal(cssValue(f, "0"), null);
+  assert.equal(cssValue(f, "25"), null);
+  assert.equal(cssValue(f, "1.5"), null);
+  assert.equal(cssValue(f, "abc"), null);
+  assert.ok(PROPS.find((g) => g.gridOnly));
+});
+
+test("describeChange: колонки сетки — «3 → 4» с исходной записью", () => {
+  const c = { sel: ".g", dx: 0, dy: 0, css: { "grid-template-columns": { from: "repeat(3, minmax(0,1fr))", to: "repeat(4, minmax(0, 1fr))" } } };
+  assert.match(describeChange(c), /колонки сетки 3 → 4 \(grid-template-columns: repeat\(3, minmax\(0,1fr\)\) → repeat\(4, minmax\(0, 1fr\)\)\)/);
 });
