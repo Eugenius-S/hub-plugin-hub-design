@@ -1,6 +1,8 @@
 /* Hub Design: слева разговор и карточка ввода, справа холст (раскладка Claude Design), цвета, шрифты и тема — переменные хаба */
 .hd{display:flex;height:100%;min-height:0;background:var(--background);color:var(--foreground);font-family:var(--font);font-size:var(--text-sm);line-height:1.45}
 .hd [hidden]{display:none!important}
+/* заливка акцентом: текст на ней всегда белый (в тёмной теме хаба --primary светлый, а --primary-foreground тёмный), фон чуть темнее, чтобы белый читался */
+.hd,.hdd{--hd-acc:color-mix(in oklab,var(--primary) 72%,#1d2a9c);--hd-on:#fff}
 .hd button,.hd select,.hd input,.hd textarea{font:inherit;color:inherit}
 .hd button{cursor:pointer}
 .hd-ic{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
@@ -27,7 +29,7 @@
 .hd-hint{color:var(--muted-foreground);font-size:var(--text-xs)}
 .hd-citem{display:flex;gap:var(--space-2);align-items:flex-start}
 .hd-citem.sent{opacity:.55}
-.hd-n{flex:none;min-width:22px;height:22px;border-radius:11px 11px 11px 2px;background:var(--primary);color:var(--primary-foreground);font-size:var(--text-xs);display:flex;align-items:center;justify-content:center}
+.hd .hd-n{flex:none;min-width:22px;height:22px;border-radius:11px 11px 11px 2px;background:var(--hd-acc);color:var(--hd-on);font-size:var(--text-xs);display:flex;align-items:center;justify-content:center}
 .hd-n.edit{border-radius:11px;background:var(--foreground);color:var(--background)}
 .hd-citem.sent .hd-n{background:var(--muted-foreground)}
 .hd-ct{flex:1;white-space:pre-wrap;word-break:break-word}
@@ -39,7 +41,7 @@
 .hd-card:focus-within{border-color:var(--ring)}
 .hd-banner{display:flex;align-items:center;gap:var(--space-2);padding:7px 10px;background:var(--front-soft);color:var(--foreground);font-size:var(--text-xs)}
 .hd-banner span{flex:1}
-.hd-go{border:0;border-radius:var(--radius);background:var(--primary);color:var(--primary-foreground);padding:4px 11px;font-weight:500}
+.hd .hd-go{border:0;border-radius:var(--radius);background:var(--hd-acc);color:var(--hd-on);padding:4px 11px;font-weight:500}
 .hd-go:disabled{opacity:.5;cursor:default}
 .hd-drop{border:0;background:none;color:var(--muted-foreground);text-decoration:underline;padding:0 2px}
 .hd-chips{display:flex;flex-direction:column;gap:4px;padding:var(--space-2) 10px 0;max-height:112px;overflow:auto}
@@ -125,8 +127,8 @@
 .hdc-tool,.hdc-pages,.hdc-zoom,.hdc-more{border:0;background:none;color:var(--foreground);border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;gap:4px}
 .hdc-tool{width:32px;height:32px;padding:0}
 .hdc-tool:hover,.hdc-pages:hover,.hdc-zoom:hover,.hdc-more:hover{background:var(--muted)}
-.hdc-tool.on{background:var(--primary);color:var(--primary-foreground)}
-.hdc-tool.on:hover{background:var(--primary)}
+.hd .hdc-tool.on{background:var(--hd-acc);color:var(--hd-on)}
+.hd .hdc-tool.on:hover{background:var(--hd-acc)}
 .hdc-pages,.hdc-zoom{height:32px;padding:0 var(--space-2);font-weight:500;white-space:nowrap}
 .hdc-pages{margin-right:var(--space-1);padding-right:var(--space-3);border-right:1px solid var(--border);border-radius:var(--radius) 0 0 var(--radius)}
 .hdc-grp{display:inline-flex;align-items:center}
@@ -156,7 +158,7 @@
 .hdc-eb.quiet{border:0;background:none;color:var(--muted-foreground);padding:5px 8px}
 .hdc-eb.quiet:hover{background:var(--muted);color:var(--foreground)}
 .hdc-eb{border:1px solid var(--border);border-radius:var(--radius);padding:5px 12px;background:var(--card)}
-.hdc-eb.go{background:var(--primary);border-color:var(--primary);color:var(--primary-foreground)}
+.hd .hdc-eb.go{background:var(--hd-acc);border-color:var(--hd-acc);color:var(--hd-on)}
 
 /* заметки-стикеры на холсте */
 .hdc-note{position:absolute;width:180px;background:color-mix(in oklch,var(--warning) 20%,var(--card));border-radius:var(--radius);box-shadow:var(--shadow-lift);overflow:hidden}

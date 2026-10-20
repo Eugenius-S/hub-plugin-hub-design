@@ -317,7 +317,7 @@ function theme() {
     n.remove();
     return c;
   };
-  return { primary: probe("--primary"), onPrimary: probe("--primary-foreground"), fg: probe("--foreground"), bg: probe("--background"),
+  return { primary: probe("--hd-acc"), onPrimary: probe("--hd-on"), fg: probe("--foreground"), bg: probe("--background"),
     border: probe("--border"), muted: probe("--muted-foreground"), font: getComputedStyle(ui?.wrap || document.body).fontFamily };
 }
 function syncEp(ep, edit) {
