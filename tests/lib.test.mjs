@@ -295,6 +295,12 @@ test("чат: «Вы» только у владельца, у остальных
   assert.equal(whoOf({ kind: "in", sender: "ext:tg-posts" }), "tg-posts");
 });
 
+test("файл от специалиста (owner.file): подпись — его имя, не «Вы»; картинка — отдельным полем, не путём в тексте", () => {
+  const [pic, doc] = chatLines([{ kind: "file", k: 1, path: "/d/x.png", caption: "вот", image: true }, { kind: "file", k: 2, path: "/d/a.pdf", name: "a.pdf" }], 40, "designer");
+  assert.deepEqual([pic.who, pic.mine, pic.image, pic.text], ["designer", false, "/d/x.png", "вот"]);
+  assert.deepEqual([doc.who, doc.mine, doc.image, doc.text], ["designer", false, undefined, "/d/a.pdf"]);
+});
+
 test("имя макета одно везде: index.html — по папке", () => {
   assert.equal(nameOf("/d/kolo/index.html"), "kolo");
   assert.equal(nameOf("C:\\d\\kolo\\index.html"), "kolo");

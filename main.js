@@ -995,7 +995,7 @@ function paintComments() {
 
 function paintChat() {
   const lines = chatLines(P.items, 40, P.session);
-  const sig = P.session + ":" + lines.map((l) => l.k + ":" + l.text.length + ":" + l.who).join(",");
+  const sig = P.session + ":" + lines.map((l) => l.k + ":" + l.text.length + ":" + l.who + (l.image ? ":i" : "")).join(",");
   if (ui.last.chat === sig) return;
   ui.last.chat = sig;
   const stick = ui.chat.scrollHeight - ui.chat.scrollTop - ui.chat.clientHeight < 40;
@@ -1004,6 +1004,18 @@ function paintChat() {
     const row = el("div", "hd-msg " + (l.mine ? "me" : "them"));
     if (l.who) row.append(el("div", "hd-who-name", l.who));
     const body = el("div", "hd-mbody");
+    if (l.image) {   // присланная картинка — уменьшенная копия (?w=), целиком открывается по клику
+      const a = el("a", "hd-pic");
+      a.href = "/api/file?path=" + encodeURIComponent(l.image);
+      a.target = "_blank";
+      a.rel = "noopener";
+      const img = el("img");
+      img.src = a.href + "&w=480";
+      img.loading = "lazy";
+      img.alt = l.text || baseName(l.image);
+      a.append(img);
+      body.append(a);
+    }
     const text = l.text.length > 1500 ? l.text.slice(0, 1500) + "…" : l.text;
     // пути к HTML — ссылки: добавить фрейм на холст
     let rest = text;

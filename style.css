@@ -20,6 +20,8 @@
 .hd-msg{max-width:100%;word-break:break-word}
 .hd-who-name{font-weight:600;margin-bottom:2px}
 .hd-mbody{white-space:pre-wrap}
+.hd-pic{display:block;margin-bottom:var(--space-1)}
+.hd-pic img{display:block;max-width:100%;max-height:180px;border-radius:var(--radius);border:1px solid var(--border);object-fit:contain}
 .hd-link{border:0;background:var(--muted);border-radius:var(--radius-xs);padding:0 6px;text-decoration:underline;font-family:var(--font-mono);font-size:var(--text-xs)}
 .hd-hint{color:var(--muted-foreground);font-size:var(--text-xs)}
 .hd-citem{display:flex;gap:var(--space-2);align-items:flex-start}

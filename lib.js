@@ -118,7 +118,7 @@ export function searchOrder(file, authors, names, first = "designer") {
 
 // кто автор строки ленты: «Вы» — владелец; другие сессии, ядро, хаб — по имени; ответ специалиста — имя сессии чата
 export function whoOf(it, session = "") {
-  if (it.kind === "out") return session;
+  if (it.kind === "out" || it.kind === "file") return session;   // файл (hub send-file) лежит в ленте того, кто прислал
   const f = it.from;
   if (f && f.kind && f.kind !== "owner") {
     const w = { core: "ядро", hub: "хаб", schedule: "расписание", module: "модуль", plugin: "плагин" };
@@ -135,7 +135,8 @@ export function chatLines(items, limit = 60, session = "") {
     .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && String(it.text).trim() !== "—" || it.kind === "file")
     .slice(-limit)
     .map((it) => ({ k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === "Вы",
-      text: it.kind === "file" ? `${it.caption ? it.caption + "\n" : ""}${it.path}` : String(it.text) }));
+      text: it.kind === "file" ? (it.image ? String(it.caption || "") : `${it.caption ? it.caption + "\n" : ""}${it.path}`) : String(it.text),
+      ...(it.kind === "file" && it.image ? { image: String(it.path) } : {}) }));
 }
 
 const px = (n) => `${Math.round(n)}`;
