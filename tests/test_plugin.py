@@ -13,7 +13,7 @@ class Manifest(unittest.TestCase):
     def test_fields(self):
         with open(os.path.join(HERE, "hub-plugin.json"), encoding="utf-8") as f:
             m = json.load(f)
-        self.assertEqual(m["name"], "design-canvas")
+        self.assertEqual(m["name"], "hub-design")
         for key in ("description", "why", "version", "hub", "web", "icon"):
             self.assertTrue(m.get(key), key)
         self.assertEqual(m["run"], ["python3", "server.py"])

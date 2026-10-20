@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canvasPort, chatLines, describeChange, draftCount, fileUrl, htmlPaths, message, recentHtml } from "../lib.js";
+import { PROPS, ZOOMS, canvasPort, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml } from "../lib.js";
 
 test("порт и адрес файла", () => {
   assert.equal(canvasPort("8787"), 8798);
@@ -47,10 +47,32 @@ test("пачка дизайнеру — нумерованный список, �
     changes: [{ sel: ".cta", label: "Начать", x0: 10, y0: 20, w0: 100, h0: 40, dx: 0, dy: 16, w: null, h: null }],
   });
   const lines = text.split("\n");
-  assert.match(lines[0], /`\/d\/a\/index.html` \(канвас, раунд 2; окно 1280×800/);
+  assert.match(lines[0], /`\/d\/a\/index.html` \(Hub Design, раунд 2; окно 1280×800/);
   assert.equal(lines[1], "1. Коммент к `.hero > h1` «Заголовок», точка x 300, y 120 (элемент 600×80 в x 100, y 90): крупнее");
-  assert.equal(lines[2], "2. Сдвинул руками `.cta` «Начать»: сдвиг +16 px по Y (было x 10, y 20 → стало x 10, y 36).");
+  assert.equal(lines[2], "2. Поправил руками `.cta` «Начать»: сдвиг +16 px по Y (было x 10, y 20 → стало x 10, y 36).");
   assert.match(lines[3], /перенеси их в код/);
   assert.equal(message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [{ text: "" }], changes: [] }), "");
   assert.equal(draftCount([{ text: "a" }, { text: "" }], [{ dx: 1, dy: 0, x0: 0, y0: 0 }, { dx: 0, dy: 0 }]), 2);
+});
+
+test("css-правки и рисунки уходят словами", () => {
+  const c = { dx: 0, dy: 0, css: { "font-size": { from: "16px", to: "20px" }, color: { from: "#111", to: "#111" } } };
+  assert.equal(describeChange(c), "стиль: font-size 16px → 20px");
+  const d = { kind: "arrow", sel: ".hero", label: "Герой", from: { x: 1, y: 2 }, to: { x: 30, y: 40 }, box: { x: 1, y: 2, w: 29, h: 38 }, text: "сюда" };
+  assert.equal(describeDrawing(d), "стрелка от x 1, y 2 к x 30, y 40 около `.hero` «Герой»");
+  const text = message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [], changes: [], drawings: [d] });
+  assert.match(text.split("\n")[1], /^1\. Рисунок от руки: стрелка .* — сюда\.$/);
+  assert.equal(draftCount([], [], [d, d]), 2);
+});
+
+test("значения полей панели", () => {
+  const f = { kind: "num" };
+  assert.equal(cssValue(f, "12"), "12px");
+  assert.equal(cssValue(f, "1.5em"), "1.5em");
+  assert.equal(cssValue(f, "abc"), null);
+  assert.equal(cssValue({ kind: "num", unitless: true }, "0.8"), "0.8");
+  assert.equal(cssValue({ kind: "color" }, " #fff "), "#fff");
+  assert.equal(cssValue(f, ""), null);
+  assert.ok(PROPS.every((g) => g.rows.every((r) => r.every((x) => x.p && x.kind))));
+  assert.deepEqual(ZOOMS.slice(0, 2), [0, 50]);
 });

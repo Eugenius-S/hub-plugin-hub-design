@@ -1,4 +1,4 @@
-"""Процесс канваса: отдаёт только файлы веба из папок сессий и проектов, подкладывает agent.js, чужим не отвечает."""
+"""Процесс Hub Design: отдаёт только файлы веба из папок сессий и проектов, подкладывает agent.js, чужим не отвечает."""
 import http.client
 import json
 import os
@@ -14,7 +14,7 @@ TMP = tempfile.mkdtemp(prefix="dc-test-")
 # живой хаб не трогаем: состояние и настройки — временные, безусловно
 os.environ["HUB_STATE_DIR"] = os.path.join(TMP, "state")
 os.environ["HUB_CONFIG"] = os.path.join(TMP, "hub.json")
-os.environ["DESIGN_CANVAS_PORT"] = "0"
+os.environ["HUB_DESIGN_PORT"] = "0"
 sys.path.insert(0, HERE)
 import server  # noqa: E402
 

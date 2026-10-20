@@ -1,4 +1,4 @@
-"""Канвас дизайна: процесс плагина раздаёт HTML дизайна с диска со своего адреса (localhost, порт страницы хаба + 11)
+"""Hub Design: процесс плагина раздаёт HTML дизайна с диска со своего адреса (localhost, порт страницы хаба + 11)
 и подкладывает в него agent.js — тот рисует пины и рамки и говорит со страницей хаба через postMessage.
 
 Свой адрес, а не страница хаба: скрипты дизайна работают как в браузере (шрифты, видео, анимации), но не с правами
@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_PORT = int(os.environ.get("HUB_WEB_PORT") or 8787)
-PORT = int(os.environ.get("DESIGN_CANVAS_PORT") or WEB_PORT + 11)
+PORT = int(os.environ.get("HUB_DESIGN_PORT") or os.environ.get("DESIGN_CANVAS_PORT") or WEB_PORT + 11)
 TYPES = {
     ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
@@ -130,7 +130,7 @@ def inject(body):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "design-canvas"
+    server_version = "hub-design"
 
     def log_message(self, *a):   # тишина: каждый запрос картинки — не для журнала хаба
         pass
@@ -244,10 +244,10 @@ def main():
     try:
         srv = serve()
     except OSError as e:
-        print(f"design-canvas: порт {PORT} занят ({e}); задайте DESIGN_CANVAS_PORT", file=sys.stderr, flush=True)
+        print(f"hub-design: порт {PORT} занят ({e}); задайте HUB_DESIGN_PORT", file=sys.stderr, flush=True)
         time.sleep(60)   # не биться о занятый порт каждую секунду: hub-up поднимет снова
         return 1
-    print(f"design-canvas: http://localhost:{PORT}/", file=sys.stderr, flush=True)
+    print(f"hub-design: http://localhost:{PORT}/", file=sys.stderr, flush=True)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     try:
