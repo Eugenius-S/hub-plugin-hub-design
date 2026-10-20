@@ -514,8 +514,11 @@
     stop(e);
     if (mode === "edit" && pickable(e.target) && textLeaf(e.target)) { select(e.target); textEdit(e.target); }
   }, true);
+  // колесо без Ctrl/⌘ листает страницу внутри рамки, пока она длиннее окна (рамка — экранной высоты); иначе уходит холсту (зум, панорама)
   const wheelOut = (e) => {
     if (!external) return;
+    const root = document.scrollingElement || document.documentElement;
+    if (!(e.ctrlKey || e.metaKey) && Math.abs(e.deltaY) >= Math.abs(e.deltaX) && root.scrollHeight > innerHeight + 1) return;
     e.preventDefault();
     send({ t: "wheel", x: e.clientX, y: e.clientY, dx: e.deltaX, dy: e.deltaY, ctrl: e.ctrlKey || e.metaKey });
   };

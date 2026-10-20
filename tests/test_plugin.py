@@ -55,6 +55,10 @@ class Scripts(unittest.TestCase):
         self.assertIn("sendOne(", main)                             # «Отправить» в окне комментария — автору сразу
         self.assertIn("/api/inject", main)                          # «Отправить сейчас», как в чате хаба
         self.assertIn("close()", main)                              # ✕ закрыть Hub Design
+        self.assertNotIn("|| DEFAULT_SESSION;", main)               # нет автора — не молча «дизайнер»: получателя выбирает владелец
+        self.assertIn("/api/history", main)                         # Write макета за хвостом ленты ищем в истории
+        self.assertIn("frame.h !== windowHeight(frame.w)", main)    # рамка не тянется по документу (100vh макета)
+        self.assertLess(main.index("const recipient = "), main.index("const app = {"))   # app читает recipient при загрузке модуля (0.4.1 без вида)
         with open(os.path.join(HERE, "canvas.js"), encoding="utf-8") as f:
             canvas = f.read()
         self.assertIn("app.close()", canvas)

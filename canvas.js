@@ -339,7 +339,23 @@ export function createCanvas(app) {
     closeEditor(false);
     editor = { id: m.id, file: ep.path, x: m.x, y: m.y, ep };
     const box = el("div", "hdc-ed");
-    box.append(el("h4", null, "Комментарий"), el("span", "hdc-edto", "→ " + app.recipient(ep.path)));
+    const to = el("label", "hdc-edto");
+    const who = el("select", "hdc-who");
+    who.title = "Кому уйдёт комментарий";
+    who.addEventListener("change", () => { app.pickRecipient(ep.path, who.value); fill(); });
+    to.append("→ ", who);
+    // получатель — тот, кто писал макет; не нашли — выбирает владелец (пока не выбрал, «Отправить» не работает)
+    const fill = () => {
+      const r = app.recipient(ep.path);
+      const names = app.recipients();
+      if (r.session && !names.includes(r.session)) names.unshift(r.session);
+      who.replaceChildren(...[...(r.session ? [] : [""]), ...names].map((n) => { const o = el("option", null, n || "Выберите получателя"); o.value = n; return o; }));
+      who.value = r.session;
+      to.dataset.how = r.how;
+      to.title = { wrote: "Писал этот макет", picked: "Выбран вами", named: "Называл этот файл (писавшего не нашли)", none: "Кто делал макет, неизвестно" }[r.how] || "";
+      if (go) go.disabled = !r.session;
+    };
+    box.append(el("h4", null, "Комментарий"), to);
     const ta = el("textarea");
     ta.placeholder = "Что поменять здесь?";
     ta.value = pin.text || "";
@@ -350,6 +366,7 @@ export function createCanvas(app) {
       app.handle(ep.path, text ? { t: "comment", id: m.id, text } : { t: "remove", id: m.id });
     };
     const send = () => {
+      if (!app.recipient(ep.path).session) return who.focus();
       const text = ta.value.trim();
       closeEditor();
       app.handle(ep.path, text ? { t: "comment", id: m.id, text, send: true } : { t: "remove", id: m.id });
@@ -363,14 +380,19 @@ export function createCanvas(app) {
     const left = el("span", "hdc-edleft");
     left.append(btn("hdc-eb quiet", "Закрыть", null, close),
       btn("hdc-eb quiet", "Удалить", null, () => { closeEditor(); app.handle(ep.path, { t: "remove", id: m.id }); }));
-    row.append(left, btn("hdc-eb go", "Отправить", null, send));
+    const go = btn("hdc-eb go", "Отправить", null, send);
+    row.append(left, go);
     box.append(ta, row);
+    editor.fill = fill;
+    fill();
+    app.ensureAuthor(ep.path);
     box.addEventListener("pointerdown", (e) => e.stopPropagation());
     editor.node = box;
     root.append(box);
     placeEditor();
     setTimeout(() => ta.focus({ preventScroll: true }), 0);
   }
+  function refreshEditor() { if (editor && editor.fill) editor.fill(); }
   function closeEditor(tell = true) {
     if (!editor) return;
     const e = editor;
@@ -453,7 +475,7 @@ export function createCanvas(app) {
   apply();
 
   return {
-    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, openEditor, closeEditor, focusOn, focusNote, openAdd, scaleTo: pushScale, closeMenu,
+    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, openEditor, refreshEditor, closeEditor, focusOn, focusNote, openAdd, scaleTo: pushScale, closeMenu,
     frame: (path) => fr.get(path), size,
   };
 }
