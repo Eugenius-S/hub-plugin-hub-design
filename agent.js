@@ -550,6 +550,31 @@
     set("--a", t.primary); set("--on", t.onPrimary); set("--bg", t.bg); set("--fg", t.fg); set("--bd", t.border); set("--mu", t.muted); set("--font", t.font);
   }
 
+  // --- крутилки: объявление макета (#hub-tweaks) и применение значений страницы хаба ------------------------------------
+  // разбирает и проверяет страница хаба; здесь — только прочитать объявление, текущие значения и записать var/attr
+  function tweaksDecl() {
+    const node = document.getElementById("hub-tweaks");
+    if (!node) return null;
+    let spec = null;
+    try { spec = JSON.parse(node.textContent || ""); } catch { return null; }
+    if (!spec || typeof spec !== "object" || Array.isArray(spec)) return null;
+    const root = document.documentElement, cs = getComputedStyle(root), cur = {};
+    for (const [k, d] of Object.entries(spec).slice(0, 60)) {
+      if (!d || typeof d !== "object") continue;
+      const v = typeof d.var === "string" && d.var.startsWith("--") ? cs.getPropertyValue(d.var).trim() : "";
+      cur[k] = v || (typeof d.attr === "string" && root.hasAttribute(d.attr) ? root.getAttribute(d.attr) : "");
+    }
+    return { spec, cur };
+  }
+  function applyTweaks(ops) {
+    const root = document.documentElement;
+    for (const o of ops || []) {
+      if (o.kind === "var" && /^--[\w-]+$/.test(o.name)) { if (o.value == null) root.style.removeProperty(o.name); else root.style.setProperty(o.name, o.value); }
+      else if (o.kind === "attr" && /^[a-z][\w:-]*$/i.test(o.name) && !/^(on|style$)/i.test(o.name)) { if (o.value == null) root.removeAttribute(o.name); else root.setAttribute(o.name, o.value); }
+    }
+    if (selected) place();
+  }
+
   // --- связь со страницей хаба -------------------------------------------------------------------------------------
   addEventListener("message", (e) => {
     const m = e.data;
@@ -559,7 +584,7 @@
       if (m.props) propList = m.props;
       external = !!m.external;
       if (m.theme) applyTheme(m.theme);
-      send({ t: "ready", path, w: innerWidth, h: innerHeight, dh: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) });
+      send({ t: "ready", path, tweaks: tweaksDecl(), w: innerWidth, h: innerHeight, dh: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) });
       sendHistory();
       watch();
     } else if (m.t === "mode") {
@@ -606,6 +631,8 @@
       stepRedo();
     } else if (m.t === "scroll") {
       scrollTo(m.x || 0, m.y || 0);
+    } else if (m.t === "tweaks") {
+      applyTweaks(m.ops);
     }
   });
 

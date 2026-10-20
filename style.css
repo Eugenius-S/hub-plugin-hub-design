@@ -179,3 +179,16 @@ html.hs-hidden .hd-top{padding-left:56px}
   html.hs-hidden .hd-top{padding-left:var(--space-4)}
   html.hs-hidden .hdc-bar{left:56px;top:var(--space-3)}
 }
+
+/* крутилки макета: секции вверху панели свойств */
+.hd-tw{border-bottom:1px solid var(--border);margin-bottom:var(--space-3)}
+.hd-tweak{display:flex;align-items:center;gap:6px;margin-bottom:var(--space-2);min-height:24px}
+.hd-tweak .hd-flabel{min-width:56px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd-tweak input[type=range]{flex:1;min-width:0;accent-color:var(--hd-acc)}
+.hd-tweak input[type=checkbox]{accent-color:var(--hd-acc)}
+.hd-tout{flex:none;min-width:36px;text-align:right;font-size:var(--text-xs);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.hd-tweak .hd-field{flex:1}
+.hd-seg{display:flex;flex:1;min-width:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+.hd-segb{flex:1;min-width:0;border:0;background:var(--background);padding:3px 6px;font-size:var(--text-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hd-segb+.hd-segb{border-left:1px solid var(--border)}
+.hd .hd-segb.on{background:var(--hd-acc);color:var(--hd-on)}

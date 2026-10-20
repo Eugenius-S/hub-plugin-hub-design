@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -351,4 +351,76 @@ test("серия одного отправителя: подпись (head) то
     { kind: "in", k: 4, text: "ок" }, { kind: "in", k: 5, text: "и ещё" }, { kind: "out", k: 6, text: "готово" }], 40, "designer");
   assert.deepEqual(lines.map((l) => l.head), [true, false, false, true, false, true]);
   assert.equal(chatLines([{ kind: "out", k: 1, text: "a" }], 40, "designer")[0].head, true);
+});
+
+test("крутилки: разбор hub-tweaks — типы, границы, мусор отбрасывается", () => {
+  const t = normTweaks({
+    accent: { editor: "color", default: "#2a78d6", options: ["#2a78d6", "#b45309"], var: "--accent", section: "Цвет" },
+    density: { editor: "enum", options: ["compact", "cozy"], attr: "data-density" },
+    radius: { editor: "int", min: 0, max: 32, unit: "px", default: 99, var: "--r" },
+    scale: { editor: "float", min: 0.5, max: 2, step: 0.25, var: "--s" },
+    dark: { editor: "boolean", default: true, attr: "data-dark" },
+    title: { var: "--t" },
+    nothing: { editor: "int", min: 0 },
+    evil: { editor: "text", attr: "onclick" },
+    empty: { editor: "enum", options: [], var: "--e" },
+    "bad key!": { editor: "text", var: "--k" },
+  });
+  assert.deepEqual(t.map((x) => x.key), ["accent", "density", "radius", "scale", "dark", "title"]);
+  assert.equal(t[0].section, "Цвет");
+  assert.equal(t.find((x) => x.key === "radius").default, 32);       // default зажат в max
+  assert.equal(t.find((x) => x.key === "title").editor, "text");     // тип по умолчанию
+  assert.deepEqual(normTweaks(null), []);
+  assert.deepEqual(normTweaks([1]), []);
+  assert.equal(normTweaks(Object.fromEntries(Array.from({ length: 40 }, (_, i) => ["k" + i, { var: "--v" + i }]))).length, 24);
+});
+
+test("крутилки: значение по типу, цвет и вариант — только из options", () => {
+  const [color, enm, int, float, bool] = normTweaks({
+    a: { editor: "color", options: ["#fff", "#000"], var: "--a" }, b: { editor: "enum", options: ["x", "y"], attr: "data-b" },
+    c: { editor: "int", min: 0, max: 10, var: "--c" }, d: { editor: "float", min: 0, max: 2, step: 0.25, var: "--d" }, e: { editor: "boolean", attr: "data-e" } });
+  assert.equal(tweakValue(color, "#fff"), "#fff");
+  assert.equal(tweakValue(color, "#123456"), null);
+  assert.equal(tweakValue(enm, "z"), null);
+  assert.equal(tweakValue(int, "7.6"), 8);
+  assert.equal(tweakValue(int, "99"), 10);
+  assert.equal(tweakValue(int, "abc"), null);
+  assert.equal(tweakValue(float, "0.6"), 0.5);
+  assert.equal(tweakValue(float, "1,3"), 1.25);
+  assert.equal(tweakValue(bool, "true"), true);
+  assert.equal(tweakValue(bool, false), false);
+});
+
+test("крутилки: что пишем в макет — переменная и/или атрибут", () => {
+  const [r, d, b] = normTweaks({ r: { editor: "int", unit: "px", var: "--r", attr: "data-r" }, d: { editor: "enum", options: ["a"], attr: "data-d" }, b: { editor: "boolean", var: "--b", attr: "data-b" } });
+  assert.deepEqual(tweakApply(r, 12), [{ kind: "var", name: "--r", value: "12px" }, { kind: "attr", name: "data-r", value: "12" }]);
+  assert.deepEqual(tweakApply(d, "a"), [{ kind: "attr", name: "data-d", value: "a" }]);
+  assert.deepEqual(tweakApply(b, true), [{ kind: "var", name: "--b", value: "1" }, { kind: "attr", name: "data-b", value: "" }]);
+  assert.deepEqual(tweakApply(b, false), [{ kind: "var", name: "--b", value: "0" }, { kind: "attr", name: "data-b", value: null }]);
+});
+
+test("крутилки в пачке: строка «Крутилка `key`: из → в», без изменения не идёт, считаются как правка", () => {
+  const t = { file: "/d/a/index.html", key: "accent", editor: "color", from: "#2a78d6", to: "#b45309" };
+  assert.equal(describeTweak(t), "Крутилка `accent`: #2a78d6 → #b45309");
+  assert.equal(describeTweak({ key: "r", editor: "int", unit: "px", from: 8, to: 12 }), "Крутилка `r`: 8px → 12px");
+  assert.equal(describeTweak({ key: "dark", editor: "boolean", from: false, to: true }), "Крутилка `dark`: выкл → вкл");
+  const text = message({ path: "/d/a/index.html", round: 1, view: { w: 1440, h: 900 }, comments: [], changes: [], tweaks: [t, { ...t, key: "same", from: "x", to: "x" }] });
+  const lines = text.split("\n");
+  assert.equal(lines[1], "1. Крутилка `accent`: #2a78d6 → #b45309.");
+  assert.match(lines[2], /значениями по умолчанию/);
+  assert.equal(lines.length, 3);
+  assert.equal(draftCount([], [], [], [], [t, { ...t, to: t.from }]), 1);
+  assert.equal(message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [], changes: [], tweaks: [{ ...t, to: t.from }] }), "");
+});
+
+test("крутилки: исходное значение — default, иначе то, что макет показывает сейчас", () => {
+  const [a, b, c, d] = normTweaks({ a: { editor: "int", min: 0, max: 50, default: 8, var: "--a" }, b: { editor: "int", min: 0, max: 50, unit: "px", var: "--b" },
+    c: { editor: "enum", options: ["x", "y"], attr: "data-c" }, d: { editor: "boolean", attr: "data-d" } });
+  assert.equal(tweakBase(a, "30px"), 8);
+  assert.equal(tweakBase(b, "30px"), 30);
+  assert.equal(tweakBase(b, ""), 0);
+  assert.equal(tweakBase(c, "y"), "y");
+  assert.equal(tweakBase(c, "z"), "x");
+  assert.equal(tweakBase(d, "1"), true);
+  assert.equal(tweakBase(d, ""), false);
 });

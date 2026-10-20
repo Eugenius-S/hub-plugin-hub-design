@@ -210,13 +210,92 @@ export function describeDrawing(d) {
   return `отмечена область ${area}${near}`;
 }
 
+// --- крутилки макета: <script type="application/json" id="hub-tweaks"> ---------------------------------------------------------
+// {"accent": {"editor": "color", "default": "#2a78d6", "options": ["#2a78d6", "#b45309"], "var": "--accent"},
+//  "density": {"editor": "enum", "options": ["compact", "cozy"], "attr": "data-density"}}
+// var — CSS-переменная на :root, attr — атрибут на <html>; значения применяет страница хаба, внутри макета только запись в стиль/атрибут
+export const TWEAK_EDITORS = ["text", "color", "int", "float", "range", "boolean", "enum"];
+export const TWEAK_MAX = 24;
+const BAD_ATTR = /^(on|style$|src|href|action|formaction|srcdoc|xlink)/i;
+const small = (s, n) => String(s ?? "").trim().slice(0, n);
+const numOr = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+// разбор объявления: мусор отбрасываем молча — крутилка без var/attr, с чужим атрибутом или без вариантов не рисуется
+export function normTweaks(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const out = [];
+  for (const [key, d] of Object.entries(raw)) {
+    if (out.length >= TWEAK_MAX) break;
+    if (!d || typeof d !== "object" || !/^[\w.-]{1,40}$/.test(key)) continue;
+    const cssVar = /^--[\w-]{1,60}$/.test(d.var || "") ? d.var : "";
+    const attr = /^[a-z][\w:-]{0,40}$/i.test(d.attr || "") && !BAD_ATTR.test(d.attr) ? d.attr : "";
+    if (!cssVar && !attr) continue;
+    const options = Array.isArray(d.options) ? d.options.filter((o) => ["string", "number"].includes(typeof o)).slice(0, 24).map((o) => small(o, 80)) : [];
+    const editor = TWEAK_EDITORS.includes(d.editor) ? d.editor : options.length ? "enum" : "text";
+    const t = { key, label: small(d.label, 40) || key, editor, section: small(d.section, 40), var: cssVar, attr };
+    if (editor === "enum" || editor === "color") {
+      if (editor === "color" && !options.length && d.default) options.push(small(d.default, 80));
+      if (!options.length) continue;
+      t.options = options;
+      t.default = d.default == null ? undefined : small(d.default, 80);
+    } else if (editor === "int" || editor === "float" || editor === "range") {
+      const min = numOr(d.min, 0), max = Math.max(min, numOr(d.max, 100));
+      const step = numOr(d.step, 0) > 0 ? d.step : editor === "float" ? 0.1 : 1;
+      Object.assign(t, { min, max, step, unit: /^[a-z%]{0,4}$/i.test(d.unit || "") ? d.unit || "" : "" });
+      t.default = typeof d.default === "number" ? Math.min(max, Math.max(min, d.default)) : undefined;
+    } else if (editor === "boolean") {
+      t.default = d.default === undefined ? undefined : d.default === true || d.default === "true";
+    } else t.default = d.default == null ? undefined : small(d.default, 200);
+    out.push(t);
+  }
+  return out;
+}
+
+// то, что ввёл владелец, → значение крутилки по её типу; null — не подходит (цвет и вариант — только из options)
+export function tweakValue(t, raw) {
+  if (t.editor === "boolean") return raw === true || raw === "true" || raw === "1" || raw === "on";
+  if (t.editor === "int" || t.editor === "float" || t.editor === "range") {
+    const n = Number(String(raw).replace(",", "."));
+    if (raw === "" || raw == null || !Number.isFinite(n)) return null;
+    const c = Math.min(t.max, Math.max(t.min, n));
+    if (t.editor === "int") return Math.round(c);
+    const dec = (String(t.step).split(".")[1] || "").length;
+    return Number((Math.round(c / t.step) * t.step).toFixed(dec));
+  }
+  const s = String(raw ?? "");
+  if (t.editor === "color" || t.editor === "enum") return t.options.includes(s) ? s : null;
+  return s.slice(0, 200);
+}
+
+// исходное значение крутилки: default из объявления, иначе то, что макет показывает сейчас (cur — прочитано из :root/<html>)
+export function tweakBase(t, cur) {
+  if (t.default !== undefined) return t.default;
+  const c = String(cur ?? "").trim();
+  if (t.editor === "boolean") return c === "1" || c === "true";
+  if (t.editor === "int" || t.editor === "float" || t.editor === "range") { const n = parseFloat(c); return Number.isFinite(n) ? tweakValue(t, n) : t.min; }
+  if (t.editor === "color" || t.editor === "enum") return t.options.includes(c) ? c : t.options[0];
+  return c;
+}
+
+// значение крутилки → что писать в макет: переменная на :root и/или атрибут на <html>; value null — снять
+export function tweakApply(t, value) {
+  const ops = [];
+  if (t.var) ops.push({ kind: "var", name: t.var, value: t.editor === "boolean" ? (value ? "1" : "0") : `${value}${t.unit || ""}` });
+  if (t.attr) ops.push({ kind: "attr", name: t.attr, value: t.editor === "boolean" ? (value ? "" : null) : String(value) });
+  return ops;
+}
+
+const tweakShow = (c, v) => (c.editor === "boolean" ? (v ? "вкл" : "выкл") : typeof v === "number" && c.unit ? `${v}${c.unit}` : String(v));
+// правка крутилки (запись пачки: key, label, editor, unit, from, to) словами
+export const describeTweak = (c) => `Крутилка \`${c.key}\`: ${tweakShow(c, c.from)} → ${tweakShow(c, c.to)}`;
+export const tweakEffect = (c) => c.from !== c.to;
+
 // сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки, заметки; файл правит он сам.
 // Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
-export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [] }) {
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [] }) {
   const files = [];
   const add = (f) => { if (!files.includes(f)) files.push(f); };
   const of = (x) => x.file || path;
-  [...comments, ...changes, ...drawings].forEach((x) => add(of(x)));
+  [...comments, ...changes, ...drawings, ...tweaks.filter(tweakEffect)].forEach((x) => add(of(x)));
   const blocks = [];
   for (const f of files) {
     const v = views[f] || view || { w: 0, h: 0 };
@@ -239,7 +318,13 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       n += 1;
       lines.push(`${n}. Рисунок от руки: ${describeDrawing(d)}${String(d.text || "").trim() ? ` — ${String(d.text).trim()}` : ""}.`);
     }
+    const turned = tweaks.filter((x) => of(x) === f && tweakEffect(x));
+    for (const c of turned) {
+      n += 1;
+      lines.push(`${n}. ${describeTweak(c)}.`);
+    }
     if (!n) continue;
+    if (turned.length) lines.push("Крутилки — это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.");
     if (mine.some(hasEffect)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
     blocks.push(lines.join("\n"));
   }
@@ -250,8 +335,8 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   return blocks.join("\n\n");
 }
 
-export const draftCount = (comments, changes, drawings = [], notes = []) =>
-  comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length +
+export const draftCount = (comments, changes, drawings = [], notes = [], tweaks = []) =>
+  comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length + tweaks.filter(tweakEffect).length +
   notes.filter((n) => String(n.text || "").trim()).length;
 
 // --- холст: вид, масштаб, раскладка фреймов -------------------------------------------------------------------------
