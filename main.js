@@ -628,6 +628,14 @@ const app = {
   toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; paint(); },
 };
 
+// убрать правку руками, крутилку или рисунок (× во вкладке «Комментарии»): вид в рамке возвращается, записанное в файл откатывается к копии
+const dropEdit = {
+  change: (c) => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); scheduleWrite(c.file); },
+  tweak: (t) => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); scheduleWrite(t.file); },
+  drawing: (d) => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); },
+};
+const delBtn = (fn) => button("hd-cx", "×", "Убрать правку", () => { fn(); save(); paint(); });
+
 // --- отправка пачки ----------------------------------------------------------------------------------------------
 function markSent() {
   for (const p of draftPins()) p.state = "sent";
@@ -1238,17 +1246,14 @@ function field(f) {
   return wrap;
 }
 
-// карточка ввода: чипы пачки, поле
+// карточка ввода: чипы комментариев (пины, заметки, ошибки макета) и поле; правки руками над полем не показываем — они во вкладке «Комментарии»
 function paintCard() {
   const n = drafts();
   auto.watch(autoSig(autoItems(), P.session, home()));
   const items = [
     ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
-    ...P.changes.filter((c) => c.state === "draft" && hasEffect(c)).map((c) => ({ text: `${c.label || c.sel}: ${describeChange(c)}`, ic: "edit", del: () => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); } })),
-    ...P.drawings.filter((d) => d.state === "draft").map((d) => ({ text: describeDrawing(d), ic: "draw", del: () => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: "Заметка: " + d.text, ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
     ...draftErrs().map((e) => ({ text: `Ошибки макета: ${normErrors(e.items).length}`, ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
-    ...draftTweaks().map((t) => ({ text: describeTweak(t), ic: "edit", del: () => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); scheduleWrite(t.file); } })),
   ];
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
@@ -1286,18 +1291,20 @@ function paintComments() {
     const li = el("div", "hd-citem " + c.state);
     li.append(el("b", "hd-n edit", "✎"), el("span", "hd-ct", `${c.label || c.sel}: ${describeChange(c)}`));
     if (c.inFile) li.append(el("span", "hd-infile", "в файле"));
+    li.append(delBtn(() => dropEdit.change(c)));
     li.title = c.noWrite ? `${c.sel} — в файл не записана: ${c.noWrite}` : c.sel;
     rows.push(li);
   }
   for (const d of drawings) {
     const li = el("div", "hd-citem " + d.state);
-    li.append(el("b", "hd-n edit", "∿"), el("span", "hd-ct", describeDrawing(d)));
+    li.append(el("b", "hd-n edit", "∿"), el("span", "hd-ct", describeDrawing(d)), delBtn(() => dropEdit.drawing(d)));
     rows.push(li);
   }
   for (const t of tweaks) {
     const li = el("div", "hd-citem " + t.state);
     li.append(el("b", "hd-n edit", "⚙"), el("span", "hd-ct", describeTweak(t)));
     if (t.inFile) li.append(el("span", "hd-infile", "в файле"));
+    li.append(delBtn(() => dropEdit.tweak(t)));
     rows.push(li);
   }
   for (const e of errs) {

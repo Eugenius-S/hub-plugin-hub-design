@@ -554,3 +554,13 @@ class AutoSend(unittest.TestCase):
     def test_watches_every_paint(self):
         main = self.src("main.js")
         self.assertIn("auto.watch(autoSig(autoItems(), P.session, home()))", main)
+
+    def test_hand_edits_not_above_the_field(self):
+        main = self.src("main.js")
+        card = main[main.index("function paintCard()"):main.index("function paintComments()")]
+        for word in ("draftChanges", "draftTweaks", "draftDrawings", "P.changes", "P.tweaks", "P.drawings"):
+            self.assertNotIn(word, card, word)   # над полем только комментарии: пины, заметки, ошибки макета
+        comments = main[main.index("function paintComments()"):main.index("function paintChat()")]
+        for word in ("dropEdit.change", "dropEdit.tweak", "dropEdit.drawing"):
+            self.assertIn(word, comments, word)   # × у правки руками — во вкладке «Комментарии»
+
