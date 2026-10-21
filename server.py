@@ -1,9 +1,9 @@
-"""Hub Design: процесс плагина раздаёт HTML дизайна с диска со своего адреса (localhost, порт страницы хаба + 11)
-и подкладывает в него agent.js — тот рисует пины и рамки и говорит со страницей хаба через postMessage.
+"""Hub Design: the plugin process serves the design HTML from disk at its own address (localhost, hub page port + 11)
+and injects agent.js into it, which draws pins and boxes and talks to the hub page through postMessage.
 
-Свой адрес, а не страница хаба: скрипты дизайна работают как в браузере (шрифты, видео, анимации), но не с правами
-страницы хаба. Отдаёт только файлы веба внутри папок сессий и проектов хаба, без скрытых; встраивать себя — только
-странице хаба; запрос с чужого сайта — отказ."""
+Its own address, not the hub page: the design scripts run as in a browser (fonts, video, animations) but without the
+rights of the hub page. It serves only web files inside the session and project folders of the hub, no hidden ones;
+only the hub page may embed it; a request from a foreign site is refused."""
 import html
 import json
 import os
@@ -34,14 +34,14 @@ TYPES = {
 }
 HTML = (".html", ".htm")
 ROOTS_TTL = 15
-WATCH_FILES = 2000   # файлов в папке дизайна, чьё время правки смотрит /__canvas/stat
+WATCH_FILES = 2000   # files in the design folder whose modification time /__canvas/stat watches
 CHUNK = 256 * 1024
-HAVE_MAX = 60   # путей в одном вопросе «есть ли файлы»
+HAVE_MAX = 60   # paths in one "do the files exist" question
 DRIVE = re.compile(r"^[A-Za-z]:$")
-PDF_TIMEOUT = 45   # секунд на печать одного макета, потом Chrome гасим
-PDF_SIZE = (1440, 900)   # окно макета, если страница не прислала своё
-PDF_MAX = 20000          # пикселей: выше PDF-страницу не растягиваем
-WRITE_MAX = 2 * 1024 * 1024   # тело запроса на запись правок
+PDF_TIMEOUT = 45   # seconds to print one design, then Chrome is killed
+PDF_SIZE = (1440, 900)   # the design window if the page did not send its own
+PDF_MAX = 20000          # pixels: we do not stretch a PDF page beyond this
+WRITE_MAX = 2 * 1024 * 1024   # request body for writing edits
 
 
 def state_dir():
@@ -49,7 +49,7 @@ def state_dir():
 
 
 def config():
-    """hub.json этой машины; не прочитать — {}."""
+    """hub.json of this machine; unreadable: {}."""
     try:
         from core import catalog
         path = catalog.config_path(state_dir())
@@ -67,7 +67,7 @@ _roots = {"at": 0.0, "list": []}
 
 
 def roots():
-    """Папки, из которых можно отдавать: рабочие папки сессий хаба и папки проектов из hub.json. Не корень диска."""
+    """Folders we may serve from: the working folders of the hub sessions and the project folders from hub.json. Never a disk root."""
     if time.time() - _roots["at"] < ROOTS_TTL:
         return _roots["list"]
     found = set()
@@ -76,7 +76,7 @@ def roots():
         for s in journal.load_state(state_dir()).get("sessions", {}).values():
             if s.get("cwd"):
                 found.add(s["cwd"])
-    except Exception:   # хаба нет рядом (тесты, старая версия) — только проекты
+    except Exception:   # no hub nearby (tests, an old version): projects only
         pass
     for p in (config().get("projects") or {}).values():
         if isinstance(p, dict) and p.get("path"):
@@ -91,7 +91,7 @@ def roots():
 
 
 def allowed(real):
-    """Файл веба внутри разрешённых папок, без скрытых частей пути внутри них (.git, .env)."""
+    """A web file inside the allowed folders, with no hidden path parts inside them (.git, .env)."""
     if os.path.splitext(real)[1].lower() not in TYPES or not os.path.isfile(real):
         return False
     for r in roots():
@@ -111,7 +111,7 @@ def from_url(path):
 
 
 def newest(html):
-    """Самое свежее время правки в папке дизайна (сам файл, стили, картинки) — сигнал перезагрузить предпросмотр."""
+    """The latest modification time in the design folder (the file itself, styles, images): the signal to reload the preview."""
     top = os.path.dirname(html)
     best, seen = os.path.getmtime(html), 0
     for base, dirs, files in os.walk(top):
@@ -132,7 +132,7 @@ def newest(html):
 
 
 def file_state(path):
-    """ok — отдадим; missing — файла нет на диске; denied — есть, но вне папок сессий и проектов хаба или скрытый: показать нечем."""
+    """ok: we serve it; missing: no such file on disk; denied: it exists but is outside the session and project folders of the hub or hidden: nothing to show."""
     real = os.path.realpath(path)
     if allowed(real):
         return "ok"
@@ -140,8 +140,8 @@ def file_state(path):
 
 
 def gone_page(real, state):
-    """Вместо сырого {"error": "no file"} в рамке и на карточке — страница с названием файла и причиной."""
-    why = "Файл не найден" if state == "missing" else "Файл вне папок проектов и сессий хаба, плагин его не покажет"
+    """Instead of a raw {"error": "no file"} in the frame and on the card: a page with the file name and the reason."""
+    why = "File not found" if state == "missing" else "The file is outside the project and session folders of the hub, the plugin will not show it"
     body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;display:flex;align-items:center;justify-content:center;'
             'height:100vh;font:14px system-ui,sans-serif;color:#555;background:#f4f4f5;text-align:center"><div><p style="font-size:16px;color:#222">%s</p>'
             '<p style="max-width:560px;overflow-wrap:anywhere">%s</p></div>' % (why, why, html.escape(real))).encode()
@@ -153,7 +153,7 @@ def page_origins():
 
 
 def inject(body):
-    """agent.js (с anchor.js перед ним) — последним в документе: его рамки и пины поверх дизайна."""
+    """agent.js (with anchor.js before it) goes last in the document: its boxes and pins sit on top of the design."""
     tag = ('<script>window.__canvas={origins:%s}</script><script src="/__canvas/anchor.js"></script><script src="/__canvas/agent.js"></script>'
            % json.dumps(page_origins())).encode()
     low = body.lower()
@@ -164,8 +164,8 @@ def inject(body):
     return early(body)
 
 
-# печатная версия макета (?print=1&w=&h=): страница PDF — окно макета; макет выше окна — одна высокая страница; если в нём
-# слайды (.slide, [data-slide]) — страница по слайду и по странице на слайд. Подкладывается Chrome'у, которого запускает pdf()
+# print version of a design (?print=1&w=&h=): the PDF page is the design window; a design taller than the window is one tall page; if it
+# holds slides (.slide, [data-slide]), one page per slide. Injected for the Chrome that pdf() launches
 PRINT_JS = b"""<script>addEventListener("load",function(){
 var q=new URLSearchParams(location.search),W=+q.get("w")||%d,H=+q.get("h")||%d,max=%d;
 var sl=[].slice.call(document.querySelectorAll(".slide,[data-slide],section.slide")),css="*{-webkit-print-color-adjust:exact;print-color-adjust:exact}";
@@ -185,15 +185,15 @@ def printable(body):
 
 
 def chrome_path():
-    """Браузер для печати в PDF: HUB_TEST_CHROME или testchrome.path из hub.json (тот же, что у снимков и тестов хаба).
-    Обычный Chrome владельца не берём. Нет такого — None, страница печатает рамку сама."""
+    """The browser for printing to PDF: HUB_TEST_CHROME or testchrome.path from hub.json (the same one the hub uses for shots and tests).
+    The user's everyday Chrome is never used. None found: None, and the page prints the frame itself."""
     path = (os.environ.get("HUB_TEST_CHROME") or (config().get("testchrome") or {}).get("path") or "").strip()
     path = os.path.expanduser(path)
     return path if path and os.path.isfile(path) else None
 
 
 def kill_tree(proc):
-    """Chrome с его помощниками: группа процессов (на Windows — дерево) по pid запуска."""
+    """Chrome with its helpers: the process group (on Windows, the tree) by the launch pid."""
     try:
         if os.name == "nt":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=10)
@@ -215,8 +215,8 @@ class PdfError(Exception):
 
 
 def pdf(real, w, h):
-    """PDF макета: свой процесс Chrome (headless, профиль во временной папке) печатает печатную версию с этого же сервера.
-    None — Chrome не настроен; PdfError — не вышло. Процесс и папка убираются всегда."""
+    """PDF of a design: our own Chrome process (headless, profile in a temp folder) prints the print version from this same server.
+    None: Chrome is not configured; PdfError: it failed. The process and the folder are always cleaned up."""
     chrome = chrome_path()
     if not chrome:
         return None
@@ -234,14 +234,14 @@ def pdf(real, w, h):
             try:
                 proc.wait(PDF_TIMEOUT)
             except subprocess.TimeoutExpired:
-                raise PdfError("Chrome не успел напечатать за %d с" % PDF_TIMEOUT)
+                raise PdfError("Chrome did not finish printing in %d s" % PDF_TIMEOUT)
             try:
                 with open(out, "rb") as f:
                     data = f.read()
             except OSError:
-                raise PdfError("Chrome не оставил PDF (код %s)" % proc.returncode)
+                raise PdfError("Chrome left no PDF (code %s)" % proc.returncode)
             if not data.startswith(b"%PDF"):
-                raise PdfError("Chrome вернул не PDF")
+                raise PdfError("Chrome returned something that is not a PDF")
             return data
         finally:
             if proc is not None:
@@ -249,8 +249,8 @@ def pdf(real, w, h):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-# правки руками — точечно в файл. Без состояния в процессе: исходник для пересчёта — копия <имя>.r<N>.html рядом, её имя и время
-# файла после прошлой записи приходят со страницы; файл с другим временем правил кто-то ещё — отказ «changed», страница начинает заново
+# hand edits go point by point into the file. No state in the process: the source for recomputing is the copy <name>.r<N>.html next to it; its name and the time
+# of the file after the previous write come from the page; a file with another time was edited by someone else: refusal "changed", the page starts over
 _write_lock = threading.Lock()
 
 
@@ -265,7 +265,7 @@ def read_text(path):
         with open(path, "rb") as f:
             return f.read().decode("utf-8")
     except UnicodeDecodeError:
-        raise WriteError(400, "файл не в UTF-8")
+        raise WriteError(400, "the file is not UTF-8")
 
 
 def free_copy(real, start):
@@ -277,7 +277,7 @@ def free_copy(real, start):
 
 
 def write_file(real, data):
-    """Подмена файла целиком за один шаг: вотчеры и браузер не видят полузаписанного."""
+    """Replace the file as a whole in one step: watchers and the browser never see a half-written file."""
     tmp = os.path.join(os.path.dirname(real), ".hub-design-%d.tmp" % os.getpid())
     try:
         with open(tmp, "wb") as f:
@@ -293,8 +293,8 @@ def write_file(real, data):
 
 
 def write(real, body):
-    """Записать правки руками в real. body: changes, ops, busy, round, copy (имя копии, если уже делали), fmtime (время файла после
-    нашей записи). Отказ — WriteError: 409 busy (автор макета в ходе), 409 changed (файл правили без нас)."""
+    """Write the hand edits into real. body: changes, ops, busy, round, copy (the copy name, if one was already made), fmtime (the file time after
+    our write). A refusal is a WriteError: 409 busy (the design's author is mid-turn), 409 changed (the file was edited without us)."""
     changes = [c for c in (body.get("changes") or [])[:400] if isinstance(c, dict)]
     ops = [o for o in (body.get("ops") or [])[:60] if isinstance(o, dict)]
     if body.get("busy"):
@@ -315,7 +315,7 @@ def write(real, body):
             base = cur
         out, done, skipped, ops_state, ops_why = handwrite.apply(base, changes, ops)
         touched = out != base
-        if not touched:   # писать нечего: файл — как был до нас; своя копия больше не нужна
+        if not touched:   # nothing to write: the file is as it was before us; our copy is no longer needed
             if copy and cur != base:
                 write_file(real, base)
             if copy:
@@ -325,7 +325,7 @@ def write(real, body):
                     pass
             copy_path = ""
         else:
-            if not copy_path:   # первая запись: копия исходника рядом, и только потом правка
+            if not copy_path:   # first write: a copy of the source next to it, and only then the edit
                 copy_path = free_copy(real, body.get("round") or 0)
                 with open(copy_path, "xb") as f:
                     f.write(base.encode("utf-8"))
@@ -340,7 +340,7 @@ _open_tags = [re.compile(rb"<head(?:\s[^>]*)?>", re.I), re.compile(rb"<html(?:\s
 
 
 def early(body):
-    """Ловец ошибок (early.js) — самым первым скриптом: после <head> (или <html>, doctype), без них — в начало."""
+    """The error catcher (early.js) goes as the very first script: after <head> (or <html>, the doctype), and without them at the start."""
     for rx in _open_tags:
         m = rx.search(body)
         if m:
@@ -352,7 +352,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "hub-design"
 
-    def log_message(self, *a):   # тишина: каждый запрос картинки — не для журнала хаба
+    def log_message(self, *a):   # silence: every image request does not belong in the hub log
         pass
 
     def head(self, code, kind, length, extra=None):
@@ -373,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def guard(self):
-        """Только localhost по своему порту (не подменённое имя) и не запрос с чужого сайта."""
+        """Only localhost on its own port (not a spoofed name) and not a request from a foreign site."""
         host = (self.headers.get("Host") or "").lower()
         if host not in (f"localhost:{PORT}", f"127.0.0.1:{PORT}"):
             return "host"
@@ -393,7 +393,7 @@ class Handler(BaseHTTPRequestHandler):
                                           "Access-Control-Max-Age": "600"})
 
     def do_POST(self):
-        """/__canvas/write — правки руками в файл. Только со страницы хаба (Origin) и только файл, который процесс и так показывает."""
+        """/__canvas/write: hand edits into the file. Only from the hub page (Origin) and only a file the process shows anyway."""
         bad = self.guard()
         url = urlparse(self.path)
         if bad or url.path != "/__canvas/write":
@@ -416,7 +416,7 @@ class Handler(BaseHTTPRequestHandler):
         except WriteError as e:
             return self.say(e.code, {"error": e.text}, extra)
         except OSError as e:
-            return self.say(500, {"error": "не записать: " + (e.strerror or str(e))}, extra)
+            return self.say(500, {"error": "cannot write: " + (e.strerror or str(e))}, extra)
 
     def do_HEAD(self):
         self.do_GET()
@@ -435,7 +435,7 @@ class Handler(BaseHTTPRequestHandler):
             self.head(200, TYPES[".js"], len(body))
             return self.wfile.write(body) if self.command != "HEAD" else None
         if url.path == "/__canvas/have":
-            # есть ли файлы макетов: страница хаба спрашивает по своему origin (CORS только для неё), по одному слову на путь
+            # do the design files exist: the hub page asks from its own origin (CORS only for it), one word per path
             paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
             origin = self.headers.get("Origin")
             extra = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else None
@@ -443,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
             self.head(200, "application/json; charset=utf-8", len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
         if url.path == "/__canvas/times":
-            # когда правили файлы макетов (для карточек стартового экрана): только те, что можно показать
+            # when the design files were edited (for the start screen cards): only those that can be shown
             paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
             origin = self.headers.get("Origin")
             extra = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else None
@@ -466,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith("/f/"):
             real = from_url(url.path)
             if not allowed(real):
-                if real.lower().endswith(HTML):   # документ в рамке: человеческая страница, не JSON
+                if real.lower().endswith(HTML):   # a document in a frame: a human page, not JSON
                     body = gone_page(real, file_state(real))
                     self.head(404, TYPES[".html"], len(body))
                     return self.wfile.write(body) if self.command != "HEAD" else None
@@ -477,7 +477,7 @@ class Handler(BaseHTTPRequestHandler):
         self.say(404, {"error": "no page"})
 
     def pdf(self, real, q):
-        """?pdf=1&w=&h= — макет файлом PDF. Страница хаба просит по своему origin (CORS только для неё)."""
+        """?pdf=1&w=&h=: the design as a PDF file. The hub page asks from its own origin (CORS only for it)."""
         origin = self.headers.get("Origin")
         extra = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else {}
         def num(k, d):
@@ -489,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
             data = pdf(real, num("w", PDF_SIZE[0]), num("h", PDF_SIZE[1]))
         except PdfError as e:
             return self.say(500, {"error": str(e)}, extra)
-        if data is None:   # Chrome для печати не настроен — страница печатает рамку сама
+        if data is None:   # no Chrome configured for printing: the page prints the frame itself
             return self.say(501, {"error": "no chrome"}, extra)
         name = os.path.splitext(os.path.basename(real))[0] + ".pdf"
         extra["Content-Disposition"] = "attachment; filename*=UTF-8''" + quote(name)
@@ -498,8 +498,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def file(self, real, raw=False, download=False, printing=False):
-        """raw — HTML как на диске, без agent.js (показать во весь экран, скачать); download — ещё и как вложение;
-        printing — как raw, плюс размер страницы для печати в PDF."""
+        """raw: the HTML as on disk, without agent.js (show fullscreen, download); download: also as an attachment;
+        printing: like raw, plus the page size for printing to PDF."""
         kind = TYPES[os.path.splitext(real)[1].lower()]
         if real.lower().endswith(HTML):
             with open(real, "rb") as f:
@@ -510,7 +510,7 @@ class Handler(BaseHTTPRequestHandler):
         size = os.path.getsize(real)
         start, end = 0, size - 1
         m = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
-        if m and size and (m.group(1) or m.group(2)):   # видео — с перемоткой
+        if m and size and (m.group(1) or m.group(2)):   # video: with seeking
             if m.group(1):
                 start, end = int(m.group(1)), min(int(m.group(2) or size - 1), size - 1)
             else:
@@ -555,8 +555,8 @@ def main():
     try:
         srv = serve()
     except OSError as e:
-        print(f"hub-design: порт {PORT} занят ({e}); задайте HUB_DESIGN_PORT", file=sys.stderr, flush=True)
-        time.sleep(60)   # не биться о занятый порт каждую секунду: hub-up поднимет снова
+        print(f"hub-design: port {PORT} is busy ({e}); set HUB_DESIGN_PORT", file=sys.stderr, flush=True)
+        time.sleep(60)   # do not hammer a busy port every second: hub-up will start it again
         return 1
     print(f"hub-design: http://localhost:{PORT}/", file=sys.stderr, flush=True)
     t = threading.Thread(target=srv.serve_forever, daemon=True)

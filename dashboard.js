@@ -1,27 +1,70 @@
-// Hub Design: стартовый экран, как дашборд Claude Design: заголовок, вкладки «Все / Мои / Чужие», поиск, вид и сортировка,
-// ряд пресетов (новый файл этого вида) и прошлые макеты карточками с живым превью. Цвета, шрифты и тень — тема хаба.
+// Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
+// a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
 import { ago, bannerText, isGone, nameOf, scrollsRight } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
+import { allLangs, makeT } from "./i18n.js";
 
-// пресет — новый файл этого вида: чат уходит специалисту вида, в поле ввода ложится заготовка «новый <вид>: …»
-export const PRESETS = [
-  { id: "slides", title: "Презентация", to: "designer", lead: "новая презентация: " },
-  { id: "design", title: "Дизайн", to: "designer", lead: "новый дизайн: " },
-  { id: "codebase", title: "Дизайн в коде", to: "designer", lead: "новый дизайн в коде проекта: " },
-  { id: "system", title: "Дизайн-система", to: "designer", lead: "новая дизайн-система: " },
-  { id: "motion", title: "Анимация", to: "animator", lead: "новая анимация: " },
-];
-export const TABS = [["all", "Все"], ["mine", "Мои"], ["others", "Чужие"]];
-export const SORTS = [["recent", "Сначала новые"], ["name", "По названию"]];
-const STUBS = new Set(PRESETS.map((p) => p.lead));
+// UI strings: en by default, ru when the hub language is Russian (see i18n.js); texts are resolved at use time, never at load
+export const STR = {
+  en: {
+    preset_slides: "Presentation", preset_design: "Design", preset_codebase: "Design in code", preset_system: "Design system", preset_motion: "Animation",
+    lead_slides: "new presentation: ", lead_design: "new design: ", lead_codebase: "new design in the project code: ", lead_system: "new design system: ", lead_motion: "new animation: ",
+    tab_all: "All", tab_mine: "Mine", tab_others: "Others",
+    sort_recent: "Newest first", sort_name: "By name",
+    edited: "edited {ago}",
+    asked: "Asked the hub, waiting",
+    install: "Install",
+    title: "Design",
+    search_ph: "Search designs",
+    search: "Search",
+    tiles: "Tiles",
+    list: "List",
+    sort: "Sort",
+    open_by_path: "Open a design by path",
+    path_ph: "Open by path: /…/index.html",
+    empty_found: "Nothing found.",
+    empty_none: "No designs yet. Pick a kind above or write on the left what you need — a specialist will make a new file.",
+    no_specialist: "no specialist {name}",
+  },
+  ru: {
+    preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Дизайн в коде", preset_system: "Дизайн-система", preset_motion: "Анимация",
+    lead_slides: "новая презентация: ", lead_design: "новый дизайн: ", lead_codebase: "новый дизайн в коде проекта: ", lead_system: "новая дизайн-система: ", lead_motion: "новая анимация: ",
+    tab_all: "Все", tab_mine: "Мои", tab_others: "Чужие",
+    sort_recent: "Сначала новые", sort_name: "По названию",
+    edited: "изменён {ago}",
+    asked: "Попросила хаб, ждём",
+    install: "Поставить",
+    title: "Дизайн",
+    search_ph: "Поиск по макетам",
+    search: "Поиск",
+    tiles: "Плитки",
+    list: "Список",
+    sort: "Сортировка",
+    open_by_path: "Открыть макет по пути",
+    path_ph: "Открыть по пути: /…/index.html",
+    empty_found: "Ничего не нашлось.",
+    empty_none: "Макетов пока нет. Выберите вид выше или напишите слева, что нужно, — специалист сделает новый файл.",
+    no_specialist: "нет специалиста {name}",
+  },
+};
+export const t = makeT(STR);
 
-// заготовка в поле: заменяем прежнюю заготовку, но не слова владельца
+// a preset is a new file of that kind: the chat goes to the specialist of the kind, a stub "new <kind>: …" lands in the input.
+// title and lead are getters: they follow the hub language at the moment they are read
+const preset = (id, to) => ({ id, to, get title() { return t("preset_" + id); }, get lead() { return t("lead_" + id); } });
+export const PRESETS = [preset("slides", "designer"), preset("design", "designer"), preset("codebase", "designer"), preset("system", "designer"), preset("motion", "animator")];
+export const TABS = ["all", "mine", "others"];   // ids; the label is t("tab_<id>")
+export const SORTS = ["recent", "name"];         // ids; the label is t("sort_<id>")
+// stubs in EVERY language: the language may change between putting a stub in the input and checking it
+const STUBS = new Set(PRESETS.flatMap((p) => allLangs(STR, "lead_" + p.id)));
+
+// a stub in the input is replaced by the next stub, but never the owner's own words
 export const isStub = (text) => STUBS.has(text);
 export const stubText = (current, lead) => (!current.trim() || isStub(current) ? lead : current);
 
 export { nameOf };
 
-// «Мои» — макеты, которые владелец держит на холсте; «Чужие» — остальные (их написали специалисты и сессии хаба)
+// "Mine" - designs the owner keeps on the canvas; "Others" - the rest (written by specialists and hub sessions)
 export function shown(files, { tab = "all", q = "", sort = "recent", mine = new Set() } = {}) {
   const needle = String(q || "").trim().toLowerCase();
   const rows = files.filter((f) => (tab === "all" || (tab === "mine") === mine.has(f.path))
@@ -30,11 +73,11 @@ export function shown(files, { tab = "all", q = "", sort = "recent", mine = new 
   return rows.sort(by);
 }
 export const editedText = (f, now) => {
-  const t = ago(f.last || f.ts, now);
-  return t ? `изменён ${t}` : "";
+  const a = ago(f.last || f.ts, now);
+  return a ? t("edited", { ago: a }) : "";
 };
 
-// рисунки пресетов — как плитки в Claude Design, на цветах темы
+// preset art - like the tiles in Claude Design, in theme colors
 const ART = {
   slides: '<i class="a-card" style="left:14%;top:20%;width:72%;height:60%"><i class="a-bar" style="left:9%;top:14%;width:52%;height:13%"></i><i class="a-line" style="left:9%;top:44%;width:40%;height:8%"></i><i class="a-line" style="left:9%;top:62%;width:30%;height:8%"></i><i class="a-pic" style="left:66%;top:42%;width:24%;height:30%"></i></i>',
   design: '<i class="a-card a-phone"><i class="a-line a-notch"></i><i class="a-dot a-pd" style="top:24%"></i><i class="a-line" style="left:42%;top:25.5%;width:42%;height:5%"></i><i class="a-dot a-pd" style="top:41%"></i><i class="a-line" style="left:42%;top:42.5%;width:30%;height:5%"></i><i class="a-dot a-pg" style="left:30%"></i><i class="a-dot a-pg" style="left:46%"></i><i class="a-dot a-pg" style="left:62%"></i></i>',
@@ -43,7 +86,7 @@ const ART = {
   motion: '<i class="a-card" style="left:14%;top:16%;width:72%;height:68%"><i class="a-ball b1"></i><i class="a-ball b2"></i><i class="a-ball b3"></i><i class="a-ball b4"></i></i>',
 };
 
-// плашка «нужен специалист»: строки — lacking() из lib.js; «Поставить» просит хаб, пока ждём — «Попросила хаб, ждём»
+// the "specialist needed" banner: rows come from lacking() in lib.js; "Install" asks the hub, while waiting - "Asked the hub, waiting"
 export function createNeed(app, cls = "") {
   const node = app.hub.el("div", "hdd-need " + cls);
   node.hidden = true;
@@ -57,7 +100,7 @@ export function createNeed(app, cls = "") {
       const row = app.hub.el("div", "hdd-need-row");
       row.dataset.need = r.name;
       const text = app.hub.el("span", "hdd-need-t", bannerText(r));
-      const b = app.hub.el("button", "hdd-need-b", r.state === "wait" ? "Попросила хаб, ждём" : "Поставить");
+      const b = app.hub.el("button", "hdd-need-b", r.state === "wait" ? t("asked") : t("install"));
       b.type = "button";
       b.disabled = r.state === "wait";
       b.addEventListener("click", () => app.install(r.name));
@@ -75,32 +118,29 @@ export function createDashboard(app) {
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
-  const head = el("h1", "hdd-h1", "Дизайн");
+  const head = el("h1", "hdd-h1");
   const tabs = el("div", "hdd-tabs");
-  const tabBtns = TABS.map(([id, label]) => {
-    const b = el("button", "hdd-tab", label);
+  const tabBtns = TABS.map((id) => {
+    const b = el("button", "hdd-tab");
     b.type = "button";
     b.addEventListener("click", () => { S.tab = id; paint(); });
     return [id, b];
   });
   tabs.append(...tabBtns.map(([, b]) => b));
-  const tool = (icon, title, fn) => {
+  const tool = (icon, fn) => {
     const b = el("button", "hdd-tool");
     b.type = "button";
-    b.title = title;
-    b.setAttribute("aria-label", title);
     b.innerHTML = CI[icon];
     b.addEventListener("click", fn);
     return b;
   };
   const search = el("input", "hdd-search");
   search.type = "search";
-  search.placeholder = "Поиск по макетам";
   search.addEventListener("input", () => { S.q = search.value; paintFiles(); });
-  const bSearch = tool("search", "Поиск", () => { S.search = !S.search; if (!S.search) { S.q = ""; search.value = ""; } paint(); if (S.search) search.focus(); });
-  const bView = tool("list", "Список", () => { S.list = !S.list; paint(); });
-  const bSort = tool("sliders", "Сортировка", () => { S.sort = S.sort === "recent" ? "name" : "recent"; paint(); });
-  const bMore = tool("more", "Открыть макет по пути", () => { S.path = !S.path; paint(); if (S.path) pathIn.focus(); });
+  const bSearch = tool("search", () => { S.search = !S.search; if (!S.search) { S.q = ""; search.value = ""; } paint(); if (S.search) search.focus(); });
+  const bView = tool("list", () => { S.list = !S.list; paint(); });
+  const bSort = tool("sliders", () => { S.sort = S.sort === "recent" ? "name" : "recent"; paint(); });
+  const bMore = tool("more", () => { S.path = !S.path; paint(); if (S.path) pathIn.focus(); });
   bMore.classList.add("hdd-more");
   const tools = el("div", "hdd-tools");
   tools.append(search, bSearch, bView, bSort, bMore);
@@ -108,24 +148,25 @@ export function createDashboard(app) {
   bar.append(tabs, tools);
 
   const pathIn = el("input", "hdd-path");
-  pathIn.placeholder = "Открыть по пути: /…/index.html";
   pathIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && pathIn.value.trim()) app.openPath(pathIn.value); });
 
   const presets = el("div", "hdd-presets");
   const subs = new Map();
+  const labels = [];
   for (const p of PRESETS) {
     const b = el("button", "hdd-preset");
     b.type = "button";
     b.dataset.preset = p.id;
     const art = el("span", "hdd-art a-" + p.id);
     art.innerHTML = ART[p.id];
-    const label = el("span", "hdd-plabel", p.title.replace("-", "\u2011").replace(" в ", " в\u00a0"));   // перенос — только между словами, не по дефису и не после «в»
+    const label = el("span", "hdd-plabel");
     const sub = el("span", "hdd-psub");
     sub.hidden = true;
     b.append(art, label, sub);
     b.addEventListener("click", () => app.preset(p));
     presets.append(b);
     subs.set(p.id, sub);
+    labels.push([p, label]);
   }
 
   const fade = () => presets.classList.toggle("more", scrollsRight(presets));
@@ -137,16 +178,16 @@ export function createDashboard(app) {
   const empty = el("div", "hdd-empty");
   page.append(head, need.node, bar, pathIn, presets, files, empty);
   root.append(page);
-  // клавиши в поиске и пути не доходят до горячих клавиш холста
+  // keys typed in the search and path fields do not reach the canvas hotkeys
   root.addEventListener("keydown", (e) => e.stopPropagation());
 
-  // превью — настоящий документ в уменьшенном iframe, грузим только то, что на виду (и не больше LIVE_MAX разом)
+  // a preview is the real document in a scaled-down iframe; only what is in view is loaded (and no more than LIVE_MAX at once)
   const LIVE_MAX = 16;
-  const cards = new Map();   // путь → {node, shot, frame, meta, name, live}
+  const cards = new Map();   // path -> {node, shot, frame, meta, name, live}
   const fit = (c) => {
     const w = c.shot.clientWidth, h = c.shot.clientHeight;
     if (!w || !h) return;
-    c.frame.style.transform = `scale(${w / 1440})`;   // по ширине, без полей по бокам: нижняя часть обрезается
+    c.frame.style.transform = `scale(${w / 1440})`;   // fit to width, no side margins: the lower part is cropped
   };
   const sizes = new ResizeObserver((rows) => { for (const r of rows) { const c = [...cards.values()].find((x) => x.shot === r.target); if (c) fit(c); } });
   const seen = new IntersectionObserver((rows) => {
@@ -195,43 +236,49 @@ export function createDashboard(app) {
   }
   function paintFiles() {
     const all = app.files();
-    // макеты, чьих файлов нет (или плагин их показать не может), в списке не показываем вовсе; открытый на холсте — сообщением в рамке
+    // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
     const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() }).filter((f) => !isGone(app.fileState(f.path)));
     const nodes = rows.map((f) => {
       const c = card(f);
       c.text.textContent = [f.session, editedText(f)].filter(Boolean).join(" · ");
       return c.node;
     });
-    // двигаем только сместившиеся: перенос iframe в DOM перезагружает его
+    // move only the ones that shifted: moving an iframe in the DOM reloads it
     nodes.forEach((n, i) => { if (files.children[i] !== n) files.insertBefore(n, files.children[i] || null); });
     while (files.children.length > nodes.length) files.lastChild.remove();
     for (const [path, c] of cards) if (!all.some((f) => f.path === path)) { sizes.unobserve(c.shot); seen.unobserve(c.node); cards.delete(path); }
     empty.hidden = nodes.length > 0;
-    // «Ничего не нашлось» — только когда владелец что-то искал или выбрал вкладку; на «Все» без поиска и без макетов — «Макетов пока нет»
-    empty.textContent = S.q.trim() || S.tab !== "all"
-      ? "Ничего не нашлось."
-      : "Макетов пока нет. Выберите вид выше или напишите слева, что нужно, — специалист сделает новый файл.";
+    // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"
+    empty.textContent = S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none");
     for (const c of cards.values()) { load(c); fit(c); }
   }
   function paint() {
-    for (const [id, b] of tabBtns) b.classList.toggle("on", S.tab === id);
+    // static texts are set here, not at creation: the hub language is read at use time
+    head.textContent = t("title");
+    search.placeholder = t("search_ph");
+    pathIn.placeholder = t("path_ph");
+    for (const [b, key] of [[bSearch, "search"], [bMore, "open_by_path"]]) { b.title = t(key); b.setAttribute("aria-label", b.title); }
+    bView.title = S.list ? t("tiles") : t("list");
+    bView.setAttribute("aria-label", bView.title);
+    bSort.title = t("sort") + ": " + t("sort_" + S.sort);
+    bSort.setAttribute("aria-label", bSort.title);
+    for (const [p, label] of labels) label.textContent = p.title.replace("-", "\u2011").replace(/ (\u0432|in) /, " $1\u00a0");   // wrap only between words: not at the hyphen, not after the preposition (0432 in Russian)
+    for (const [id, b] of tabBtns) { b.textContent = t("tab_" + id); b.classList.toggle("on", S.tab === id); }
     search.hidden = !S.search;
     bSearch.classList.toggle("on", S.search);
     bView.classList.toggle("on", S.list);
     bView.innerHTML = CI[S.list ? "grid" : "list"];
-    bView.title = S.list ? "Плитки" : "Список";
-    bSort.title = "Сортировка: " + SORTS.find(([id]) => id === S.sort)[1];
     bSort.classList.toggle("on", S.sort !== "recent");
     bMore.classList.toggle("on", S.path);
     pathIn.hidden = !S.path;
-    // нет обязательного специалиста — плашка; нет желательного — тихая строка у его пресета
+    // the required specialist is missing - a banner; a wanted one - a quiet line by its preset
     const lack = app.lacking();
     need.paint(lack.filter((n) => n.need === "required"));
     for (const p of PRESETS) {
       const n = lack.find((x) => x.name === p.to && x.need !== "required");
       const sub = subs.get(p.id);
       sub.hidden = !n;
-      sub.textContent = n ? `нет специалиста ${n.name}` : "";
+      sub.textContent = n ? t("no_specialist", { name: n.name }) : "";
     }
     files.classList.toggle("list", S.list);
     paintFiles();

@@ -1,14 +1,14 @@
-/* Hub Design: слева разговор и карточка ввода, справа холст (раскладка Claude Design), цвета, шрифты и тема — переменные хаба */
+/* Hub Design: the chat and the input card on the left, the canvas on the right (the Claude Design layout); colors, fonts and theme are hub variables */
 .hd{display:flex;height:100%;min-height:0;background:var(--background);color:var(--foreground);font-family:var(--font);font-size:var(--text-sm);line-height:1.45}
 .hd [hidden]{display:none!important}
-/* заливка акцентом: текст на ней всегда белый (в тёмной теме хаба --primary светлый, а --primary-foreground тёмный), фон чуть темнее, чтобы белый читался */
+/* accent fill: the text on it is always white (in the dark hub theme --primary is light and --primary-foreground is dark), the background is a bit darker so white stays readable */
 .hd,.hdd{--hd-acc:color-mix(in oklab,var(--primary) 72%,#1d2a9c);--hd-on:#fff}
 .hd button,.hd select,.hd input,.hd textarea{font:inherit;color:inherit}
 .hd button{cursor:pointer}
 .hd-ic{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}
 .hd-ic svg{flex:none}
 
-/* левая панель */
+/* left panel */
 .hd-left{width:380px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--background);border-right:1px solid var(--border)}
 .hd-top{display:flex;align-items:center;gap:var(--space-3);padding:0 var(--space-4);height:48px;flex:none}
 .hd-logo{width:28px;height:28px;border-radius:var(--radius-pill);background:var(--muted);color:var(--primary);display:flex;align-items:center;justify-content:center}
@@ -20,7 +20,7 @@
 .hd-plus:hover{background:var(--muted);color:var(--foreground)}
 .hd-chat,.hd-comments{flex:1;min-height:0;overflow:auto;padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3)}
 .hd-msg{max-width:100%;word-break:break-word}
-.hd-msg.cont{margin-top:calc(var(--space-1) - var(--space-3))}   /* продолжение серии — ближе к предыдущему, без подписи */
+.hd-msg.cont{margin-top:calc(var(--space-1) - var(--space-3))}   /* continuation of a series - closer to the previous one, no caption */
 .hd-who-name{font-weight:600;margin-bottom:2px}
 .hd-mbody{white-space:pre-wrap}
 .hd-pic{display:block;margin-bottom:var(--space-1)}
@@ -34,9 +34,9 @@
 .hd-citem.sent .hd-n{background:var(--muted-foreground)}
 .hd-ct{flex:1;white-space:pre-wrap;word-break:break-word}
 
-/* карточка ввода */
+/* input card */
 .hd-card{margin:0 var(--space-3) var(--space-3);border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--card);overflow:hidden;flex:none;box-shadow:var(--shadow-plate)}
-/* рамка одна — у карточки; поле ввода внутри неё без своей */
+/* one border - the card's; the input inside has none of its own */
 .hd-card .inputbox{border:0;box-shadow:none;background:none;border-radius:0}
 .hd-card:focus-within{border-color:var(--ring)}
 .hd-chips{display:flex;flex-direction:column;gap:4px;padding:var(--space-2) 10px 0;max-height:112px;overflow:auto}
@@ -49,7 +49,7 @@
 .hd-who{border:1px solid transparent;border-radius:var(--radius-sm);background:none;padding:2px 6px;max-width:200px;font-size:var(--text-xs)}
 .hd-note{overflow-wrap:anywhere;padding:0 var(--space-3) var(--space-2);font-size:var(--text-xs);color:var(--destructive)}
 
-/* поле ввода в узкой колонке: подсказка, кнопки поля, микрофон и отправка — одна строка (у хаба .bar переносится) */
+/* the input in a narrow column: hint, field buttons, microphone and send in one line (the hub's .bar wraps) */
 .hd-card .bar{flex-wrap:nowrap;min-width:0}
 .hd-card .bar>*{flex:none}
 .hd-card .bar>.hint{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -63,7 +63,7 @@
 .hd-home{display:flex;align-items:center;gap:var(--space-3);border:0;background:none;padding:0;color:inherit;min-width:0;text-align:left}
 .hd-home:hover .hd-title{text-decoration:underline}
 
-/* правая часть: холст, справа панель стилей */
+/* right part: the canvas, the style panel on its right */
 .hd-right{flex:1;display:flex;min-width:0;min-height:0;position:relative}
 .hd-exit{position:absolute;right:var(--space-3);bottom:var(--space-3);z-index:40;border:0;background:var(--card);color:var(--foreground);font-weight:500;padding:8px 14px;border-radius:var(--radius-lg);box-shadow:var(--shadow-lift)}
 .hd-exit:hover{background:var(--muted)}
@@ -89,7 +89,7 @@
 
 .hdc-path{width:100%;padding:7px 10px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);margin-bottom:var(--space-3)}
 
-/* холст */
+/* canvas */
 .hdc{flex:1;min-width:0;position:relative;overflow:hidden;background:var(--muted);container-type:inline-size}
 .hdc-stage{position:absolute;inset:0;overflow:hidden;touch-action:none;
   background-color:var(--muted);background-image:radial-gradient(circle,color-mix(in oklab,var(--foreground) 14%,transparent) 1px,transparent 1.2px);background-size:22px 22px}
@@ -118,7 +118,7 @@
 .hdc-gone-msg{max-width:560px;overflow-wrap:anywhere;font-size:var(--text-sm);color:var(--foreground)}
 .hdc-gone-acts{display:flex;gap:var(--space-2)}
 
-/* плавающие панели: слева сверху инструменты, справа сверху показ, панель и масштаб */
+/* floating panels: tools top left; play, panel and zoom top right */
 .hdc-card{position:absolute;z-index:5;display:flex;align-items:center;gap:2px;padding:4px;background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-lift)}
 .hdc-bar{left:var(--space-3);top:var(--space-3)}
 .hdc-x{right:var(--space-3);top:var(--space-3)}
@@ -137,7 +137,7 @@
 .hdc-grp .hdc-tool{border-radius:var(--radius) 0 0 var(--radius)}
 .hdc-more{width:16px;height:32px;margin-left:-2px;border-radius:0 var(--radius) var(--radius) 0;color:var(--muted-foreground)}
 
-/* меню, окно добавления фрейма, редактор комментария */
+/* menus, the add-a-frame window, the comment editor */
 .hdc-pop{position:absolute;z-index:10;min-width:176px;max-width:300px;max-height:60%;overflow:auto;padding:4px;background:var(--card);border-radius:var(--radius-lg);box-shadow:var(--shadow-2),0 0 0 1px var(--border)}
 .hdc-pop.wide{width:320px}
 .hdc-pop.grids{width:420px;max-width:none}
@@ -172,17 +172,17 @@
 .hdc-eb{border:1px solid var(--border);border-radius:var(--radius);padding:5px 12px;background:var(--card)}
 .hd .hdc-eb.go{background:var(--hd-acc);border-color:var(--hd-acc);color:var(--hd-on)}
 
-/* заметки-стикеры на холсте */
+/* sticky notes on the canvas */
 .hdc-note{position:absolute;width:180px;background:color-mix(in oklch,var(--warning) 20%,var(--card));border-radius:var(--radius);box-shadow:var(--shadow-lift);overflow:hidden}
 .hdc-note.sent{opacity:.6}
 .hdc-nhead{height:20px;display:flex;justify-content:flex-end;cursor:grab;background:color-mix(in oklch,var(--warning) 16%,transparent)}
 .hdc-nx{border:0;background:none;width:20px;height:20px;line-height:1;color:var(--muted-foreground)}
 .hdc-note textarea{display:block;width:100%;min-height:72px;border:0;outline:none;resize:none;background:none;padding:6px 8px 8px;color:var(--foreground)}
 
-/* кнопка-палитра в поле ввода сессии (место composer.tools) */
+/* palette button in the session input (the composer.tools slot) */
 .hd-palette .icon{width:22px;height:22px}
 
-/* боковая панель хаба спрятана плагином hide-sidebar: в углу его кнопка 32×32 — оставляем ей место */
+/* the hub sidebar is hidden by the hide-sidebar plugin: its 32x32 button sits in the corner - leave room for it */
 html.hs-hidden .hd-top{padding-left:56px}
 @media (max-width:900px){
   .hd{flex-direction:column-reverse}
@@ -192,7 +192,7 @@ html.hs-hidden .hd-top{padding-left:56px}
   html.hs-hidden .hdc-bar{left:56px;top:var(--space-3)}
 }
 
-/* крутилки макета: секции вверху панели свойств */
+/* design tweaks: sections at the top of the properties panel */
 .hd-tw{border-bottom:1px solid var(--border);margin-bottom:var(--space-3)}
 .hd-tweak{display:flex;align-items:center;gap:6px;margin-bottom:var(--space-2);min-height:24px}
 .hd-tweak .hd-flabel{min-width:56px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

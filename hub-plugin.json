@@ -1,13 +1,19 @@
 {
   "name": "hub-design",
   "icon": "icon.png",
-  "description": "Hub Design (Хаб Дизайн): холст как в Claude Design. При входе — стартовый экран: пресеты (презентация, дизайн, дизайн в коде, дизайн-система, анимация) и прошлые макеты карточками с живым превью; клик по макету открывает его на холсте, по пресету — чат с нужным специалистом, а если просто начать писать — по указаниям делается новый файл. Бесконечное поле с HTML-макетами в рамках-артбордах, плавающий тулбар (выбор, рука, текст, фрейм, стикер, комментарий, карандаш, фигуры), зум и панорама, цвет и стили панелью справа. Комментарии пинами держатся за приметы элемента и переживают перевёрстку; сдвиг, размер, текст и крутилки сразу записываются в файл (с копией до правок), остальное уходит дизайнеру одной пачкой точных правок. «Скачать PDF» — печатью Chrome. Кнопка-палитра в поле ввода любой сессии переносит туда разговор. Нет нужного специалиста (designer, animator) — плашка «Поставить»: просьба хабу поставить его из каталога specialists",
-  "why": "Показать пальцем на макете быстрее, чем описывать словами, где и что поправить",
-  "version": "0.8.2",
+  "description": "Hub Design: a canvas like Claude Design. On entry you get a start screen: presets (presentation, design, design in code, design system, animation) and past designs as cards with a live preview; a click on a design opens it on the canvas, a click on a preset opens a chat with the right specialist, and if you just start writing, a new file is made from your instructions. An infinite field of HTML designs in artboard frames, a floating toolbar (select, hand, text, frame, note, comment, pencil, shapes), zoom and pan, color and styles in a right-hand panel. Comment pins hold on to an element's landmarks and survive a re-layout; move, resize, text and tweaks are written to the file at once (with a copy before the edits), everything else goes to the designer as one batch of precise edits. “Download PDF” prints through Chrome. The palette button in any session's input carries the conversation over. If a needed specialist (designer, animator) is missing, an “Install” banner asks the hub to install it from the specialists catalog",
+  "why": "Pointing a finger at a design is faster than describing in words where and what to fix",
+  "version": "0.9.0",
   "hub": "^1.7",
   "web": "main.js",
   "run": [
     "python3",
     "server.py"
-  ]
+  ],
+  "i18n": {
+    "ru": {
+      "description": "Hub Design (Хаб Дизайн): холст как в Claude Design. При входе — стартовый экран: пресеты (презентация, дизайн, дизайн в коде, дизайн-система, анимация) и прошлые макеты карточками с живым превью; клик по макету открывает его на холсте, по пресету — чат с нужным специалистом, а если просто начать писать — по указаниям делается новый файл. Бесконечное поле с HTML-макетами в рамках-артбордах, плавающий тулбар (выбор, рука, текст, фрейм, стикер, комментарий, карандаш, фигуры), зум и панорама, цвет и стили панелью справа. Комментарии пинами держатся за приметы элемента и переживают перевёрстку; сдвиг, размер, текст и крутилки сразу записываются в файл (с копией до правок), остальное уходит дизайнеру одной пачкой точных правок. «Скачать PDF» — печатью Chrome. Кнопка-палитра в поле ввода любой сессии переносит туда разговор. Нет нужного специалиста (designer, animator) — плашка «Поставить»: просьба хабу поставить его из каталога specialists",
+      "why": "Показать пальцем на макете быстрее, чем описывать словами, где и что поправить"
+    }
+  }
 }

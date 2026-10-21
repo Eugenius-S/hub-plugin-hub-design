@@ -1,14 +1,62 @@
-// Hub Design: режим «Холст» — бесконечный холст с фреймами-артбордами рядом, плавающий тулбар, зум к курсору, панорама,
-// заметки и пины комментариев. Правки внутри фреймов делает agent.js, а пачку копит main.js — холст только показывает
-// фреймы, ловит жесты и передаёт инструмент. Чистая математика вида — в lib.js (тесты tests/lib.test.mjs).
+// Hub Design: the "Canvas" mode - an infinite canvas with frames (artboards) side by side, a floating toolbar, zoom to the cursor, pan,
+// notes and comment pins. Edits inside the frames are made by agent.js and the batch is collected by main.js - the canvas only shows
+// the frames, catches gestures and passes the tool on. The pure view math is in lib.js (tests: tests/lib.test.mjs).
 import { CANVAS_ICONS as I } from "./icons.js";
-import { FRAME_TOP, GRIDS_MAX, GRID_KINDS, GRID_LIMITS, GRID_TITLES, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, gridRects, isGone, nameOf, newGrid, normGrid, normGrids, zoomAt } from "./lib.js";
+import { FRAME_TOP, GRIDS_MAX, GRID_KINDS, GRID_LIMITS, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, gridRects, gridTitle, isGone, nameOf, newGrid, normGrid, normGrids, zoomAt } from "./lib.js";
+import { makeT } from "./i18n.js";
+
+// UI strings: en by default, ru when the hub language is Russian (see i18n.js); resolved at use time, never at load
+export const STR = {
+  en: {
+    shape_free: "Pencil", shape_arrow: "Arrow", shape_rect: "Rectangle", shape_oval: "Oval",
+    err_one: "Error in the design", err_many: "Errors in the design: {n}",
+    err_draft: "Added to edits", err_sent: "Sent to the designer", err_ask: "Ask to fix",
+    err_title: "Add the errors to the batch of edits",
+    frame_menu: "Size, reload, remove", dl_html: "Download HTML", pdf: "Download PDF", pdf_busy: "Preparing PDF…", play: "Play",
+    to_dash: "To the dashboard", to_dash_title: "Back to the list of designs", remove_canvas: "Remove from canvas",
+    note_remove: "Remove note", note_ph: "A note to the designer…",
+    window_width: "Window width", grids_over: "Grids over the frame…", reload: "Reload", show_large: "Show large",
+    g_color: "Color", g_count: "Count", g_gap: "Gap", g_margin: "Margin", g_remove: "Remove grid", g_add: "+ Add a grid",
+    g_show: "Show on the canvas", g_head: "Grids · {name}", g_none: "No grids yet",
+    page1: "Page 1", no_frames: "No frames yet", canvas_frames: "Canvas frames",
+    fit_all: "Fit all", zoom_in: "Zoom in", zoom_out: "Zoom out",
+    path_ph: "HTML path: /…/index.html", add_frame: "Add a frame", recent_html: "Recent HTML of the session",
+    ed_who: "Who gets the comment", ed_pick: "Choose a recipient",
+    how_wrote: "Wrote this design", how_picked: "Picked by you", how_named: "Named this file (the author was not found)", how_none: "Who made the design is unknown",
+    ed_head: "Comment", ed_ph: "What to change here?", ed_close: "Close", ed_delete: "Delete", ed_send: "Send",
+    tool_select: "Select (V)", tool_hand: "Hand (H)", tool_text: "Text (T)", tool_frame: "Add a frame (F)", tool_note: "Note (N)", tool_comment: "Comment (C)",
+    tool_pencil: "Pencil (P)", tool_shape: "Shapes (R)", tool_more: "More: pencil and shapes",
+    play_top: "Show the selected frame full screen", panel: "Style panel", zoom: "Zoom", close_design: "Close the design — to the start screen",
+  },
+  ru: {
+    shape_free: "Карандаш", shape_arrow: "Стрелка", shape_rect: "Прямоугольник", shape_oval: "Овал",
+    err_one: "Ошибка в макете", err_many: "Ошибок в макете: {n}",
+    err_draft: "Добавлено в правки", err_sent: "Отправлено дизайнеру", err_ask: "Попросить исправить",
+    err_title: "Добавить ошибки в пачку правок",
+    frame_menu: "Размер, перезагрузка, убрать", dl_html: "Скачать HTML", pdf: "Скачать PDF", pdf_busy: "Готовлю PDF…", play: "Смотреть",
+    to_dash: "К дашборду", to_dash_title: "Вернуться к списку макетов", remove_canvas: "Убрать с холста",
+    note_remove: "Убрать заметку", note_ph: "Заметка дизайнеру…",
+    window_width: "Ширина окна", grids_over: "Сетки поверх рамки…", reload: "Перезагрузить", show_large: "Показать крупно",
+    g_color: "Цвет", g_count: "Число", g_gap: "Зазор", g_margin: "Поле", g_remove: "Убрать сетку", g_add: "+ Добавить сетку",
+    g_show: "Показывать на холсте", g_head: "Сетки · {name}", g_none: "Сеток пока нет",
+    page1: "Страница 1", no_frames: "Фреймов пока нет", canvas_frames: "Фреймы холста",
+    fit_all: "Вписать всё", zoom_in: "Приблизить", zoom_out: "Отдалить",
+    path_ph: "Путь к HTML: /…/index.html", add_frame: "Добавить фрейм", recent_html: "Последние HTML сессии",
+    ed_who: "Кому уйдёт комментарий", ed_pick: "Выберите получателя",
+    how_wrote: "Писал этот макет", how_picked: "Выбран вами", how_named: "Называл этот файл (писавшего не нашли)", how_none: "Кто делал макет, неизвестно",
+    ed_head: "Комментарий", ed_ph: "Что поменять здесь?", ed_close: "Закрыть", ed_delete: "Удалить", ed_send: "Отправить",
+    tool_select: "Выбрать (V)", tool_hand: "Рука (H)", tool_text: "Текст (T)", tool_frame: "Добавить фрейм (F)", tool_note: "Заметка (N)", tool_comment: "Комментарий (C)",
+    tool_pencil: "Карандаш (P)", tool_shape: "Фигуры (R)", tool_more: "Ещё: карандаш и фигуры",
+    play_top: "Показать выбранный фрейм во весь экран", panel: "Панель стилей", zoom: "Масштаб", close_design: "Закрыть макет — на стартовый экран",
+  },
+};
+const t = makeT(STR);
 
 const FRAME_SIZES = SIZES.filter((s) => s.w);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2];
 const TOOL_KEYS = { v: "select", h: "hand", t: "text", n: "note", c: "comment", p: "pencil", r: "shape" };
 const BAR_GAP = 12;
-const SHAPES = { pencil: [["free", "Карандаш", "free"], ["arrow", "Стрелка", "arrow"]], shape: [["rect", "Прямоугольник", "rect"], ["oval", "Овал", "oval"]] };
+const SHAPES = { pencil: [["free", "free"], ["arrow", "arrow"]], shape: [["rect", "rect"], ["oval", "oval"]] };   // [id, icon]; the name is t("shape_<id>")
 
 export function createCanvas(app) {
   const { hub, P } = app;
@@ -23,6 +71,18 @@ export function createCanvas(app) {
     return b;
   };
 
+  // texts of nodes that live between paints (titles, placeholders): set by bind() and set again on every paint, so they follow the hub language.
+  // owner "f:<path>" / "n:<id>" - dropped together with the frame / the note
+  const bound = [];
+  const alive = (o) => !o || (o.startsWith("f:") ? fr.has(o.slice(2)) : o.startsWith("n:") ? notes.has(o.slice(2)) : true);
+  const bind = (owner, node, key, prop = "title") => { bound.push([owner, node, key, prop]); node[prop] = t(key); return node; };
+  const relabel = () => {
+    for (let i = bound.length - 1; i >= 0; i--) {
+      const [o, n, k, prop] = bound[i];
+      if (alive(o)) n[prop] = t(k); else bound.splice(i, 1);
+    }
+  };
+
   const root = el("div", "hdc");
   const stage = el("div", "hdc-stage");
   const world = el("div", "hdc-world");
@@ -32,7 +92,7 @@ export function createCanvas(app) {
   const bar = el("div", "hdc-card hdc-bar");
   const top = el("div", "hdc-card hdc-top");
   const pop = el("div", "hdc-pop");
-  const xIsland = el("div", "hdc-card hdc-x");   // ✕ — отдельный островок: закрыть открытый макет
+  const xIsland = el("div", "hdc-card hdc-x");   // ✕ - a separate island: close the open design
   root.append(stage, bar, top, xIsland, pop);
   pop.hidden = true;
 
@@ -41,7 +101,7 @@ export function createCanvas(app) {
   const notes = new Map();
   let space = false, gesture = null, editor = null, menu = null, saveT = 0;
 
-  // --- вид: перевод экрана и сцены -------------------------------------------------------------------------------------
+  // --- view: converting between screen and scene -----------------------------------------------------------------------
   const size = () => ({ W: stage.clientWidth, H: stage.clientHeight });
   function setView(v, user = true) {
     Object.assign(view, v);
@@ -74,7 +134,7 @@ export function createCanvas(app) {
   const toWorld = (p) => ({ x: (p.x - view.x) / view.k, y: (p.y - view.y) / view.k });
 
   function wheel(sx, sy, dx, dy, ctrl) {
-    if (!ctrl && Math.abs(dx) > Math.abs(dy) * 1.2) return setView({ x: view.x - dx }); // горизонтальный жест — панорама
+    if (!ctrl && Math.abs(dx) > Math.abs(dy) * 1.2) return setView({ x: view.x - dx }); // a horizontal gesture is a pan
     setView(zoomAt(view, Math.exp(-dy * (ctrl ? 0.012 : 0.0016)), sx, sy));
   }
   stage.addEventListener("wheel", (e) => {
@@ -83,7 +143,7 @@ export function createCanvas(app) {
     wheel(p.x, p.y, e.deltaX, e.deltaY, e.ctrlKey || e.metaKey);
   }, { passive: false });
 
-  // событие колеса из фрейма (agent.js): координаты в окне фрейма → в сцену
+  // a wheel event from a frame (agent.js): coordinates in the frame window -> in the scene
   function frameWheel(ep, m) {
     const r = ep.iframe.getBoundingClientRect();
     const s = stage.getBoundingClientRect();
@@ -91,7 +151,7 @@ export function createCanvas(app) {
     wheel(r.left + m.x * k - s.left, r.top + m.y * k - s.top, m.dx, m.dy, m.ctrl);
   }
 
-  // --- жесты на сцене ----------------------------------------------------------------------------------------------
+  // --- gestures on the scene ---------------------------------------------------------------------------------------
   const capture = () => P.tool === "hand" || P.tool === "note" || space || !!gesture;
   function chrome() {
     root.dataset.tool = P.tool;
@@ -145,7 +205,7 @@ export function createCanvas(app) {
   stage.addEventListener("pointerup", endGesture);
   stage.addEventListener("pointercancel", endGesture);
 
-  // клавиши: пробел — рука, буквы — инструменты; из фрейма их пересылает agent.js
+  // keys: space is the hand, letters are tools; from a frame they are forwarded by agent.js
   function key(k, down, mods = {}) {
     if (k === " ") { if (space !== down) { space = down; chrome(); } return true; }
     if (!down || mods.meta || mods.ctrl || mods.alt) {
@@ -171,14 +231,14 @@ export function createCanvas(app) {
   addEventListener("keyup", onKey(false));
   addEventListener("blur", () => { if (space) { space = false; chrome(); } });
 
-  // --- фреймы --------------------------------------------------------------------------------------------------------
+  // --- frames --------------------------------------------------------------------------------------------------------
   function layoutFrame(f) {
     const n = fr.get(f.path);
     if (!n) return;
     Object.assign(n.box.style, { left: f.x + "px", top: f.y + "px", width: f.w + "px", height: f.h + "px" });
     paintGrids(f, n);
   }
-  // сетки поверх рамки: только на холсте, поверх макета, мыши не мешают; один <path> на сетку
+  // grids over the frame: on the canvas only, above the design, the mouse passes through; one <path> per grid
   function paintGrids(f, n) {
     const grids = f.gridsOff ? [] : normGrids(f.grids);
     const sig = JSON.stringify([grids, f.w, f.h]);
@@ -190,7 +250,7 @@ export function createCanvas(app) {
     n.grids.innerHTML = `<svg width="${f.w}" height="${f.h}" viewBox="0 0 ${f.w} ${f.h}" xmlns="http://www.w3.org/2000/svg">` +
       grids.map((g) => `<path fill="${g.color}" fill-opacity=".14" d="${gridRects(g, f.w, f.h).map(([x, y, w, h]) => `M${f1(x)} ${f1(y)}h${f1(w)}v${f1(h)}h${f1(-w)}z`).join("")}"/>`).join("") + "</svg>";
   }
-  // ошибки макета: метка в подписи рамки и кнопка «Попросить исправить» (добавляет их в пачку)
+  // design errors: a mark in the frame label and an "Ask to fix" button (puts them into the batch)
   function paintErrs() {
     for (const f of P.frames) {
       const n = fr.get(f.path);
@@ -198,11 +258,11 @@ export function createCanvas(app) {
       const s = app.errState(f.path);
       n.err.hidden = !s;
       if (!s) continue;
-      const word = s.n === 1 ? "Ошибка в макете" : `Ошибок в макете: ${s.n}`;
-      const act = s.state === "draft" ? "Добавлено в правки" : s.state === "sent" ? "Отправлено дизайнеру" : "Попросить исправить";
+      const word = s.n === 1 ? t("err_one") : t("err_many", { n: s.n });
+      const act = s.state === "draft" ? t("err_draft") : s.state === "sent" ? t("err_sent") : t("err_ask");
       n.err.textContent = `⚠ ${word} · ${act}`;
       n.err.disabled = !!s.state;
-      n.err.title = s.state ? "" : "Добавить ошибки в пачку правок";
+      n.err.title = s.state ? "" : t("err_title");
     }
   }
   function placeLabels() {
@@ -227,20 +287,21 @@ export function createCanvas(app) {
     label.dataset.path = f.path;
     const title = el("span", "hdc-ltitle", nameOf(f.path));
     title.title = f.path;
-    const tweak = btn("hdc-lb", svg("sliders"), "Размер, перезагрузка, убрать", (e) => frameMenu(f.path, e.currentTarget));
-    const dl = btn("hdc-lb", svg("download"), "Скачать HTML", () => {
+    const own = "f:" + f.path;
+    const tweak = bind(own, btn("hdc-lb", svg("sliders"), "", (e) => frameMenu(f.path, e.currentTarget)), "frame_menu");
+    const dl = bind(own, btn("hdc-lb", svg("download"), "", () => {
       const a = el("a");
       a.href = app.fileUrl(f.path, { raw: 1, dl: 1 });
       a.download = frameTitle(f.path);
       document.body.append(a); a.click(); a.remove();
-    });
-    const pdf = btn("hdc-lb", svg("pdf"), "Скачать PDF", async () => {
+    }), "dl_html");
+    const pdf = bind(own, btn("hdc-lb", svg("pdf"), "", async () => {
       if (pdf.disabled) return;
       pdf.disabled = true;
-      pdf.title = "Готовлю PDF…";
-      try { await app.pdf(f.path); } finally { pdf.disabled = false; pdf.title = "Скачать PDF"; }
-    });
-    const play = btn("hdc-lb", svg("play12"), "Смотреть", () => app.play(f.path));
+      pdf.title = t("pdf_busy");
+      try { await app.pdf(f.path); } finally { pdf.disabled = false; pdf.title = t("pdf"); }
+    }), "pdf");
+    const play = bind(own, btn("hdc-lb", svg("play12"), "", () => app.play(f.path)), "play");
     const err = btn("hdc-err", "", "", () => app.askFix(f.path));
     err.hidden = true;
     label.append(title, err, tweak, dl, pdf, play);
@@ -257,13 +318,17 @@ export function createCanvas(app) {
     label.addEventListener("pointerup", (e) => { stage.dispatchEvent(new PointerEvent("pointerup", e)); });
     label.addEventListener("dblclick", (e) => { if (!e.target.closest("button")) focusOn(f.path); });
     labels.append(label);
-    // файла нет — вместо сырого ответа сервера в рамке понятная строка и два выхода (0.5.1); рамка поверх фрейма, в экранных координатах
+    // the file is gone - instead of the raw server reply the frame shows a clear line and two ways out (0.5.1); drawn over the frame, in screen coordinates
     const gone = el("div", "hdc-gone");
     gone.hidden = true;
     const goneMsg = el("div", "hdc-gone-msg");
     const goneActs = el("div", "hdc-gone-acts");
-    goneActs.append(btn("btn small", "К дашборду", "Вернуться к списку макетов", () => app.goHome()),
-      btn("btn small quiet", "Убрать с холста", null, () => app.removeFrame(f.path)));
+    const toDash = btn("btn small", "", "", () => app.goHome());
+    const rmFrame = btn("btn small quiet", "", null, () => app.removeFrame(f.path));
+    bind(own, toDash, "to_dash", "textContent");
+    bind(own, toDash, "to_dash_title");
+    bind(own, rmFrame, "remove_canvas", "textContent");
+    goneActs.append(toDash, rmFrame);
     gone.append(goneMsg, goneActs);
     gone.addEventListener("pointerdown", (e) => e.stopPropagation());
     labels.append(gone);
@@ -291,7 +356,7 @@ export function createCanvas(app) {
     n.iframe.src = app.fileUrl(path) + "&t=" + Date.now();
     n.shown = true;
   }
-  // файл пропал или вернулся: рамку гасим и показываем причину, вернулся — грузим снова
+  // the file vanished or came back: dim the frame and show the reason; when it is back, load it again
   function showGone(f, n) {
     const state = app.fileState(f.path);
     const gone = isGone(state);
@@ -307,7 +372,7 @@ export function createCanvas(app) {
     if (d) setTimeout(() => d.ta.focus({ preventScroll: true }), 0);
   }
 
-  // --- заметки ---------------------------------------------------------------------------------------------------------
+  // --- notes -----------------------------------------------------------------------------------------------------------
   function layoutNote(n) {
     const d = notes.get(n.id);
     if (d) Object.assign(d.node.style, { left: n.x + "px", top: n.y + "px" });
@@ -316,10 +381,10 @@ export function createCanvas(app) {
     const node = el("div", "hdc-note");
     node.dataset.id = n.id;
     const head = el("div", "hdc-nhead");
-    const x = btn("hdc-nx", "×", "Убрать заметку", () => app.removeNote(n.id));
+    const x = bind("n:" + n.id, btn("hdc-nx", "×", "", () => app.removeNote(n.id)), "note_remove");
     head.append(x);
     const ta = el("textarea");
-    ta.placeholder = "Заметка дизайнеру…";
+    bind("n:" + n.id, ta, "note_ph", "placeholder");
     ta.addEventListener("input", () => { n.text = ta.value; app.noteChanged(); });
     ta.addEventListener("keydown", (e) => e.stopPropagation());
     ta.addEventListener("change", () => app.save());
@@ -340,7 +405,7 @@ export function createCanvas(app) {
     return d;
   }
 
-  // --- всплывающие окна: меню, добавить фрейм, редактор комментария ---------------------------------------------
+  // --- popups: menus, add a frame, the comment editor ------------------------------------------------------------
   function closeMenu() { menu = null; pop.hidden = true; pop.replaceChildren(); pop.className = "hdc-pop"; }
   function openPop(anchor, kids, cls = "", align = "left") {
     pop.className = "hdc-pop " + cls;
@@ -361,13 +426,13 @@ export function createCanvas(app) {
   function frameMenu(path, anchor) {
     if (menu === anchor) return closeMenu();
     const f = P.frames.find((q) => q.path === path);
-    const head = el("div", "hdc-mh", "Ширина окна");
+    const head = el("div", "hdc-mh", t("window_width"));
     openPop(anchor, [head, ...FRAME_SIZES.map((s) => item(s.label + " px" + (f.w === s.w ? "  ✓" : ""), () => app.sizeFrame(path, s.w))),
-      sep(), item("Сетки поверх рамки…", () => gridsMenu(path, anchor)),
-      item("Перезагрузить", () => reloadFrame(path)), item("Показать крупно", () => focusOn(path)),
-      item("Убрать с холста", () => app.removeFrame(path))], "", "right");
+      sep(), item(t("grids_over"), () => gridsMenu(path, anchor)),
+      item(t("reload"), () => reloadFrame(path)), item(t("show_large"), () => focusOn(path)),
+      item(t("remove_canvas"), () => app.removeFrame(path))], "", "right");
   }
-  // сетки рамки: до GRIDS_MAX штук, правятся здесь и живут на холсте (в макет не попадают, дизайнеру — строкой в виде рамки)
+  // frame grids: up to GRIDS_MAX, edited here and living on the canvas (not in the design; the designer gets them as a line in the frame view)
   function gridsMenu(path, anchor) {
     const f = P.frames.find((q) => q.path === path);
     if (!f) return;
@@ -377,7 +442,7 @@ export function createCanvas(app) {
     const rows = list.map((g, i) => {
       const row = el("div", "hdc-grow");
       const kind = el("select");
-      for (const k of GRID_KINDS) { const o = el("option", null, GRID_TITLES[k]); o.value = k; kind.append(o); }
+      for (const k of GRID_KINDS) { const o = el("option", null, gridTitle(k)); o.value = k; kind.append(o); }
       kind.value = g.kind;
       kind.addEventListener("change", () => set(list.map((q, j) => (j === i ? { ...q, kind: kind.value } : q))));
       const num = (key, label) => {
@@ -391,31 +456,31 @@ export function createCanvas(app) {
         return w;
       };
       const color = el("input", "hdc-gcolor");
-      color.type = "color"; color.value = g.color; color.title = "Цвет";
+      color.type = "color"; color.value = g.color; color.title = t("g_color");
       color.addEventListener("change", () => set(list.map((q, j) => (j === i ? { ...q, color: color.value } : q))));
-      row.append(kind, num("count", "Число"), num("gutter", "Зазор"), num("margin", "Поле"), color, btn("hdc-gx", "×", "Убрать сетку", () => set(list.filter((_, j) => j !== i))));
+      row.append(kind, num("count", t("g_count")), num("gutter", t("g_gap")), num("margin", t("g_margin")), color, btn("hdc-gx", "×", t("g_remove"), () => set(list.filter((_, j) => j !== i))));
       return row;
     });
-    const add = btn("hdc-mi", [el("span", null, "+ Добавить сетку")], null, () => set([...list, newGrid(list)]));
+    const add = btn("hdc-mi", [el("span", null, t("g_add"))], null, () => set([...list, newGrid(list)]));
     add.disabled = list.length >= GRIDS_MAX;
     const show = el("label", "hdc-gshow");
     const cb = el("input"); cb.type = "checkbox"; cb.checked = !f.gridsOff;
     cb.addEventListener("change", () => { f.gridsOff = !cb.checked; redo(); });
-    show.append(cb, el("span", null, "Показывать на холсте"));
+    show.append(cb, el("span", null, t("g_show")));
     closeMenu();
-    openPop(anchor, [el("div", "hdc-mh", `Сетки · ${nameOf(path)}`), ...(rows.length ? rows : [el("div", "hdc-mh", "Сеток пока нет")]), add, ...(list.length ? [show] : [])], "grids", "right");
+    openPop(anchor, [el("div", "hdc-mh", t("g_head", { name: nameOf(path) })), ...(rows.length ? rows : [el("div", "hdc-mh", t("g_none"))]), add, ...(list.length ? [show] : [])], "grids", "right");
     menu = anchor;
   }
   function pagesMenu(anchor) {
     if (menu === anchor) return closeMenu();
     const rows = P.frames.map((f) => item(nameOf(f.path), () => focusOn(f.path)));
-    openPop(anchor, [el("div", "hdc-mh", "Страница 1"), ...(rows.length ? rows : [el("div", "hdc-mh", "Фреймов пока нет")])]);
+    openPop(anchor, [el("div", "hdc-mh", t("page1")), ...(rows.length ? rows : [el("div", "hdc-mh", t("no_frames"))])]);
   }
   function zoomMenu(anchor) {
     if (menu === anchor) return closeMenu();
     const c = () => ({ x: size().W / 2, y: size().H / 2 });
-    openPop(anchor, [item("Вписать всё", fit), ...ZOOM_STEPS.map((z) => item(Math.round(z * 100) + "%", () => setView(zoomAt(view, z / view.k, c().x, c().y)))),
-      sep(), item("Приблизить", () => setView(zoomAt(view, 1.25, c().x, c().y))), item("Отдалить", () => setView(zoomAt(view, 0.8, c().x, c().y)))], "", "right");
+    openPop(anchor, [item(t("fit_all"), fit), ...ZOOM_STEPS.map((z) => item(Math.round(z * 100) + "%", () => setView(zoomAt(view, z / view.k, c().x, c().y)))),
+      sep(), item(t("zoom_in"), () => setView(zoomAt(view, 1.25, c().x, c().y))), item(t("zoom_out"), () => setView(zoomAt(view, 0.8, c().x, c().y)))], "", "right");
   }
   function focusOn(path) {
     const f = P.frames.find((q) => q.path === path);
@@ -429,15 +494,15 @@ export function createCanvas(app) {
     const anchor = bar.querySelector('[data-tool="frame"]') || bar;
     if (menu === anchor) return closeMenu();
     const input = el("input", "hdc-path");
-    input.placeholder = "Путь к HTML: /…/index.html";
+    input.placeholder = t("path_ph");
     const go = () => { const v = input.value.trim(); if (v) { closeMenu(); app.addFrame(v, true); } };
     input.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") go(); });
     const rows = app.recent().filter((p) => !P.frames.some((f) => f.path === p)).map((p) => item(nameOf(p), () => app.addFrame(p, true)));
-    openPop(anchor, [el("div", "hdc-mh", "Добавить фрейм"), input, ...(rows.length ? [el("div", "hdc-mh", "Последние HTML сессии"), ...rows] : [])], "wide");
+    openPop(anchor, [el("div", "hdc-mh", t("add_frame")), input, ...(rows.length ? [el("div", "hdc-mh", t("recent_html")), ...rows] : [])], "wide");
     setTimeout(() => input.focus(), 0);
   }
 
-  // редактор комментария: рисуется здесь, а не в фрейме — в масштабе холста окно в фрейме стало бы крошечным
+  // the comment editor: drawn here, not in the frame - at the canvas scale a window inside the frame would be tiny
   function openEditor(ep, m) {
     const pin = P.pins.find((p) => p.id === m.id);
     if (!pin) return;
@@ -446,25 +511,25 @@ export function createCanvas(app) {
     const box = el("div", "hdc-ed");
     const to = el("label", "hdc-edto");
     const who = el("select", "hdc-who");
-    who.title = "Кому уйдёт комментарий";
+    who.title = t("ed_who");
     who.addEventListener("change", () => { app.pickRecipient(ep.path, who.value); fill(); });
     to.append("→ ", who);
-    // получатель — тот, кто писал макет; не нашли — выбирает владелец (пока не выбрал, «Отправить» не работает)
+    // the recipient is whoever wrote the design; not found - the owner picks (until then "Send" is disabled)
     const fill = () => {
       const r = app.recipient(ep.path);
       const names = app.recipients();
       if (r.session && !names.includes(r.session)) names.unshift(r.session);
-      who.replaceChildren(...[...(r.session ? [] : [""]), ...names].map((n) => { const o = el("option", null, n || "Выберите получателя"); o.value = n; return o; }));
+      who.replaceChildren(...[...(r.session ? [] : [""]), ...names].map((n) => { const o = el("option", null, n || t("ed_pick")); o.value = n; return o; }));
       who.value = r.session;
       to.dataset.how = r.how;
-      to.title = { wrote: "Писал этот макет", picked: "Выбран вами", named: "Называл этот файл (писавшего не нашли)", none: "Кто делал макет, неизвестно" }[r.how] || "";
+      to.title = ["wrote", "picked", "named", "none"].includes(r.how) ? t("how_" + r.how) : "";
       if (go) go.disabled = !r.session;
     };
-    box.append(el("h4", null, "Комментарий"), to);
+    box.append(el("h4", null, t("ed_head")), to);
     const ta = el("textarea");
-    ta.placeholder = "Что поменять здесь?";
+    ta.placeholder = t("ed_ph");
     ta.value = pin.text || "";
-    // «Закрыть» не теряет набранное (останется комментарием в пачке), пустой пин убирается; «Отправить» шлёт сразу автору макета
+    // "Close" keeps what was typed (it stays a comment in the batch), an empty pin is removed; "Send" goes straight to the design author
     const close = () => {
       const text = ta.value.trim();
       closeEditor();
@@ -483,9 +548,9 @@ export function createCanvas(app) {
     });
     const row = el("div", "hdc-edrow");
     const left = el("span", "hdc-edleft");
-    left.append(btn("hdc-eb quiet", "Закрыть", null, close),
-      btn("hdc-eb quiet", "Удалить", null, () => { closeEditor(); app.handle(ep.path, { t: "remove", id: m.id }); }));
-    const go = btn("hdc-eb go", "Отправить", null, send);
+    left.append(btn("hdc-eb quiet", t("ed_close"), null, close),
+      btn("hdc-eb quiet", t("ed_delete"), null, () => { closeEditor(); app.handle(ep.path, { t: "remove", id: m.id }); }));
+    const go = btn("hdc-eb go", t("ed_send"), null, send);
     row.append(left, go);
     box.append(ta, row);
     editor.fill = fill;
@@ -514,43 +579,46 @@ export function createCanvas(app) {
     Object.assign(editor.node.style, { left: Math.min(Math.max(8, x + 14), s.width - 320) + "px", top: Math.min(Math.max(8, y + 14), s.height - 190) + "px" });
   }
 
-  // --- тулбар ---------------------------------------------------------------------------------------------------------
-  const pages = btn("hdc-pages", [el("span", null, "Страница 1"), svg("chev12")], "Фреймы холста", (e) => pagesMenu(e.currentTarget));
-  const toolBtn = (tool, ic, title, extra) => {
-    const b = btn("hdc-tool", svg(ic), title, () => (tool === "frame" ? openAdd() : app.setTool(tool)));
+  // --- toolbar ---------------------------------------------------------------------------------------------------------
+  const pageLabel = el("span");
+  const pages = btn("hdc-pages", [pageLabel, svg("chev12")], "", (e) => pagesMenu(e.currentTarget));
+  bind("", pageLabel, "page1", "textContent");
+  bind("", pages, "canvas_frames");
+  const toolBtn = (tool, ic) => {
+    const b = bind("", btn("hdc-tool", svg(ic), "", () => (tool === "frame" ? openAdd() : app.setTool(tool))), "tool_" + tool);
     b.dataset.tool = tool;
     return b;
   };
   const tools = {
-    select: toolBtn("select", "select", "Выбрать (V)"), hand: toolBtn("hand", "hand", "Рука (H)"), text: toolBtn("text", "text", "Текст (T)"),
-    frame: toolBtn("frame", "frame", "Добавить фрейм (F)"), note: toolBtn("note", "note", "Заметка (N)"),
-    comment: toolBtn("comment", "comment", "Комментарий (C)"),
+    select: toolBtn("select", "select"), hand: toolBtn("hand", "hand"), text: toolBtn("text", "text"),
+    frame: toolBtn("frame", "frame"), note: toolBtn("note", "note"),
+    comment: toolBtn("comment", "comment"),
   };
-  const group = (tool, title, key) => {
-    const main = btn("hdc-tool", svg(SHAPES[tool][0][2]), title, () => app.setTool(tool, P.shapes[tool]));
+  const group = (tool) => {
+    const main = bind("", btn("hdc-tool", svg(SHAPES[tool][0][1]), "", () => app.setTool(tool, P.shapes[tool])), "tool_" + tool);
     main.dataset.tool = tool;
-    const more = btn("hdc-more", svg("chev"), title, (e) => {
+    const more = bind("", btn("hdc-more", svg("chev"), "", (e) => {
       if (menu === more) return closeMenu();
-      openPop(more, SHAPES[tool].map(([id, name, ic]) => item(name + (P.shapes[tool] === id ? "  ✓" : ""), () => { P.shapes[tool] = id; app.setTool(tool, id); }, svg(ic))));
-    });
+      openPop(more, SHAPES[tool].map(([id, ic]) => item(t("shape_" + id) + (P.shapes[tool] === id ? "  ✓" : ""), () => { P.shapes[tool] = id; app.setTool(tool, id); }, svg(ic))));
+    }), "tool_" + tool);
     const wrap = el("span", "hdc-grp");
     wrap.append(main, more);
     return { wrap, main };
   };
-  const pencil = group("pencil", "Карандаш (P)");
-  const shapes = group("shape", "Фигуры (R)");
+  const pencil = group("pencil");
+  const shapes = group("shape");
   tools.pencil = pencil.main;
   tools.shape = shapes.main;
-  // не хватает места до правой группы — карандаш и фигуры уходят в меню «ещё» (между группами всегда ≥ BAR_GAP px)
-  const ovf = btn("hdc-tool hdc-ovf", svg("more"), "Ещё: карандаш и фигуры", () => {
+  // no room left before the right group - pencil and shapes move into the "more" menu (always >= BAR_GAP px between the groups)
+  const ovf = bind("", btn("hdc-tool hdc-ovf", svg("more"), "", () => {
     if (menu === ovf) return closeMenu();
     const kids = [];
     for (const tool of ["pencil", "shape"]) {
       if (kids.length) kids.push(sep());
-      for (const [id, name, ic] of SHAPES[tool]) kids.push(item(name + (P.tool === tool && P.shapes[tool] === id ? "  ✓" : ""), () => { P.shapes[tool] = id; app.setTool(tool, id); }, svg(ic)));
+      for (const [id, ic] of SHAPES[tool]) kids.push(item(t("shape_" + id) + (P.tool === tool && P.shapes[tool] === id ? "  ✓" : ""), () => { P.shapes[tool] = id; app.setTool(tool, id); }, svg(ic)));
     }
     openPop(ovf, kids);
-  });
+  }), "tool_more");
   ovf.hidden = true;
   bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.note, tools.comment, pencil.wrap, shapes.wrap, ovf);
   function fitBar() {
@@ -560,16 +628,17 @@ export function createCanvas(app) {
     if (sameRow && bar.offsetLeft + bar.offsetWidth + BAR_GAP > top.offsetLeft) { bar.classList.add("compact"); ovf.hidden = false; }
   }
 
-  const playTop = btn("hdc-tool", svg("play"), "Показать выбранный фрейм во весь экран", () => app.play(P.focus || (P.frames[0] && P.frames[0].path)));
-  const panel = btn("hdc-tool", svg("panel"), "Панель стилей", () => app.toggleProps());
+  const playTop = bind("", btn("hdc-tool", svg("play"), "", () => app.play(P.focus || (P.frames[0] && P.frames[0].path))), "play_top");
+  const panel = bind("", btn("hdc-tool", svg("panel"), "", () => app.toggleProps()), "panel");
   const zoomText = el("span", null, "100%");
-  const zoomB = btn("hdc-zoom", [zoomText, svg("chev12")], "Масштаб", (e) => zoomMenu(e.currentTarget));
-  const closeB = btn("hdc-tool hdc-close", hub.icon ? hub.icon("close") : svg("close"), "Закрыть макет — на стартовый экран", () => app.close());
+  const zoomB = bind("", btn("hdc-zoom", [zoomText, svg("chev12")], "", (e) => zoomMenu(e.currentTarget)), "zoom");
+  const closeB = bind("", btn("hdc-tool hdc-close", hub.icon ? hub.icon("close") : svg("close"), "", () => app.close()), "close_design");
   top.append(playTop, panel, zoomB);
   xIsland.append(closeB);
 
-  // --- рисуем состояние ----------------------------------------------------------------------------------------------
+  // --- painting the state ----------------------------------------------------------------------------------------------
   function paint() {
+    relabel();
     chrome();
     for (const [tool, b] of Object.entries(tools)) b.classList.toggle("on", P.tool === tool);
     panel.classList.toggle("on", P.propsOpen);

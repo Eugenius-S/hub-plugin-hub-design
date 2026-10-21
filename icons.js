@@ -1,4 +1,4 @@
-// Hub Design: значки холста — тот же набор, что в интерфейсе хаба: Icons8 «Material Outlined» (viewBox 24, заливка currentColor)
+// Hub Design: canvas icons - the same set as in the hub UI: Icons8 "Material Outlined" (viewBox 24, fill currentColor)
 const S = (d, size = 20) =>
   `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
 

@@ -1,28 +1,139 @@
-// Hub Design: чистая логика без DOM — адреса, список файлов сессии, текст правок для дизайнера. Тесты: tests/lib.test.mjs
+// Hub Design: pure logic without DOM - addresses, the session's file list, the text of edits for the designer. Tests: tests/lib.test.mjs
+import { makeT } from "./i18n.js";
 
-// ширина окна дизайна — переключатель «Окно» в панели настроек
+// UI and message texts: en by default, ru when the hub language is Russian (see i18n.js); resolved at use time, never at load.
+// The message to the designer (message()) is built from the same table: the same structure in both languages.
+export const STR = {
+  en: {
+    size_fit: "Fit to window",
+    you: "You", who_core: "core", who_hub: "hub", who_schedule: "schedule", who_module: "module", who_plugin: "plugin", who_session: "session",
+    p_text: "Text", p_font: "Font", p_size: "Size", p_weight: "Weight", p_color: "Color", p_align: "Align", p_line: "Line", p_tracking: "Tracking",
+    p_width: "Width", p_height: "Height", p_layout: "Layout", p_gap: "Gap", p_dir: "Direction", p_justify: "Justify", p_grid: "Grid", p_cols: "Columns",
+    p_block: "Block", p_opacity: "Opacity", p_bg: "Fill", p_pad_t: "Padding T", p_r: "R", p_b: "B", p_l: "L", p_margin_t: "Margin T",
+    p_border: "Border", p_style: "Style", p_border_color: "Border color", p_radius: "Radius",
+    quote: "\u201c{s}\u201d",
+    cols: "grid columns {a} \u2192 {b} (grid-template-columns: {from} \u2192 {to})",
+    along_x: "{v} px along X", along_y: "{v} px along Y",
+    shift: "shift {where} (was x {x0}, y {y0} \u2192 now x {x1}, y {y1})",
+    resize: "size {w0}\u00d7{h0} \u2192 {w}\u00d7{h} px",
+    retext: "text {a} \u2192 {b}",
+    style: "style: ",
+    near: " near `{sel}`{label}",
+    d_arrow: "arrow from x {x0}, y {y0} to x {x1}, y {y1}{near}",
+    d_loop: "circled area {area}{near}",
+    d_oval: "circled with an oval, area {area}{near}",
+    d_box: "framed area {area}{near}",
+    d_mark: "marked area {area}{near}",
+    tw_on: "on", tw_off: "off",
+    tw_line: "Tweak `{key}`: {a} \u2192 {b}",
+    a_lost: "; element not found \u2014 the design was relaid out, the point stayed where it was",
+    a_tag: "tag {tag}", a_text: "text {s}", a_attr: "attributes {s}", a_inside: "inside #{anc}", a_cls: "classes {list}", a_near: "next to {s}",
+    a_noid: "; no id, hints: {bits}",
+    m_head: "Edits to the design `{f}` (Hub Design, round {round}; window {w}\u00d7{h} px, coordinates from the top-left corner of the page).",
+    m_grid: "Grid over the frame (a layout guide, on the canvas only; it is not in the design): {g}.",
+    m_point: "point",
+    m_comment: "Comment on {el}, point x {x}, y {y} (element {w}\u00d7{h} at x {ex}, y {ey}{note}): {text}",
+    m_hand: "Edited by hand `{sel}`{label}: {what}{inFile}.",
+    m_infile: " \u2014 already in the file",
+    m_drawing: "Freehand drawing: {d}{text}.",
+    m_tweaks: "Tweaks are values from the Hub Design panel (#hub-tweaks): make the new ones the defaults and move them into the code.",
+    m_hand_note: "I made the hand edits right in the preview \u2014 move them into the code so that it looks the same (not a transform on top, but in the layout).",
+    m_file_note: "Hub Design wrote the items marked \u201calready in the file\u201d into the design itself, point by point: an inline style or the text of the element itself, tweaks on <html>{copy}. The look on screen is right \u2014 keep it; you may replace the inline with ordinary layout if the look does not change.",
+    m_copy: "; the copy of the file before these edits is `{c}`, do not overwrite or delete it",
+    m_notes: "Notes from the Hub Design canvas (round {round}):\n",
+    m_note: "Canvas note",
+    selected: "Selected: {file} `{sel}` {tag}{label}",
+    element: "element",
+    g_columns: "Columns", g_rows: "Rows", g_grid: "Cells",
+    g_line: "{title} {count} (gutter {gutter}, margin {margin}, color {color})",
+    e_more: "and {n} more",
+    e_head: "Errors in the design ({n}):\n",
+    ago_now: "just now", ago_min: "{n} min ago", ago_h: "{n} h ago", ago_d: "{n} d ago",
+    new_design: "New design (Hub Design): ",
+    gone_denied: "The file is outside the hub's project and session folders, the plugin will not show it: {path}",
+    gone_missing: "File not found: {path}",
+    t_designer: "designer", t_animator: "animator",
+    install: "Install the specialist for Hub Design: specialists install {name}",
+    banner: "Hub Design needs the {title}",
+  },
+  ru: {
+    size_fit: "По окну",
+    you: "Вы", who_core: "ядро", who_hub: "хаб", who_schedule: "расписание", who_module: "модуль", who_plugin: "плагин", who_session: "сессия",
+    p_text: "Текст", p_font: "Шрифт", p_size: "Размер", p_weight: "Насыщ.", p_color: "Цвет", p_align: "Выравн.", p_line: "Строка", p_tracking: "Трекинг",
+    p_width: "Ширина", p_height: "Высота", p_layout: "Раскладка", p_gap: "Зазор", p_dir: "Направл.", p_justify: "Распред.", p_grid: "Сетка", p_cols: "Колонки",
+    p_block: "Блок", p_opacity: "Прозр.", p_bg: "Фон", p_pad_t: "Внутр. В", p_r: "П", p_b: "Н", p_l: "Л", p_margin_t: "Внеш. В",
+    p_border: "Рамка", p_style: "Вид", p_border_color: "Цвет рамки", p_radius: "Скругл.",
+    quote: "\u00ab{s}\u00bb",
+    cols: "колонки сетки {a} \u2192 {b} (grid-template-columns: {from} \u2192 {to})",
+    along_x: "{v} px по X", along_y: "{v} px по Y",
+    shift: "сдвиг {where} (было x {x0}, y {y0} \u2192 стало x {x1}, y {y1})",
+    resize: "размер {w0}\u00d7{h0} \u2192 {w}\u00d7{h} px",
+    retext: "текст {a} \u2192 {b}",
+    style: "стиль: ",
+    near: " около `{sel}`{label}",
+    d_arrow: "стрелка от x {x0}, y {y0} к x {x1}, y {y1}{near}",
+    d_loop: "обведена область {area}{near}",
+    d_oval: "обведена овалом область {area}{near}",
+    d_box: "выделена рамкой область {area}{near}",
+    d_mark: "отмечена область {area}{near}",
+    tw_on: "вкл", tw_off: "выкл",
+    tw_line: "Крутилка `{key}`: {a} \u2192 {b}",
+    a_lost: "; элемент не найден \u2014 макет перевёрстан, точка осталась на прежнем месте",
+    a_tag: "тег {tag}", a_text: "текст {s}", a_attr: "атрибуты {s}", a_inside: "внутри #{anc}", a_cls: "классы {list}", a_near: "рядом {s}",
+    a_noid: "; нет id, приметы: {bits}",
+    m_head: "Правки к дизайну `{f}` (Hub Design, раунд {round}; окно {w}\u00d7{h} px, координаты \u2014 от верхнего левого угла страницы).",
+    m_grid: "Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): {g}.",
+    m_point: "точка",
+    m_comment: "Коммент к {el}, точка x {x}, y {y} (элемент {w}\u00d7{h} в x {ex}, y {ey}{note}): {text}",
+    m_hand: "Поправил руками `{sel}`{label}: {what}{inFile}.",
+    m_infile: " \u2014 уже в файле",
+    m_drawing: "Рисунок от руки: {d}{text}.",
+    m_tweaks: "Крутилки \u2014 это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.",
+    m_hand_note: "Правки руками я сделал прямо в предпросмотре \u2014 перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).",
+    m_file_note: "Пункты \u00abуже в файле\u00bb Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки \u2014 на <html>{copy}. Вид на экране верный \u2014 сохрани его; заменить inline обычной вёрсткой можно, если вид не изменится.",
+    m_copy: "; копия файла до этих правок \u2014 `{c}`, её не перезаписывай и не удаляй",
+    m_notes: "Заметки с холста Hub Design (раунд {round}):\n",
+    m_note: "Заметка на холсте",
+    selected: "Выделено: {file} `{sel}` {tag}{label}",
+    element: "элемент",
+    g_columns: "Колонки", g_rows: "Строки", g_grid: "Клетки",
+    g_line: "{title} {count} (зазор {gutter}, поле {margin}, цвет {color})",
+    e_more: "и ещё {n}",
+    e_head: "Ошибки в макете ({n}):\n",
+    ago_now: "только что", ago_min: "{n} мин назад", ago_h: "{n} ч назад", ago_d: "{n} дн назад",
+    new_design: "Новый макет (Hub Design): ",
+    gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
+    gone_missing: "Файл не найден: {path}",
+    t_designer: "дизайнер", t_animator: "аниматор",
+    install: "Поставь специалиста для Hub Design: specialists install {name}",
+    banner: "Для Hub Design нужен {title}",
+  },
+};
+const tr = makeT(STR);
+
+// width of the design window - the "Window" switch in the settings panel
 export const SIZES = [
-  { id: "fit", label: "По окну", w: 0 },
+  { id: "fit", get label() { return tr("size_fit"); }, w: 0 },
   { id: "desktop", label: "1440", w: 1440 },
   { id: "laptop", label: "1280", w: 1280 },
   { id: "tablet", label: "768", w: 768 },
   { id: "mobile", label: "390", w: 390 },
 ];
 
-// масштаб: 0 — вписать по ширине
+// zoom: 0 - fit to width
 export const ZOOMS = [0, 50, 75, 100, 125, 150];
 
-// порт процесса плагина: порт страницы хаба + 11 (8787 → 8798), как в server.py
+// port of the plugin process: the hub page port + 11 (8787 -> 8798), as in server.py
 export const canvasPort = (pagePort) => Number(pagePort || 8787) + 11;
 
-// адрес файла у процесса: /f/Users/me/site/index.html, Windows — /f/C:/site/index.html
+// the file address at the process: /f/Users/me/site/index.html, Windows - /f/C:/site/index.html
 export function fileUrl(origin, path) {
   const p = String(path).replace(/\\/g, "/").replace(/^\/+/, "");
   return `${origin}/f/${p.split("/").map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s))).join("/")}`;
 }
 
-// путь в кавычках может быть с пробелами («…/My Projects/Demo Site/…/a.html»); без кавычек пробел обрывает путь, а откусывать от него хвост нельзя:
-// «/analytics/weekly/a.html» из «Threads/analytics/weekly/a.html» — несуществующий файл, а на холсте он сырой ответ сервера (0.5.1)
+// a quoted path may contain spaces ("…/My Projects/Demo Site/…/a.html"); without quotes a space ends the path, and a tail must not be bitten off it:
+// "/analytics/weekly/a.html" out of "Threads/analytics/weekly/a.html" is a nonexistent file, and on the canvas it is a raw server response (0.5.1)
 const QUOTED_PATH = /(["'`])((?:~|\/|[A-Za-z]:[\\/])[^"'`\n<>]*?\.html?)\1/gu;
 const HTML_PATH = /(?<![\p{L}\p{N}_\/.~:!-])(?:~|\/|[A-Za-z]:[\\/])[^\s"'`<>()\[\]{}|,;*]*?\.html?(?![\w])/gu;
 
@@ -38,7 +149,7 @@ export function htmlPaths(text) {
   return found.sort((a, b) => a[0] - b[0]).map((x) => x[1]).filter((p) => !p.includes("://"));
 }
 
-// HTML-файлы, с которыми работала сессия: что писала и правила, что прислала, что назвала — свежие первыми
+// HTML files the session worked with: what it wrote and edited, what it sent, what it named - the freshest first
 export function recentHtml(items, limit = 12) {
   const out = [];
   const add = (p) => {
@@ -57,8 +168,8 @@ export function recentHtml(items, limit = 12) {
   return out.reverse().slice(0, limit);
 }
 
-// макеты всех сессий и их авторы: автор — кто писал файл инструментом (Write/Edit), иначе кто назвал его последним.
-// timelines: {сессия: [элементы ленты]}; skip — сессии, которые макетов не ведут (хаб, исполнители)
+// designs of all sessions and their authors: the author is who wrote the file with a tool (Write/Edit), otherwise who named it last.
+// timelines: {session: [timeline items]}; skip - sessions that keep no designs (the hub, workers)
 const WRITE_TOOLS = /^(Write|Edit|MultiEdit)$/;
 export function htmlAuthored(timelines, skip = () => false) {
   const best = new Map();
@@ -84,7 +195,7 @@ export function htmlAuthored(timelines, skip = () => false) {
   return [...best.values()].sort((a, b) => b.last - a.last);
 }
 
-// писала ли сессия файл (Write/Edit) в этих строках ленты или истории: ts последней записи, иначе 0
+// whether the session wrote the file (Write/Edit) in these timeline or history rows: ts of the last write, otherwise 0
 export function wroteAt(items, file) {
   let at = 0;
   for (const it of items || []) {
@@ -95,8 +206,8 @@ export function wroteAt(items, file) {
   return at;
 }
 
-// кому уходит комментарий к макету: выбор владельца → писавший файл (в ленте или в истории) → только назвавший → никто.
-// how: picked | wrote | named | none; none — получателя выбирает владелец, молча подставлять «дизайнера» нельзя
+// who gets a comment on a design: the owner's pick -> who wrote the file (in the timeline or in the history) -> only who named it -> nobody.
+// how: picked | wrote | named | none; none - the owner picks the recipient, the "designer" must not be filled in silently
 export function recipientOf(file, { picked = {}, authors = [], found = {}, frames = [] } = {}) {
   if (picked[file]) return { session: picked[file], how: "picked" };
   const a = authors.find((x) => x.path === file);
@@ -108,7 +219,7 @@ export function recipientOf(file, { picked = {}, authors = [], found = {}, frame
   return { session: "", how: "none" };
 }
 
-// в каких сессиях искать, кто писал файл, когда в живой ленте записи нет: назвавшие его, затем дизайнер, затем остальные
+// which sessions to search for who wrote the file when the live timeline has no record: those who named it, then the designer, then the rest
 export function searchOrder(file, authors, names, first = "designer") {
   const named = (authors || []).filter((a) => a.path === file).map((a) => a.session);
   const all = [...new Set([...named, first, ...names])].filter((n) => names.includes(n));
@@ -116,25 +227,25 @@ export function searchOrder(file, authors, names, first = "designer") {
   return { near: all.filter((n) => head.has(n)), far: all.filter((n) => !head.has(n)) };
 }
 
-// кто автор строки ленты: «Вы» — владелец; другие сессии, ядро, хаб — по имени; ответ специалиста — имя сессии чата
+// who wrote a timeline row: "You" is the owner; other sessions, the core, the hub - by name; a specialist's answer - the chat session name
 export function whoOf(it, session = "") {
   if (it.kind === "out" || it.kind === "file") return session;   // файл (hub send-file) лежит в ленте того, кто прислал
   const f = it.from;
   if (f && f.kind && f.kind !== "owner") {
-    const w = { core: "ядро", hub: "хаб", schedule: "расписание", module: "модуль", plugin: "плагин" };
-    if (f.kind === "session") return f.name || it.sender || "сессия";
-    return w[f.kind] ? (f.name ? `${w[f.kind]} ${f.name}` : w[f.kind]) : f.kind;
+    const w = { core: "who_core", hub: "who_hub", schedule: "who_schedule", module: "who_module", plugin: "who_plugin" };
+    if (f.kind === "session") return f.name || it.sender || tr("who_session");
+    return w[f.kind] ? (f.name ? `${tr(w[f.kind])} ${f.name}` : tr(w[f.kind])) : f.kind;
   }
   if (!f && it.sender) return String(it.sender).replace(/^(mod|ext):/, "");
-  return "Вы";
+  return tr("you");
 }
 
-// строки разговора для чата: реплики владельца и сессии, присланные файлы; шаги инструментов и служебное — нет; «—» (итог без слов) — нет
+// conversation rows for the chat: the owner's and the session's replies, sent files; tool steps and service rows - no; "—" (a result without words) - no
 export function chatLines(items, limit = 60, session = "") {
   return (items || [])
     .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && String(it.text).trim() !== "—" || it.kind === "file")
     .slice(-limit)
-    .map((it, i, all) => ({ head: i === 0 || whoOf(all[i - 1], session) !== whoOf(it, session), k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === "Вы",
+    .map((it, i, all) => ({ head: i === 0 || whoOf(all[i - 1], session) !== whoOf(it, session), k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === tr("you"),
       text: it.kind === "file" ? (it.image ? String(it.caption || "") : `${it.caption ? it.caption + "\n" : ""}${it.path}`) : String(it.text),
       ...(it.kind === "file" && it.image ? { image: String(it.path) } : {}) }));
 }
@@ -146,29 +257,30 @@ const cut = (s, n = 80) => {
   return t.length > n ? t.slice(0, n - 1) + "…" : t;
 };
 
-// свойства панели «Правка»: разделы и поля. kind: num (px), text, color, pick (список), box (4 стороны)
+// properties of the "Edit" panel: sections and fields. kind: num (px), text, color, pick (a list), box (4 sides). Titles and labels are getters: they follow the language at read time
+const field = (p, key, kind, extra) => ({ p, get label() { return tr(key); }, kind, ...extra });
 export const PROPS = [
-  { title: "Текст", rows: [
-    [{ p: "font-family", label: "Шрифт", kind: "text", wide: true }],
-    [{ p: "font-size", label: "Размер", kind: "num" }, { p: "font-weight", label: "Насыщ.", kind: "pick", options: ["100", "200", "300", "400", "500", "600", "700", "800", "900"] }],
-    [{ p: "color", label: "Цвет", kind: "color" }, { p: "text-align", label: "Выравн.", kind: "pick", options: ["left", "center", "right", "justify"] }],
-    [{ p: "line-height", label: "Строка", kind: "num", unitless: true }, { p: "letter-spacing", label: "Трекинг", kind: "num" }]] },
-  { title: "Размер", rows: [[{ p: "width", label: "Ширина", kind: "num" }, { p: "height", label: "Высота", kind: "num" }]] },
-  { title: "Раскладка", flexOnly: true, rows: [
-    [{ p: "gap", label: "Зазор", kind: "num" }, { p: "flex-direction", label: "Направл.", kind: "pick", options: ["row", "row-reverse", "column", "column-reverse"] }],
-    [{ p: "justify-content", label: "Распред.", kind: "pick", options: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"] },
-      { p: "align-items", label: "Выравн.", kind: "pick", options: ["flex-start", "center", "flex-end", "stretch", "baseline"] }]] },
-  { title: "Сетка", gridOnly: true, rows: [[{ p: "grid-template-columns", label: "Колонки", kind: "cols" }, { p: "gap", label: "Зазор", kind: "num" }]] },
-  { title: "Блок", rows: [
-    [{ p: "opacity", label: "Прозр.", kind: "num", unitless: true }, { p: "background-color", label: "Фон", kind: "color" }],
-    [{ p: "padding-top", label: "Внутр. В", kind: "num" }, { p: "padding-right", label: "П", kind: "num" }],
-    [{ p: "padding-bottom", label: "Н", kind: "num" }, { p: "padding-left", label: "Л", kind: "num" }],
-    [{ p: "margin-top", label: "Внеш. В", kind: "num" }, { p: "margin-bottom", label: "Н", kind: "num" }],
-    [{ p: "border-top-width", label: "Рамка", kind: "num" }, { p: "border-top-style", label: "Вид", kind: "pick", options: ["none", "solid", "dashed", "dotted"] }],
-    [{ p: "border-top-color", label: "Цвет рамки", kind: "color" }, { p: "border-radius", label: "Скругл.", kind: "num" }]] },
+  { get title() { return tr("p_text"); }, rows: [
+    [field("font-family", "p_font", "text", { wide: true })],
+    [field("font-size", "p_size", "num"), field("font-weight", "p_weight", "pick", { options: ["100", "200", "300", "400", "500", "600", "700", "800", "900"] })],
+    [field("color", "p_color", "color"), field("text-align", "p_align", "pick", { options: ["left", "center", "right", "justify"] })],
+    [field("line-height", "p_line", "num", { unitless: true }), field("letter-spacing", "p_tracking", "num")]] },
+  { get title() { return tr("p_size"); }, rows: [[field("width", "p_width", "num"), field("height", "p_height", "num")]] },
+  { get title() { return tr("p_layout"); }, flexOnly: true, rows: [
+    [field("gap", "p_gap", "num"), field("flex-direction", "p_dir", "pick", { options: ["row", "row-reverse", "column", "column-reverse"] })],
+    [field("justify-content", "p_justify", "pick", { options: ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"] }),
+      field("align-items", "p_align", "pick", { options: ["flex-start", "center", "flex-end", "stretch", "baseline"] })]] },
+  { get title() { return tr("p_grid"); }, gridOnly: true, rows: [[field("grid-template-columns", "p_cols", "cols"), field("gap", "p_gap", "num")]] },
+  { get title() { return tr("p_block"); }, rows: [
+    [field("opacity", "p_opacity", "num", { unitless: true }), field("background-color", "p_bg", "color")],
+    [field("padding-top", "p_pad_t", "num"), field("padding-right", "p_r", "num")],
+    [field("padding-bottom", "p_b", "num"), field("padding-left", "p_l", "num")],
+    [field("margin-top", "p_margin_t", "num"), field("margin-bottom", "p_b", "num")],
+    [field("border-top-width", "p_border", "num"), field("border-top-style", "p_style", "pick", { options: ["none", "solid", "dashed", "dotted"] })],
+    [field("border-top-color", "p_border_color", "color"), field("border-radius", "p_radius", "num")]] },
 ];
 
-// значение поля → то, что пишем в style; пусто — не трогать
+// the field value -> what is written to style; empty - leave alone
 export function cssValue(field, raw) {
   const v = String(raw ?? "").trim();
   if (!v) return null;
@@ -180,14 +292,14 @@ export function cssValue(field, raw) {
   return v;
 }
 
-// сетка: «Колонки: N» читаем из repeat(N, minmax(0,1fr)) (или repeat(N, 1fr)) и пишем обратно в той же форме
+// grid: "Columns: N" is read from repeat(N, minmax(0,1fr)) (or repeat(N, 1fr)) and written back in the same form
 export const GRID_MAX = 24;
 export const gridForm = (n) => `repeat(${n}, minmax(0, 1fr))`;
 export function parseGridCols(v) {
   const m = /^repeat\(\s*(\d+)\s*,\s*(?:minmax\(\s*0(?:px)?\s*,\s*1fr\s*\)|1fr)\s*\)$/i.exec(String(v || "").trim());
   return m && +m[1] >= 1 ? +m[1] : 0;
 }
-// число колонок: из записи в стиле макета, а нет такой — по числу дорожек вычисленного значения («300px 300px 300px»)
+// number of columns: from the declaration in the design style, and if there is none - from the number of tracks of the computed value ("300px 300px 300px")
 export function gridCols(decl, computed) {
   const n = parseGridCols(decl);
   if (n) return n;
@@ -207,49 +319,49 @@ const num = (v) => (/^-?\d*\.\d{3,}px$/.test(v) ? Math.round(parseFloat(v) * 100
 
 const describeCols = (v) => {
   const a = gridCols(v.from, v.from), b = gridCols(v.to, v.to);
-  return `колонки сетки ${a || "—"} → ${b || "—"} (grid-template-columns: ${num(v.from)} → ${num(v.to)})`;
+  return tr("cols", { a: a || "—", b: b || "—", from: num(v.from), to: num(v.to) });
 };
 
-// одна правка «править» — словами и цифрами
+// one "edit" change - in words and numbers
 export function describeChange(c) {
   const parts = [];
   if (c.dx || c.dy) {
-    const where = [c.dx ? `${signed(c.dx)} px по X` : "", c.dy ? `${signed(c.dy)} px по Y` : ""].filter(Boolean).join(", ");
-    parts.push(`сдвиг ${where} (было x ${px(c.x0)}, y ${px(c.y0)} → стало x ${px(c.x0 + c.dx)}, y ${px(c.y0 + c.dy)})`);
+    const where = [c.dx ? tr("along_x", { v: signed(c.dx) }) : "", c.dy ? tr("along_y", { v: signed(c.dy) }) : ""].filter(Boolean).join(", ");
+    parts.push(tr("shift", { where, x0: px(c.x0), y0: px(c.y0), x1: px(c.x0 + c.dx), y1: px(c.y0 + c.dy) }));
   }
   if (c.w != null && c.h != null && (Math.round(c.w) !== Math.round(c.w0) || Math.round(c.h) !== Math.round(c.h0))) {
-    parts.push(`размер ${px(c.w0)}×${px(c.h0)} → ${px(c.w)}×${px(c.h)} px`);
+    parts.push(tr("resize", { w0: px(c.w0), h0: px(c.h0), w: px(c.w), h: px(c.h) }));
   }
-  if (c.t != null && c.t !== c.t0) parts.push(`текст «${cut(c.t0, 200)}» → «${cut(c.t, 200)}»`);
+  if (c.t != null && c.t !== c.t0) parts.push(tr("retext", { a: tr("quote", { s: cut(c.t0, 200) }), b: tr("quote", { s: cut(c.t, 200) }) }));
   const css = Object.entries(c.css || {}).filter(([, v]) => v && v.from !== v.to);
-  if (css.length) parts.push("стиль: " + css.map(([p, v]) => (p === "grid-template-columns" ? describeCols(v) : `${p} ${num(v.from)} → ${num(v.to)}`)).join(", "));
+  if (css.length) parts.push(tr("style") + css.map(([p, v]) => (p === "grid-template-columns" ? describeCols(v) : `${p} ${num(v.from)} → ${num(v.to)}`)).join(", "));
   return parts.join("; ");
 }
 
 export const hasEffect = (c) => !!describeChange(c);
 
-// рисунок от руки: что отмечено и где
+// a freehand drawing: what is marked and where
 export function describeDrawing(d) {
   const b = d.box || {};
   const area = `x ${px(b.x)}, y ${px(b.y)}, ${px(b.w)}×${px(b.h)} px`;
-  const near = d.sel ? ` около \`${d.sel}\`${d.label ? ` «${cut(d.label)}»` : ""}` : "";
-  if (d.kind === "arrow") return `стрелка от x ${px(d.from.x)}, y ${px(d.from.y)} к x ${px(d.to.x)}, y ${px(d.to.y)}${near}`;
-  if (d.kind === "loop") return `обведена область ${area}${near}`;
-  if (d.kind === "oval") return `обведена овалом область ${area}${near}`;
-  if (d.kind === "box") return `выделена рамкой область ${area}${near}`;
-  return `отмечена область ${area}${near}`;
+  const near = d.sel ? tr("near", { sel: d.sel, label: d.label ? ` ${tr("quote", { s: cut(d.label) })}` : "" }) : "";
+  if (d.kind === "arrow") return tr("d_arrow", { x0: px(d.from.x), y0: px(d.from.y), x1: px(d.to.x), y1: px(d.to.y), near });
+  if (d.kind === "loop") return tr("d_loop", { area, near });
+  if (d.kind === "oval") return tr("d_oval", { area, near });
+  if (d.kind === "box") return tr("d_box", { area, near });
+  return tr("d_mark", { area, near });
 }
 
-// --- крутилки макета: <script type="application/json" id="hub-tweaks"> ---------------------------------------------------------
+// --- design tweaks: <script type="application/json" id="hub-tweaks"> ---------------------------------------------------------
 // {"accent": {"editor": "color", "default": "#2a78d6", "options": ["#2a78d6", "#b45309"], "var": "--accent"},
 //  "density": {"editor": "enum", "options": ["compact", "cozy"], "attr": "data-density"}}
-// var — CSS-переменная на :root, attr — атрибут на <html>; значения применяет страница хаба, внутри макета только запись в стиль/атрибут
+// var - a CSS variable on :root, attr - an attribute on <html>; the hub page applies the values, inside the design there is only a write to style/attribute
 export const TWEAK_EDITORS = ["text", "color", "int", "float", "range", "boolean", "enum"];
 export const TWEAK_MAX = 24;
 const BAD_ATTR = /^(on|style$|src|href|action|formaction|srcdoc|xlink)/i;
 const small = (s, n) => String(s ?? "").trim().slice(0, n);
 const numOr = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
-// разбор объявления: мусор отбрасываем молча — крутилка без var/attr, с чужим атрибутом или без вариантов не рисуется
+// parsing a declaration: junk is dropped silently - a tweak without var/attr, with a foreign attribute or without options is not drawn
 export function normTweaks(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
   const out = [];
@@ -280,7 +392,7 @@ export function normTweaks(raw) {
   return out;
 }
 
-// то, что ввёл владелец, → значение крутилки по её типу; null — не подходит (цвет и вариант — только из options)
+// what the owner entered -> the tweak value by its type; null - does not fit (a color and an option only from options)
 export function tweakValue(t, raw) {
   if (t.editor === "boolean") return raw === true || raw === "true" || raw === "1" || raw === "on";
   if (t.editor === "int" || t.editor === "float" || t.editor === "range") {
@@ -296,7 +408,7 @@ export function tweakValue(t, raw) {
   return s.slice(0, 200);
 }
 
-// исходное значение крутилки: default из объявления, иначе то, что макет показывает сейчас (cur — прочитано из :root/<html>)
+// the original tweak value: default from the declaration, otherwise what the design shows now (cur - read from :root/<html>)
 export function tweakBase(t, cur) {
   if (t.default !== undefined) return t.default;
   const c = String(cur ?? "").trim();
@@ -306,7 +418,7 @@ export function tweakBase(t, cur) {
   return c;
 }
 
-// значение крутилки → что писать в макет: переменная на :root и/или атрибут на <html>; value null — снять
+// the tweak value -> what is written to the design: a variable on :root and/or an attribute on <html>; value null - remove
 export function tweakApply(t, value) {
   const ops = [];
   if (t.var) ops.push({ kind: "var", name: t.var, value: t.editor === "boolean" ? (value ? "1" : "0") : `${value}${t.unit || ""}` });
@@ -314,33 +426,33 @@ export function tweakApply(t, value) {
   return ops;
 }
 
-const tweakShow = (c, v) => (c.editor === "boolean" ? (v ? "вкл" : "выкл") : typeof v === "number" && c.unit ? `${v}${c.unit}` : String(v));
-// правка крутилки (запись пачки: key, label, editor, unit, from, to) словами
-export const describeTweak = (c) => `Крутилка \`${c.key}\`: ${tweakShow(c, c.from)} → ${tweakShow(c, c.to)}`;
+const tweakShow = (c, v) => (c.editor === "boolean" ? tr(v ? "tw_on" : "tw_off") : typeof v === "number" && c.unit ? `${v}${c.unit}` : String(v));
+// a tweak change (a batch record: key, label, editor, unit, from, to) in words
+export const describeTweak = (c) => tr("tw_line", { key: c.key, a: tweakShow(c, c.from), b: tweakShow(c, c.to) });
 export const tweakEffect = (c) => c.from !== c.to;
 
-// чем отличить элемент, за который держится пин, когда в вёрстке у него нет id; пин потерял элемент — так и сказать
+// how to tell the element a pin holds on to when it has no id in the markup; a pin that lost its element says so
 export function anchorNote(c) {
-  if (c.lost) return "; элемент не найден — макет перевёрстан, точка осталась на прежнем месте";
+  if (c.lost) return tr("a_lost");
   const f = c.fp;
   if (!f || f.id) return "";
-  const bits = [`тег ${f.tag}`];
-  if (f.text) bits.push(`текст «${cut(f.text, 50)}»`);
-  else if (f.attr) bits.push(`атрибуты «${cut(f.attr, 50)}»`);
-  if (f.anc) bits.push(`внутри #${f.anc}`);
-  if (f.cls && f.cls.length) bits.push(`классы ${f.cls.map((k) => "." + k).join(" ")}`);
-  if (f.near && f.near !== f.text) bits.push(`рядом «${cut(f.near, 40)}»`);
-  return `; нет id, приметы: ${bits.join(", ")}`;
+  const bits = [tr("a_tag", { tag: f.tag })];
+  if (f.text) bits.push(tr("a_text", { s: tr("quote", { s: cut(f.text, 50) }) }));
+  else if (f.attr) bits.push(tr("a_attr", { s: tr("quote", { s: cut(f.attr, 50) }) }));
+  if (f.anc) bits.push(tr("a_inside", { anc: f.anc }));
+  if (f.cls && f.cls.length) bits.push(tr("a_cls", { list: f.cls.map((k) => "." + k).join(" ") }));
+  if (f.near && f.near !== f.text) bits.push(tr("a_near", { s: tr("quote", { s: cut(f.near, 40) }) }));
+  return tr("a_noid", { bits: bits.join(", ") });
 }
 
-// сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки, заметки; файл правит он сам.
-// Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
-// --- правки руками прямо в файл (server.py /__canvas/write): что отправить и что отметить «уже в файле» -------------------------------
-// черновики и отправленные, ещё не принятые дизайнером: файл всегда собирается заново от копии — одним полным набором
+// the message to the designer as a batch: comments on points, hand edits, drawings, notes; the designer edits the file.
+// Items with a `file` field of different files go in separate sections; without the field - one file `path`
+// --- hand edits straight into the file (server.py /__canvas/write): what to send and what to mark "already in the file" -------------------------------
+// drafts and sent but not yet accepted by the designer: the file is always rebuilt from the copy - as one full set
 export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && hasEffect(c))
-  .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // один элемент — одна запись, последняя
-// handed — ушла дизайнеру словами, а не записью в файл: дальше её правит он, Hub Design в файл не пишет
-// ответ сервера → пометки на правках: inFile — записана в файл, noWrite — почему пропущена (осталась дизайнеру)
+  .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // one element - one record, the last
+// handed - went to the designer in words, not as a write to the file: from then on the designer edits it, Hub Design does not write it to the file
+// the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (left to the designer)
 export function markWritten(changes, tweaks, file, res) {
   const done = new Set((res && res.done) || []);
   const why = Object.fromEntries(((res && res.skipped) || []).map((x) => [x.sel, x.why]));
@@ -355,8 +467,8 @@ export function markUnwritten(changes, tweaks, file) {
   for (const c of changes) if (c.file === file) { c.inFile = false; delete c.noWrite; }
   for (const t of tweaks) if (t.file === file) t.inFile = false;
 }
-// автоотправка правок руками: пачка уходит выбранному получателю через AUTO_MS тишины после последнего движения.
-// sig — слепок того, что ушло бы сейчас ("" — слать нечего); любое изменение слепка заводит отсчёт заново
+// auto-send of hand edits: the batch goes to the picked recipient after AUTO_MS of silence after the last move.
+// sig - a snapshot of what would go now ("" - nothing to send); any change of the snapshot restarts the countdown
 export const AUTO_MS = 8000;
 export const autoSig = (items, session, home) => (home || !session || !(items.changes.length + items.tweaks.length + items.drawings.length) ? "" : JSON.stringify([session, items]));
 export function createAuto({ fire, ms = AUTO_MS, set = setTimeout, clear = clearTimeout }) {
@@ -371,11 +483,11 @@ export function createAuto({ fire, ms = AUTO_MS, set = setTimeout, clear = clear
       if (next && next !== failed) arm(ms);
     },
     sig: () => sig,
-    fail() { failed = sig; },   // не ушло: то же самое само второй раз не шлём — только после новой правки
-    retry(wait) { if (sig && sig !== failed) arm(wait); },   // получатель занят отправкой — чуть позже
+    fail() { failed = sig; },   // did not go: the same is not sent a second time on its own - only after a new edit
+    retry(wait) { if (sig && sig !== failed) arm(wait); },   // the recipient is busy sending - a bit later
   };
 }
-// полный путь копии рядом с файлом
+// the full path of the copy next to the file
 export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/, copy) : "");
 
 export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {} }) {
@@ -386,59 +498,59 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   const blocks = [];
   for (const f of files) {
     const v = views[f] || view || { w: 0, h: 0 };
-    const lines = [`Правки к дизайну \`${f}\` (Hub Design, раунд ${round}; окно ${v.w}×${v.h} px, координаты — от верхнего левого угла страницы).`];
-    if (normGrids(v.grids).length) lines.push(`Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): ${describeGrids(v.grids)}.`);
+    const lines = [tr("m_head", { f, round, w: v.w, h: v.h })];
+    if (normGrids(v.grids).length) lines.push(tr("m_grid", { g: describeGrids(v.grids) }));
     let n = 0;
     for (const c of comments.filter((x) => of(x) === f)) {
       if (!String(c.text || "").trim()) continue;
       n += 1;
-      const el = c.sel ? `\`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}` : "точка";
-      lines.push(`${n}. Коммент к ${el}, точка x ${px(c.x)}, y ${px(c.y)} (элемент ${px(c.w)}×${px(c.h)} в x ${px(c.ex)}, y ${px(c.ey)}${anchorNote(c)}): ${String(c.text).trim()}`);
+      const el = c.sel ? `\`${c.sel}\`${c.label ? ` ${tr("quote", { s: cut(c.label) })}` : ""}` : tr("m_point");
+      lines.push(`${n}. ` + tr("m_comment", { el, x: px(c.x), y: px(c.y), w: px(c.w), h: px(c.h), ex: px(c.ex), ey: px(c.ey), note: anchorNote(c), text: String(c.text).trim() }));
     }
     const mine = changes.filter((x) => of(x) === f);
     for (const c of mine) {
       const what = describeChange(c);
       if (!what) continue;
       n += 1;
-      lines.push(`${n}. Поправил руками \`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}: ${what}${c.inFile ? " — уже в файле" : ""}.`);
+      lines.push(`${n}. ` + tr("m_hand", { sel: c.sel, label: c.label ? ` ${tr("quote", { s: cut(c.label) })}` : "", what, inFile: c.inFile ? tr("m_infile") : "" }));
     }
     for (const d of drawings.filter((x) => of(x) === f)) {
       n += 1;
-      lines.push(`${n}. Рисунок от руки: ${describeDrawing(d)}${String(d.text || "").trim() ? ` — ${String(d.text).trim()}` : ""}.`);
+      lines.push(`${n}. ` + tr("m_drawing", { d: describeDrawing(d), text: String(d.text || "").trim() ? ` — ${String(d.text).trim()}` : "" }));
     }
     const turned = tweaks.filter((x) => of(x) === f && tweakEffect(x));
     for (const c of turned) {
       n += 1;
-      lines.push(`${n}. ${describeTweak(c)}${c.inFile ? " — уже в файле" : ""}.`);
+      lines.push(`${n}. ${describeTweak(c)}${c.inFile ? tr("m_infile") : ""}.`);
     }
     for (const e of errors.filter((x) => of(x) === f)) {
-      const t = describeErrors(e.items);
-      if (!t) continue;
+      const err = describeErrors(e.items);
+      if (!err) continue;
       n += 1;
-      lines.push(`${n}. ${t}`);
+      lines.push(`${n}. ${err}`);
     }
     if (!n) continue;
-    if (turned.some((c) => !c.inFile)) lines.push("Крутилки — это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.");
-    if (mine.some((c) => hasEffect(c) && !c.inFile)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
+    if (turned.some((c) => !c.inFile)) lines.push(tr("m_tweaks"));
+    if (mine.some((c) => hasEffect(c) && !c.inFile)) lines.push(tr("m_hand_note"));
     if (mine.some((c) => hasEffect(c) && c.inFile) || turned.some((c) => c.inFile)) {
       const copy = copyPath(f, copies[f]);
-      lines.push(`Пункты «уже в файле» Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки — на <html>${copy ? `; копия файла до этих правок — \`${copy}\`, её не перезаписывай и не удаляй` : ""}. Вид на экране верный — сохрани его; заменить inline обычной вёрсткой можно, если вид не изменится.`);
+      lines.push(tr("m_file_note", { copy: copy ? tr("m_copy", { c: copy }) : "" }));
     }
     blocks.push(lines.join("\n"));
   }
   const said = notes.filter((x) => String(x.text || "").trim());
   if (said.length) {
-    blocks.push((blocks.length ? "" : `Заметки с холста Hub Design (раунд ${round}):\n`) + said.map((x, i) => `${blocks.length ? "Заметка на холсте" : i + 1 + "."} ${cut(x.text, 500)}`).join("\n"));
+    blocks.push((blocks.length ? "" : tr("m_notes", { round })) + said.map((x, i) => `${blocks.length ? tr("m_note") : i + 1 + "."} ${cut(x.text, 500)}`).join("\n"));
   }
   return blocks.join("\n\n");
 }
 
-// выделенный на холсте элемент одной строкой — чтобы «сделай этот блок шире» работало без пина
-export const selectedLine = (s) => (s && s.sel ? `Выделено: ${s.file} \`${s.sel}\` ${s.tag || "элемент"}${s.label ? ` «${cut(s.label)}»` : ""}` : "");
+// the element selected on the canvas in one line - so that "make this block wider" works without a pin
+export const selectedLine = (s) => (s && s.sel ? tr("selected", { file: s.file, sel: s.sel, tag: s.tag || tr("element"), label: s.label ? ` ${tr("quote", { s: cut(s.label) })}` : "" }) : "");
 
-// сетки поверх рамки (только на холсте): columns — полосы по ширине, rows — по высоте, grid — квадратные клетки (сторона = ширина колонки)
+// grids over the frame (on the canvas only): columns - stripes along the width, rows - along the height, grid - square cells (the side = the column width)
 export const GRIDS_MAX = 6, GRID_KINDS = ["columns", "rows", "grid"], GRID_LIMITS = { count: [1, 24], gutter: [0, 200], margin: [0, 400] };
-export const GRID_TITLES = { columns: "Колонки", rows: "Строки", grid: "Клетки" };
+export const gridTitle = (kind) => tr("g_" + kind);
 export const GRID_COLORS = ["#ff3b30", "#0a84ff", "#30d158", "#ff9f0a", "#bf5af2"];
 const clampInt = (v, [lo, hi], dflt) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt; };
 export function normGrid(g) {
@@ -454,7 +566,7 @@ export function normGrid(g) {
 }
 export const normGrids = (list) => (Array.isArray(list) ? list.slice(0, GRIDS_MAX).map(normGrid) : []);
 export const newGrid = (list) => normGrid({ id: "g" + Date.now().toString(36) + (list || []).length, kind: "columns", color: GRID_COLORS[(list || []).length % GRID_COLORS.length] });
-// прямоугольники сетки в координатах рамки w×h: [x, y, w, h]
+// grid rectangles in the frame coordinates w×h: [x, y, w, h]
 export function gridRects(g, w, h) {
   const { kind, count, gutter, margin } = normGrid(g);
   const out = [];
@@ -467,10 +579,10 @@ export function gridRects(g, w, h) {
   return out;
 }
 export function describeGrids(list) {
-  return normGrids(list).map((g) => `${GRID_TITLES[g.kind].toLowerCase()} ${g.count} (зазор ${g.gutter}, поле ${g.margin}, цвет ${g.color})`).join("; ");
+  return normGrids(list).map((g) => tr("g_line", { title: gridTitle(g.kind).toLowerCase(), count: g.count, gutter: g.gutter, margin: g.margin, color: g.color })).join("; ");
 }
 
-// ошибки макета (window.onerror, unhandledrejection): уникальные по тексту, текст обрезан, в пачку — не больше ERR_MAX
+// design errors (window.onerror, unhandledrejection): unique by text, the text is cut, at most ERR_MAX go into the batch
 export const ERR_MAX = 5, ERR_CUT = 300;
 export function normErrors(raw) {
   const out = [], seen = new Set();
@@ -486,30 +598,30 @@ export function describeErrors(items) {
   const list = normErrors(items);
   if (!list.length) return "";
   const shown = list.slice(0, ERR_MAX).map((e) => `  • ${e.text}${e.where ? ` (${e.where})` : ""}`);
-  if (list.length > ERR_MAX) shown.push(`  • и ещё ${list.length - ERR_MAX}`);
-  return `Ошибки в макете (${list.length}):\n${shown.join("\n")}`;
+  if (list.length > ERR_MAX) shown.push(`  • ${tr("e_more", { n: list.length - ERR_MAX })}`);
+  return tr("e_head", { n: list.length }) + shown.join("\n");
 }
 
 export const draftCount = (comments, changes, drawings = [], notes = [], tweaks = [], errors = []) =>
   comments.filter((c) => String(c.text || "").trim()).length + changes.filter(hasEffect).length + drawings.length + tweaks.filter(tweakEffect).length +
   notes.filter((n) => String(n.text || "").trim()).length + errors.filter((e) => normErrors(e.items).length).length;
 
-// --- холст: вид, масштаб, раскладка фреймов -------------------------------------------------------------------------
+// --- canvas: view, zoom, frame layout -------------------------------------------------------------------------
 export const CANVAS_MIN = 0.05, CANVAS_MAX = 4;
 export const clampK = (k) => Math.min(CANVAS_MAX, Math.max(CANVAS_MIN, k));
 
-// колесо: масштаб вокруг точки (px, py) в координатах сцены; точка под курсором остаётся на месте
+// the wheel: zoom around the point (px, py) in scene coordinates; the point under the cursor stays in place
 export function zoomAt(v, factor, px, py) {
   const k = clampK(v.k * factor);
   const r = k / v.k;
   return { k, x: px - (px - v.x) * r, y: py - (py - v.y) * r };
 }
 
-// верх первого фрейма на сцене: плавающий тулбар (12 + 40 px) + 24 px воздуха + подпись фрейма (28 px и зазор 4)
+// the top of the first frame on the scene: the floating toolbar (12 + 40 px) + 24 px of air + the frame label (28 px and a 4 px gap)
 export const TOOLBAR_BOTTOM = 52, TOOLBAR_GAP = 24, LABEL_H = 28, LABEL_GAP = 4;
 export const FRAME_TOP = TOOLBAR_BOTTOM + TOOLBAR_GAP + LABEL_H + LABEL_GAP;
 
-// вписать фреймы в окно сцены W×H с полями; не крупнее 100%; сверху — место под тулбар и подпись
+// fit the frames into the scene window W×H with margins; not larger than 100%; room at the top for the toolbar and the label
 export function fitView(frames, W, H, pad = 56) {
   if (!frames.length || W < 10 || H < 10) return { x: pad, y: FRAME_TOP, k: 1 };
   const x0 = Math.min(...frames.map((f) => f.x)), y0 = Math.min(...frames.map((f) => f.y));
@@ -519,68 +631,68 @@ export function fitView(frames, W, H, pad = 56) {
   return { k, x: (W - (x1 - x0) * k) / 2 - x0 * k, y: FRAME_TOP + Math.max(0, (room - (y1 - y0) * k) / 2) - y0 * k };
 }
 
-// где поставить новый фрейм: справа от последнего, с зазором
+// where to put a new frame: to the right of the last one, with a gap
 export function nextSpot(frames, w, gap = 80) {
   if (!frames.length) return { x: 0, y: 0 };
   const last = frames.reduce((a, f) => (f.x + f.w > a.x + a.w ? f : a), frames[0]);
   return { x: last.x + last.w + gap, y: last.y };
 }
 
-// высота окна фрейма — экранная, по ширине (как у устройства); длинная страница прокручивается внутри рамки, а не растягивает её:
-// иначе vh/svh в макете (min-height:100vh) растягиваются до высоты рамки
+// the frame window height is a screen one, by width (like a device); a long page scrolls inside the frame instead of stretching it:
+// otherwise vh/svh in the design (min-height:100vh) stretch to the frame height
 export const windowHeight = (w) => ({ 1440: 900, 1280: 800, 768: 1024, 390: 844 })[Number(w)] || 900;
 
-// подпись фрейма: имя файла без .html
+// the frame label: the file name without .html
 export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
 
-// имя макета везде одно: index.html называют по папке — «demo», а не «index»
+// one design name everywhere: index.html is named by its folder - "demo", not "index"
 export const nameOf = (path) => {
   const parts = String(path).split(/[\\/]/).filter(Boolean);
   const name = frameTitle(path).replace(/\.html?$/i, "");
   return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
 };
 
-// какого вида пути у этой машины: по cwd сессий хаба. Путь другой ОС («C:\\…» на Маке, «!Projects/…» без корня) на дашборде не показываем
+// which kind of paths this machine has: by the cwd of the hub sessions. A path of another OS ("C:\\…" on a Mac, "!Projects/…" without a root) is not shown on the dashboard
 export function nativePath(path, cwds = []) {
   const p = String(path || "");
   const win = (cwds || []).some((c) => /^[A-Za-z]:[\\/]/.test(c || "")) && !(cwds || []).some((c) => String(c || "").startsWith("/"));
   return win ? /^([A-Za-z]:[\\/]|\\\\)/.test(p) : /^(\/|~\/)/.test(p);
 }
 
-// макеты для дашборда: авторы по лентам и те, что открыты на холсте (их писал не специалист хаба — макет, добавленный по пути)
+// designs for the dashboard: authors by timelines and those open on the canvas (not written by a hub specialist - a design added by path)
 export function dashboardFiles(authors, frames, cwds, { who = () => "", time = () => 0 } = {}) {
   const out = (authors || []).filter((a) => nativePath(a.path, cwds));
   for (const f of frames || []) {
     if (out.some((a) => a.path === f.path)) continue;
-    const t = Number(time(f.path)) || 0;   // открыт только на холсте: автор — кто писал файл (если известно), время — правка файла на диске
+    const t = Number(time(f.path)) || 0;   // open only on the canvas: the author is who wrote the file (if known), the time is the file edit on disk
     out.push({ path: f.path, session: who(f.path) || "", ts: t, last: t, wrote: false });
   }
   return out;
 }
 
-// тема кнопок холста: инструмент → режим скрипта в дизайне
+// the canvas button theme: tool -> the script mode in the design
 export const TOOLS = { select: "edit", hand: "view", text: "text", note: "view", comment: "comment", pencil: "draw", shape: "draw" };
 export const toolMode = (tool) => TOOLS[tool] || "view";
 
-// быстрые цвета панели стилей
+// quick colors of the style panel
 export const SWATCHES = ["#0b0b0b", "#52514e", "#ffffff", "#d97757", "#e5484d", "#f5a524", "#30a46c", "#257de0", "#6e56cf", "#e93d82", "#faf9f6", "#1f1e1d"];
 
-// «5 мин назад» для карточек макетов
+// "5 min ago" for the design cards
 export function ago(ts, now = Date.now() / 1000) {
   const s = Math.max(0, now - Number(ts || 0));
   if (!ts) return "";
-  if (s < 90) return "только что";
-  if (s < 3600) return `${Math.round(s / 60)} мин назад`;
-  if (s < 86400) return `${Math.round(s / 3600)} ч назад`;
-  return `${Math.round(s / 86400)} дн назад`;
+  if (s < 90) return tr("ago_now");
+  if (s < 3600) return tr("ago_min", { n: Math.round(s / 60) });
+  if (s < 86400) return tr("ago_h", { n: Math.round(s / 3600) });
+  return tr("ago_d", { n: Math.round(s / 86400) });
 }
 
-// слова владельца перед текстом, когда макета ещё нет: дизайнер делает новый, а не правит открытый
-export const NEW_DESIGN = "Новый макет (Hub Design): ";
+// the owner's words before the text when there is no design yet: the designer makes a new one instead of editing an open one
+export const newDesignPrefix = () => tr("new_design");
 
-// --- макеты по лентам сессий: по событиям, без таймера ------------------------------------------------------------
-// В ленте остаётся только то, что про HTML. Страница тянет ленту сессии, когда её номер правки в снимке вырос (событие), и берёт только
-// изменённые строки (since); весь набор — когда у ядра другая эпоха или оно отдало ленту целиком.
+// --- designs by session timelines: by events, without a timer ------------------------------------------------------------
+// The timeline keeps only what is about HTML. The page pulls the session timeline when its edit number in the snapshot has grown (an event) and takes only
+// the changed rows (since); the whole set - when the core has another epoch or returned the whole timeline.
 const isHtml = (p) => /\.html?$/i.test(p || "");
 export function slimItems(items) {
   return (items || []).filter((it) => (it.kind === "tool" && isHtml((it.input || {}).file_path || (it.input || {}).path))
@@ -588,7 +700,7 @@ export function slimItems(items) {
     .map((it) => ({ kind: it.kind, name: it.name, ts: it.ts, path: it.path, input: it.input && { file_path: (it.input.file_path || it.input.path) },
       text: it.kind === "out" ? htmlPaths(it.text).join(" ") : undefined }));
 }
-// кого перечитать: ленты, чей номер правки вырос с прошлого раза (или сменилась эпоха ядра)
+// whom to re-read: timelines whose edit number has grown since last time (or the core epoch changed)
 export const dueSessions = (names, revs, epoch, cache) => names.filter((n) => {
   const c = cache.get(n);
   return !c || c.epoch !== epoch || c.rev < (revs[n] ?? 0);
@@ -603,13 +715,13 @@ export function mergeTimeline(cached, res, rev) {
   return { rev: typeof res.rev === "number" ? res.rev : rev, epoch: res.epoch, items };
 }
 
-// --- файл макета на месте ------------------------------------------------------------------------------------------
-// состояние от процесса плагина: ok | missing (нет на диске) | denied (вне папок сессий и проектов хаба, показать нечем)
+// --- the design file is in place ------------------------------------------------------------------------------------------
+// the state from the plugin process: ok | missing (not on disk) | denied (outside the session and project folders of the hub, nothing to show it with)
 export const isGone = (state) => state === "missing" || state === "denied";
-export const goneText = (state, path) => (state === "denied" ? `Файл вне папок проектов и сессий хаба, плагин его не покажет: ${path}` : `Файл не найден: ${path}`);
+export const goneText = (state, path) => tr(state === "denied" ? "gone_denied" : "gone_missing", { path });
 
 // --- «Убрать» из очереди с отменой ---------------------------------------------------------------------------------
-// как в очереди ядра: сообщение не убирается сразу, а на delay мс получает строку «Убрано · Отменить»; настоящая отмена уходит по истечении
+// as in the core queue: the message is not removed at once, but for `delay` ms gets the line "Removed · Undo"; the real cancel goes when it expires
 export function createCancels({ post, isQueued, onChange, delay = 6000, setT = setTimeout, clearT = clearTimeout }) {
   const rows = new Map();
   const api = {
@@ -632,7 +744,7 @@ export function createCancels({ post, isQueued, onChange, delay = 6000, setT = s
       const e = rows.get(id);
       if (!e || e.done) return;
       e.timer = null;
-      if (!isQueued(id)) { rows.delete(id); return onChange(); }   // сообщение уже ушло само — не трогаем
+      if (!isQueued(id)) { rows.delete(id); return onChange(); }   // the message has already gone on its own - leave it alone
       e.failed = false;
       const r = await post("/api/queue/cancel", { session: e.session, id });
       if (r && r.error) e.failed = true; else e.done = true;
@@ -643,28 +755,28 @@ export function createCancels({ post, isQueued, onChange, delay = 6000, setT = s
   return api;
 }
 
-// куда ведёт «Exit Hub Design»: в чат того, с кем шёл разговор (он есть в хабе), иначе туда, откуда пришли (не из самого плагина), иначе на главную
+// where "Exit Hub Design" leads: to the chat of the one the conversation was with (it exists in the hub), otherwise to where we came from (not from the plugin itself), otherwise home
 export function exitTarget(session, known, back, id) {
   if (session && (known || []).includes(session)) return "#/s/" + encodeURIComponent(session);
   return back && !String(back).startsWith("#/x/" + id) ? back : "#/";
 }
 
-// специалисты, без которых Hub Design работает не полностью — одно место; ставятся из каталога specialists (`specialists install <имя>`)
+// specialists without whom Hub Design works incompletely - one place; installed from the specialists catalog (`specialists install <name>`)
 export const NEEDED = [
-  { name: "designer", need: "required", title: "дизайнер" },
-  { name: "animator", need: "wanted", title: "аниматор" },
+  { name: "designer", need: "required", get title() { return tr("t_designer"); } },
+  { name: "animator", need: "wanted", get title() { return tr("t_animator"); } },
 ];
-export const ASK_TTL = 30 * 60 * 1000;   // «попросила хаб» держится столько, потом снова «Поставить»
-export const installText = (name) => `Поставь специалиста для Hub Design: specialists install ${name}`;
+export const ASK_TTL = 30 * 60 * 1000;   // "asked the hub" lasts this long, then "Install" again
+export const installText = (name) => tr("install", { name });
 export const hubName = (sessions) => ((sessions || []).find((s) => s.kind === "hub") || {}).name || "hub";
-// кого нет в хабе: строки NEEDED с состоянием «ask» (можно просить) или «wait» (просили, ждём — до появления сессии в снимке)
+// who is missing from the hub: NEEDED rows with the state "ask" (can be asked) or "wait" (asked, waiting - until the session appears in the snapshot)
 export function lacking(sessions, asked = {}, now = Date.now(), needed = NEEDED) {
   const have = new Set((sessions || []).filter((s) => s.kind !== "hub").map((s) => s.name));
   return needed.filter((n) => !have.has(n.name)).map((n) => ({ ...n, state: asked[n.name] && now - asked[n.name] < ASK_TTL ? "wait" : "ask" }));
 }
-export const bannerText = (n) => `Для Hub Design нужен ${n.title}`;
+export const bannerText = (n) => tr("banner", { title: n.title });
 
-// справа от видимой части ряда есть что прокрутить (1 px — допуск на дробные размеры)
+// there is something to scroll to the right of the visible part of the row (1 px - tolerance for fractional sizes)
 export function scrollsRight({ scrollLeft, clientWidth, scrollWidth }) {
   return scrollWidth - (scrollLeft + clientWidth) > 1;
 }
