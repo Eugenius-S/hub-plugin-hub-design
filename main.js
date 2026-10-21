@@ -3,10 +3,11 @@
 // фигуры — отметить место, заметка — стикер на холсте. Правки руками уходят сами через 8 с после последней — тому,
 // кто выбран внизу (по умолчанию дизайнер); комментарии — своей кнопкой или вместе с вашим текстом. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
-  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
+import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
+  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
+import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 
@@ -25,7 +26,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
+  authors: [], opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
 };
 
 globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
@@ -38,7 +39,10 @@ export default function register(h) {
   hub = h;
   hub.addStyle("style.css");
   hub.addStyle("dashboard.css");
+  hub.addStyle("card.css");
   addEventListener("message", onFrame);
+  // карточки макетов и видео в ленте чата любой сессии; клик по карточке открывает файл здесь
+  mountCards({ origin, local, open: openFile, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
   // адрес до Hub Design: «✕» возвращает туда (нет — на главную)
   let prev = location.hash;
   addEventListener("hashchange", (e) => {
@@ -107,7 +111,7 @@ function openFromSession() {
   const mine = P.authors.find((a) => a.session === from);
   if (!mine) return;
   P.openFrom = null;
-  if (!P.frames.some((f) => f.path === mine.path)) addFrame(mine.path, true); else { P.focus = mine.path; ui.cv.focusOn(mine.path); }
+  if (!P.frames.some((f) => f.path === mine.path)) addFrame(mine.path, true, true); else { P.focus = mine.path; ui.cv.focusOn(mine.path); }
 }
 
 // боковую панель хаба прячет отдельный плагин hide-sidebar; нет его — события никто не слушает
@@ -118,16 +122,17 @@ function sidebar(hide) {
 // --- хранение пачки: одна доска в браузере — перезагрузка страницы её не теряет -----------------------------------
 function save() {
   localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks, errs: P.errs, writers: P.writers,
-    round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found }));
+    round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found, opened: P.opened }));
   hold();
 }
 function load() {
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
-  P.frames = (b.frames || []).filter((f) => f && f.path).map((f) => (f.auto ? { ...f, h: windowHeight(f.w) } : f));   // до 0.4.1 рамка тянулась по высоте документа
+  P.frames = (b.frames || []).filter((f) => f && f.path).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // до 0.4.1 рамка тянулась по высоте документа
   P.picked = b.picked || {};
   P.found = b.found || {};
+  P.opened = b.opened || {};   // когда-либо открытые на холсте макеты: с холста рамка уходит, с дашборда — нет
   P.pins = b.pins || [];
   P.changes = b.changes || [];
   P.drawings = b.drawings || [];
@@ -174,6 +179,21 @@ const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 // получателя не помним между открытиями: им управляет открытый макет (wanted); перенос из чата — поверх
 function fromAddress() {
   applyHandoff();
+  applyOpen();
+}
+
+// файл из карточки в ленте: открыть вид и поставить файл на холст (вид ещё не нарисован — ждёт render)
+function openFile(path) {
+  P.openPath = path;
+  if (location.hash.startsWith("#/x/" + ID)) applyOpen(); else hub.go(ID);
+  setTimeout(applyOpen, 0);
+}
+function applyOpen() {
+  const path = P.openPath;
+  if (!path || !ui) return;
+  P.openPath = null;
+  P.tab = "chat";
+  addFrame(path, true, true);
 }
 
 async function ping() {
@@ -241,7 +261,7 @@ function goHome() {
   paint();
 }
 // открыть макет на холсте: сначала убедиться, что файл есть — вместо пустой рамки владелец читает, чего не хватает
-async function openChecked(path, focus = true) {
+async function openChecked(path, focus = true, only = false) {
   await verify([path], true);
   const st = fileState(path);
   if (isGone(st)) {
@@ -249,7 +269,7 @@ async function openChecked(path, focus = true) {
     return paint();
   }
   P.note = "";
-  addFrame(path, focus);
+  addFrame(path, focus, only);
 }
 
 // --- фреймы ------------------------------------------------------------------------------------------------------
@@ -257,15 +277,20 @@ const homeGuess = () => {
   const s = (hub.snapshot()?.sessions || []).find((x) => x.cwd && /^\/Users\/[^/]+|^\/home\/[^/]+/.test(x.cwd));
   return s ? s.cwd.match(/^\/(Users|home)\/[^/]+/)[0] : "~";
 };
-function addFrame(path, focus) {
+// only: макет открыт из дашборда, карточки или сессии — один файл, одна страница: чужие рамки с холста уходят (черновики остаются);
+// «+» на холсте добавляет рядом
+function addFrame(path, focus, only = false) {
   path = String(path).trim().replace(/^~(?=\/)/, homeGuess());
   if (!path) return;
+  if (only) for (const o of P.frames.filter((q) => q.path !== path)) removeFrame(o.path, true);
   let f = P.frames.find((q) => q.path === path);
   if (!f) {
     const w = 1440;
     f = { path, ...nextSpot(P.frames, w), w, h: windowHeight(w), auto: true };
     P.frames.push(f);
+    designSize(f, true);
   }
+  P.opened[path] = P.opened[path] || Date.now() / 1000;
   P.focus = path;
   P.home = false;
   dropStub();
@@ -274,6 +299,31 @@ function addFrame(path, focus) {
   save();
   paint();
   if (focus && ui) { if (P.frames.length === 1) ui.cv.fit(); else ui.cv.focusOn(path); }
+}
+// размер рамки задаёт сам макет (<meta name="hub-frame" content="1080x1350"> или явные width/height у html/body): рамка ровно такая,
+// без переключателя ширин, PDF — одной страницей такого размера. Нет размера — окно по ширине, как раньше
+async function designSize(f, fresh = false) {
+  let r = null;
+  try {
+    const res = await fetch(origin() + "/__canvas/size?" + new URLSearchParams([["path", f.path]]), { cache: "no-store" });
+    r = res.ok ? await res.json() : null;
+  } catch { return; }
+  if (!r || !P.frames.includes(f)) return;
+  const s = r[f.path];
+  if (!s) {
+    if (!f.fixed) return;
+    delete f.fixed;
+    if (f.auto) f.h = windowHeight(f.w);
+  } else {
+    const w = s[0], h = s[1] || windowHeight(w);
+    if (f.fixed && f.w === w && f.h === h) return;
+    f.fixed = true;
+    f.w = w; f.h = h;
+    if (fresh) Object.assign(f, nextSpot(P.frames.filter((q) => q !== f), w));
+  }
+  save();
+  paint();
+  if (ui) { ui.cv.paint(); if (P.frames.length === 1 || P.cv.auto) ui.cv.fit(); else if (fresh) ui.cv.focusOn(f.path); }
 }
 function removeFrame(path, keepDrafts = false) {
   P.frames = P.frames.filter((f) => f.path !== path);
@@ -295,7 +345,7 @@ function removeFrame(path, keepDrafts = false) {
 }
 function sizeFrame(path, w) {
   const f = P.frames.find((q) => q.path === path);
-  if (!f) return;
+  if (!f || f.fixed) return;
   f.w = w;
   if (f.auto) f.h = windowHeight(w);
   save();
@@ -434,7 +484,8 @@ function handle(file, m, ep = epOf(file)) {
   const frame = P.frames.find((f) => f.path === file);
   if (m.t === "ready") {
     ep.ready = true;
-    if (frame && frame.auto && frame.h !== windowHeight(frame.w)) { frame.h = windowHeight(frame.w); ui.cv.paint(); if (P.cv.auto) ui.cv.fit(); }
+    if (frame) designSize(frame);
+    if (frame && frame.auto && !frame.fixed && frame.h !== windowHeight(frame.w)) { frame.h = windowHeight(frame.w); ui.cv.paint(); if (P.cv.auto) ui.cv.fit(); }
     tellEp(ep, { t: "theme", theme: theme() });
     ui.cv.scaleTo(ep);
     syncEp(ep);
@@ -570,7 +621,7 @@ async function install(name) {
 // «Скачать PDF»: печатает процесс плагина своим Chrome (hub.json testchrome.path); Chrome не настроен — печатает сама страница
 async function savePdf(path) {
   const f = P.frames.find((q) => q.path === path) || {};
-  const size = `w=${Math.round(f.w || 1440)}&h=${Math.round(f.h || 900)}`;
+  const size = `w=${Math.round(f.w || 1440)}&h=${Math.round(f.h || 900)}${f.fixed ? "&fixed=1" : ""}`;
   const base = fileUrl(origin(), path);
   let res = null;
   try { res = await fetch(`${base}?pdf=1&${size}`); } catch { res = null; }
@@ -607,7 +658,7 @@ const app = {
   errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
-  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), v: "1" }),
+  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(cardKind(path) === "video" && !o.dl ? { player: "1" } : {}), v: "1" }),
   pdf: (path) => savePdf(path),
   play: (path) => { if (path) window.open(fileUrl(origin(), path), "_blank", "noopener"); },
   focusFrame: (path) => { if (P.focus !== path) { P.focus = path; paint(); } },
@@ -711,7 +762,7 @@ function wanted() {
   if (home()) return P.homeWho || (P.preset && P.preset.to) || DEFAULT_SESSION;
   if (P.pinned && P.pinned.focus === P.focus) return P.session;   // выбрали вручную — держим, пока открыт тот же макет
   P.pinned = null;
-  return (P.focus && authorOf(P.focus)) || P.session;
+  return whoGets(P.focus && authorOf(P.focus), P.session, P.ok, DEFAULT_SESSION);   // hub-dev и хаб сами не подставляются
 }
 // кто писал файл, когда в живой ленте записи нет: листаем историю сессий назад (/api/history), сначала назвавшие файл и дизайнер
 const looked = new Map();   // путь → когда искали (раз в 10 мин)
@@ -796,7 +847,7 @@ function openNewDesign() {
   const f = P.authors.find((a) => a.session === w.session && a.wrote && a.ts >= w.ts - 1);
   if (!f) return;
   P.openNew = null;
-  addFrame(f.path, true);
+  addFrame(f.path, true, true);
 }
 
 // --- лента разговора ---------------------------------------------------------------------------------------------
@@ -887,8 +938,8 @@ function build(root) {
   const tw = el("div", "hd-tw"), pbody = el("div", "hd-pbody");
   props.append(tw, pbody);
   const dash = createDashboard({
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => dashboardFiles(P.authors, P.frames, (hub.snapshot()?.sessions || []).map((x) => x.cwd), { who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
-    fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path), openPath: (path) => openChecked(path),
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
+    fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });
   const exitB = button("hd-exit", "Exit Hub Design", "Выйти из Hub Design в чат: " + P.session, () => app.exit());

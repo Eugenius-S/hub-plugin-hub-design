@@ -57,18 +57,19 @@ export function recentHtml(items, limit = 12) {
   return out.reverse().slice(0, limit);
 }
 
-// макеты всех сессий и их авторы: автор — кто писал файл инструментом (Write/Edit), иначе кто назвал его последним.
+// макеты всех сессий и их авторы: автор — кто писал файл инструментом (Write/Edit), затем кто прислал его владельцу (send-file);
+// тот, кто только назвал путь в тексте (hub send, реплика), автором не считается — он остаётся в списке макетов без права на комментарии.
 // timelines: {сессия: [элементы ленты]}; skip — сессии, которые макетов не ведут (хаб, исполнители)
 const WRITE_TOOLS = /^(Write|Edit|MultiEdit)$/;
 export function htmlAuthored(timelines, skip = () => false) {
   const best = new Map();
-  const take = (path, session, ts, wrote) => {
+  const take = (path, session, ts, rank) => {
     if (!path || !/\.html?$/i.test(path) || path.startsWith("http")) return;
     const cur = best.get(path);
-    if (!cur) return best.set(path, { path, session, ts, wrote, last: ts });
+    const fresh = { path, session, ts, rank, wrote: rank === 2, sent: rank === 1, last: ts };
+    if (!cur) return best.set(path, fresh);
     cur.last = Math.max(cur.last, ts);
-    if (cur.wrote && !wrote) return;
-    if (wrote && !cur.wrote || ts >= cur.ts) Object.assign(cur, { session, ts, wrote });
+    if (rank > cur.rank || rank === cur.rank && ts >= cur.ts) Object.assign(cur, { ...fresh, last: cur.last });
   };
   for (const [session, items] of Object.entries(timelines || {})) {
     if (skip(session)) continue;
@@ -76,9 +77,9 @@ export function htmlAuthored(timelines, skip = () => false) {
       const ts = Number(it.ts) || 0;
       if (it.kind === "tool") {
         const inp = it.input || {};
-        take(inp.file_path || inp.path, session, ts, WRITE_TOOLS.test(it.name || ""));
-      } else if (it.kind === "file") take(it.path, session, ts, false);
-      else if (it.kind === "out") htmlPaths(it.text).forEach((p) => take(p, session, ts, false));
+        take(inp.file_path || inp.path, session, ts, WRITE_TOOLS.test(it.name || "") ? 2 : 0);
+      } else if (it.kind === "file") take(it.path, session, ts, 1);
+      else if (it.kind === "out") htmlPaths(it.text).forEach((p) => take(p, session, ts, 0));
     }
   }
   return [...best.values()].sort((a, b) => b.last - a.last);
@@ -95,8 +96,8 @@ export function wroteAt(items, file) {
   return at;
 }
 
-// кому уходит комментарий к макету: выбор владельца → писавший файл (в ленте или в истории) → только назвавший → никто.
-// how: picked | wrote | named | none; none — получателя выбирает владелец, молча подставлять «дизайнера» нельзя
+// кому уходит комментарий к макету: выбор владельца → писавший файл (в ленте или в истории) → приславший его владельцу → никто.
+// how: picked | wrote | sent | named | none; named — путь только упоминали (hub send, реплика): это не автор, получателя выбирает владелец
 export function recipientOf(file, { picked = {}, authors = [], found = {}, frames = [] } = {}) {
   if (picked[file]) return { session: picked[file], how: "picked" };
   const a = authors.find((x) => x.path === file);
@@ -104,8 +105,8 @@ export function recipientOf(file, { picked = {}, authors = [], found = {}, frame
   if (found[file]) return { session: found[file], how: "wrote" };
   const f = frames.find((x) => x.path === file);
   if (f && f.author) return { session: f.author, how: "wrote" };
-  if (a) return { session: a.session, how: "named" };
-  return { session: "", how: "none" };
+  if (a && a.sent) return { session: a.session, how: "sent" };
+  return { session: "", how: a ? "named" : "none" };
 }
 
 // в каких сессиях искать, кто писал файл, когда в живой ленте записи нет: назвавшие его, затем дизайнер, затем остальные
@@ -550,13 +551,16 @@ export function nativePath(path, cwds = []) {
 // макеты для дашборда: авторы по лентам и те, что открыты на холсте (их писал не специалист хаба — Kolo, добавленный по пути)
 export function dashboardFiles(authors, frames, cwds, { who = () => "", time = () => 0 } = {}) {
   const out = (authors || []).filter((a) => nativePath(a.path, cwds));
-  for (const f of frames || []) {
-    if (out.some((a) => a.path === f.path)) continue;
-    const t = Number(time(f.path)) || 0;   // открыт только на холсте: автор — кто писал файл (если известно), время — правка файла на диске
-    out.push({ path: f.path, session: who(f.path) || "", ts: t, last: t, wrote: false });
+  for (const path of (frames || []).map((f) => (typeof f === "string" ? f : f.path))) {
+    if (out.some((a) => a.path === path)) continue;
+    const t = Number(time(path)) || 0;   // открыт только на холсте: автор — кто писал файл (если известно), время — правка файла на диске
+    out.push({ path, session: who(path) || "", ts: t, last: t, wrote: false });
   }
   return out;
 }
+
+// кому уходят правки открытого макета: автор; автора нет (путь только упомянули) — дизайнер, если он есть в хабе, а не сессия, с которой пришли
+export const whoGets = (author, current, ok, dflt = "designer") => author || (ok && ok.has(dflt) ? dflt : current);
 
 // тема кнопок холста: инструмент → режим скрипта в дизайне
 export const TOOLS = { select: "edit", hand: "view", text: "text", note: "view", comment: "comment", pencil: "draw", shape: "draw" };
@@ -668,3 +672,36 @@ export const bannerText = (n) => `Для Hub Design нужен ${n.title}`;
 export function scrollsRight({ scrollLeft, clientWidth, scrollWidth }) {
   return scrollWidth - (scrollLeft + clientWidth) > 1;
 }
+
+// --- карточки в ленте чата (0.9.0): дизайн и видео, которые сессия прислала файлом или назвала полным путём -----------------------
+export const CARD_MAX = 4;   // карточек в одной реплике; остальные пути остаются ссылками
+export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.(mp4|mov|m4v|webm|gif)$/i.test(path || "") ? "video" : null);
+export const isAbsPath = (p) => /^(~[\\/]|\/|[A-Za-z]:[\\/])/.test(p || "");
+
+// имя по-человечески: «hero-v2_final.html» → «Hero v2 final»; макет с <title> называется по нему, index.html — по папке
+export function cardName(path, title = "") {
+  const t = String(title || "").replace(/\s+/g, " ").trim();
+  if (t) return t.length > 80 ? t.slice(0, 79) + "…" : t;
+  const base = cardKind(path) === "design" ? nameOf(path) : frameTitle(path).replace(/\.[^.]+$/, "");
+  const s = base.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || frameTitle(path);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// путь из адреса файла в ленте: файл от `hub send-file` — /open?path=… (Файлы) или /api/file?path=… (плеер, картинка)
+export function pathFromHref(href) {
+  try { return new URL(href, "http://x").searchParams.get("path") || ""; } catch { return ""; }
+}
+
+// «Hide»: свёрнутые карточки помнит браузер; список короткий — старые выпадают
+export const HIDDEN_MAX = 500;
+export function hideToggle(list, path, hidden) {
+  const rest = (list || []).filter((p) => p !== path);
+  return (hidden ? [...rest, path] : rest).slice(-HIDDEN_MAX);
+}
+
+// строки карточки: язык — hub.lang, чужой — английский
+export const CARD_STR = {
+  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", design: "design", video: "video", gone: "file unavailable" },
+  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", design: "макет", video: "видео", gone: "файл недоступен" },
+};
+export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;

@@ -448,6 +448,7 @@
       el.removeEventListener("keydown", onKey, true);
       el.contentEditable = "false";
       el.removeAttribute("contenteditable");
+      getSelection().removeAllRanges();
       if (!keep) el.textContent = s.t ?? s.t0;
       s.t = el.textContent;
       commit(el, before);

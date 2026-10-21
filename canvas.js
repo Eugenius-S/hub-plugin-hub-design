@@ -361,8 +361,9 @@ export function createCanvas(app) {
   function frameMenu(path, anchor) {
     if (menu === anchor) return closeMenu();
     const f = P.frames.find((q) => q.path === path);
-    const head = el("div", "hdc-mh", "Ширина окна");
-    openPop(anchor, [head, ...FRAME_SIZES.map((s) => item(s.label + " px" + (f.w === s.w ? "  ✓" : ""), () => app.sizeFrame(path, s.w))),
+    const head = el("div", "hdc-mh", f.fixed ? "Размер макета" : "Ширина окна");
+    const sizes = f.fixed ? [item(`${f.w}×${f.h} px  ✓`, () => {})] : FRAME_SIZES.map((s) => item(s.label + " px" + (f.w === s.w ? "  ✓" : ""), () => app.sizeFrame(path, s.w)));
+    openPop(anchor, [head, ...sizes,
       sep(), item("Сетки поверх рамки…", () => gridsMenu(path, anchor)),
       item("Перезагрузить", () => reloadFrame(path)), item("Показать крупно", () => focusOn(path)),
       item("Убрать с холста", () => app.removeFrame(path))], "", "right");
@@ -457,7 +458,7 @@ export function createCanvas(app) {
       who.replaceChildren(...[...(r.session ? [] : [""]), ...names].map((n) => { const o = el("option", null, n || "Выберите получателя"); o.value = n; return o; }));
       who.value = r.session;
       to.dataset.how = r.how;
-      to.title = { wrote: "Писал этот макет", picked: "Выбран вами", named: "Называл этот файл (писавшего не нашли)", none: "Кто делал макет, неизвестно" }[r.how] || "";
+      to.title = { wrote: "Писал этот макет", picked: "Выбран вами", sent: "Прислал этот макет (писавшего не нашли)", named: "Файл только упоминали — кто писал, не нашли", none: "Кто делал макет, неизвестно" }[r.how] || "";
       if (go) go.disabled = !r.session;
     };
     box.append(el("h4", null, "Комментарий"), to);

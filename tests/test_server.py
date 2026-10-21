@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="dc-test-")
@@ -204,6 +205,101 @@ class Server(unittest.TestCase):
             server._roots["at"] = 0
 
 
+    def size_file(self, name, text):
+        path = os.path.join(os.path.realpath(SITE), name)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return path
+
+    def test_size_of_takes_meta_first_then_declared_html_body(self):
+        meta = self.size_file("poster-meta.html", '<!doctype html><meta name="hub-frame" content="1080x1350"><style>body{width:500px;height:500px}</style><p>x</p>')
+        self.assertEqual(server.size_of(meta), (1080, 1350))
+        body = self.size_file("poster-body.html", "<style>/* body{width:9px} */ html,body{margin:0}\nbody{width:1080px;height:1350px;background:#000}</style><p>x</p>")
+        self.assertEqual(server.size_of(body), (1080, 1350))
+        inline = self.size_file("poster-inline.html", '<body style="width:800px;height:600px"><p>x</p>')
+        self.assertEqual(server.size_of(inline), (800, 600))
+        only_w = self.size_file("poster-w.html", "<style>body{width:900px}</style><p>x</p>")
+        self.assertEqual(server.size_of(only_w), (900, None))
+
+    def test_size_of_ignores_media_percent_and_rubbish(self):
+        for name, text in (("plain.html", "<p>x</p>"),
+                           ("media.html", "<style>@media (min-width:600px){body{width:1080px;height:1350px}}</style><p>x</p>"),
+                           ("pct.html", "<style>body{width:100%;height:100vh}</style><p>x</p>"),
+                           ("tiny.html", '<meta name="hub-frame" content="3x4"><p>x</p>'),
+                           ("bad.html", '<meta name="hub-frame" content="широкий"><p>x</p>')):
+            self.assertIsNone(server.size_of(self.size_file(name, text)), name)
+
+    def test_size_endpoint_is_for_the_hub_page_and_files_inside_roots(self):
+        from urllib.parse import urlencode
+        meta = self.size_file("poster-ep.html", '<meta name="hub-frame" content="1080x1350"><p>x</p>')
+        plain = self.size_file("plain-ep.html", "<p>x</p>")
+        out = os.path.join(os.path.realpath(OUT), "x.html")
+        q = "/__canvas/size?" + urlencode([("path", p) for p in (meta, plain, out)])
+        r, body = self.get(q, headers={"Origin": "http://localhost:8787"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(json.loads(body), {meta: [1080, 1350]})
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
+        r, _ = self.get(q, headers={"Origin": "http://evil.example"})
+        self.assertIsNone(r.getheader("Access-Control-Allow-Origin"))
+
+    def test_card_gives_state_title_and_time_for_the_hub_page(self):
+        from urllib.parse import urlencode
+        page = self.size_file("card.html", "<!doctype html><title>Чёрная пятница\n  пост</title><p>x</p>")
+        r, body = self.get("/__canvas/card?" + urlencode({"path": page}), headers={"Origin": "http://localhost:8787"})
+        self.assertEqual(r.status, 200)
+        card = json.loads(body)
+        self.assertEqual((card["state"], card["title"]), ("ok", "Чёрная пятница пост"))
+        self.assertGreater(card["mtime"], 0)
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
+        clip = os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")
+        r, body = self.get("/__canvas/card?" + urlencode({"path": clip}))
+        self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))
+        r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(OUT, "x.html")}))
+        self.assertEqual(json.loads(body)["state"], "denied")
+
+    def test_thumb_without_chrome_is_501_and_outside_is_404(self):
+        from urllib.parse import urlencode
+        page = self.size_file("thumb.html", "<p>x</p>")
+        env = os.environ.pop("HUB_TEST_CHROME", None)
+        try:
+            with unittest.mock.patch.object(server, "chrome_path", return_value=None):
+                r, _ = self.get("/__canvas/thumb?" + urlencode({"path": page}))
+                self.assertEqual(r.status, 501)
+        finally:
+            if env is not None:
+                os.environ["HUB_TEST_CHROME"] = env
+        r, _ = self.get("/__canvas/thumb?" + urlencode({"path": os.path.join(OUT, "x.html")}))
+        self.assertEqual(r.status, 404)
+
+    def test_video_is_readable_by_the_hub_page_for_the_card_frame(self):
+        clip = os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")
+        r, _ = self.get(self.url(clip), headers={"Origin": "http://localhost:8787"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
+        r, _ = self.get(self.url(clip), headers={"Origin": "http://evil.example"})
+        self.assertIsNone(r.getheader("Access-Control-Allow-Origin"))
+
+    def test_video_player_page(self):
+        clip = os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")
+        r, body = self.get(self.url(clip) + "?player=1")
+        self.assertEqual(r.status, 200)
+        self.assertIn("text/html", r.getheader("Content-Type"))
+        self.assertIn(b"<video", body)
+
+    def test_roots_remember_session_folders_when_the_journal_is_unreadable(self):
+        keep = dict(server._roots)
+        extra = os.path.join(TMP, "remembered")
+        os.makedirs(extra, exist_ok=True)
+        try:
+            server._roots.update(at=0, seen={extra})
+            with unittest.mock.patch.dict(sys.modules, {"core.journal": None}):
+                self.assertIn(os.path.realpath(extra), server.roots())
+        finally:
+            server._roots.clear()
+            server._roots.update(keep)
+            server._roots["at"] = 0
+
+
 class Inject(unittest.TestCase):
     def test_no_body_tag_appends(self):
         self.assertTrue(server.inject(b"<p>x</p>").endswith(b'agent.js"></script>'))
@@ -339,6 +435,22 @@ class Pdf(unittest.TestCase):
         self.assertIn("@page{size:", text)
         self.assertIn("print-color-adjust:exact", text)
         self.assertNotIn("/__canvas/agent.js", text)
+
+    def test_pdf_of_a_sized_design_is_one_page_of_its_size_and_keeps_its_page_rule(self):
+        path = os.path.join(os.path.realpath(SITE), "poster.html")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write('<meta name="hub-frame" content="1080x1350"><style>@page{size:1080px 1350px;margin:0}body{margin:0}</style><p>x</p>')
+        r, body = self.get("/f" + path + "?pdf=1&w=1440&h=900")
+        self.assertEqual(r.status, 200)
+        args = open(self.log).read().split("\n")
+        self.assertIn("--window-size=1080,1350", args)
+        self.assertTrue(args[-1].endswith("poster.html?print=1&w=1080&h=1350&fixed=1"), args[-1])
+
+    def test_print_script_keeps_own_page_rule_and_does_not_stretch_a_fixed_page(self):
+        r, body = self.get(self.page + "?print=1&w=1080&h=1350&fixed=1")
+        text = body.decode()
+        self.assertIn("fixed", text)
+        self.assertIn("@page", text)
 
     def test_real_chrome_page_is_window_sized(self):
         found = glob.glob(os.path.expanduser("~/.config/hub-core/chrome-headless-shell/**/chrome-headless-shell"), recursive=True)

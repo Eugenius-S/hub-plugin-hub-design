@@ -4,6 +4,7 @@
 Свой адрес, а не страница хаба: скрипты дизайна работают как в браузере (шрифты, видео, анимации), но не с правами
 страницы хаба. Отдаёт только файлы веба внутри папок сессий и проектов хаба, без скрытых; встраивать себя — только
 странице хаба; запрос с чужого сайта — отказ."""
+import hashlib
 import html
 import json
 import os
@@ -42,6 +43,11 @@ PDF_TIMEOUT = 45   # секунд на печать одного макета, �
 PDF_SIZE = (1440, 900)   # окно макета, если страница не прислала своё
 PDF_MAX = 20000          # пикселей: выше PDF-страницу не растягиваем
 WRITE_MAX = 2 * 1024 * 1024   # тело запроса на запись правок
+THUMB_SIZE = (1440, 900)   # окно, в котором макет снимается для карточки в ленте
+THUMB_SCALE = 0.34         # снимок уменьшается Chrome'ом сразу: ~490 px в ширину
+THUMB_TIMEOUT = 30
+THUMB_KEEP = 300           # снимков в кэше: старые стираются
+TITLE_READ = 64 * 1024     # откуда в файле ищем <title>
 
 
 def state_dir():
@@ -63,26 +69,25 @@ def config():
         return {}
 
 
-_roots = {"at": 0.0, "list": []}
+_roots = {"at": 0.0, "list": [], "seen": set()}
 
 
 def roots():
     """Папки, из которых можно отдавать: рабочие папки сессий хаба и папки проектов из hub.json. Не корень диска."""
     if time.time() - _roots["at"] < ROOTS_TTL:
         return _roots["list"]
-    found = set()
+    # папки, где сессии уже были, не забываем: журнал под нагрузкой читается не всегда — без этого файлы на 15 секунд становились «вне папок»
+    found = _roots["seen"]
     try:
         from core import journal
         for s in journal.load_state(state_dir()).get("sessions", {}).values():
             if s.get("cwd"):
                 found.add(s["cwd"])
-    except Exception:   # хаба нет рядом (тесты, старая версия) — только проекты
+    except Exception:   # хаба нет рядом (тесты, старая версия) или журнал не прочитался — то, что видели раньше, и проекты
         pass
-    for p in (config().get("projects") or {}).values():
-        if isinstance(p, dict) and p.get("path"):
-            found.add(os.path.expanduser(p["path"]))
+    extra = {os.path.expanduser(p["path"]) for p in (config().get("projects") or {}).values() if isinstance(p, dict) and p.get("path")}
     out = []
-    for r in found:
+    for r in found | extra:
         real = os.path.realpath(r)
         if os.path.isdir(real) and os.path.dirname(real) != real:
             out.append(real)
@@ -171,9 +176,10 @@ var q=new URLSearchParams(location.search),W=+q.get("w")||%d,H=+q.get("h")||%d,m
 var sl=[].slice.call(document.querySelectorAll(".slide,[data-slide],section.slide")),css="*{-webkit-print-color-adjust:exact;print-color-adjust:exact}";
 if(sl.length>1){var r=sl[0].getBoundingClientRect();W=Math.round(r.width)||W;H=Math.round(r.height)||H;
 css+=".slide,[data-slide]{break-after:page;page-break-after:always}";}
-else H=Math.max(H,Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)));
+else if(!q.get("fixed"))H=Math.max(H,Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)));
 H=Math.min(H,max);
-var st=document.createElement("style");st.textContent="@page{size:"+W+"px "+H+"px;margin:0}"+css;document.head.appendChild(st);
+var own=false;try{[].slice.call(document.styleSheets).forEach(function(s){[].slice.call(s.cssRules||[]).forEach(function(r){if(r.type===6&&r.style&&r.style.getPropertyValue("size"))own=true;});});}catch(e){}
+var st=document.createElement("style");st.textContent=(own?"":"@page{size:"+W+"px "+H+"px;margin:0}")+css;document.head.appendChild(st);
 document.documentElement.setAttribute("data-hd-print",W+"x"+H);
 if(q.get("auto"))setTimeout(function(){print();},300);});</script>""" % (PDF_SIZE[0], PDF_SIZE[1], PDF_MAX)
 
@@ -220,8 +226,13 @@ def pdf(real, w, h):
     chrome = chrome_path()
     if not chrome:
         return None
+    size = size_of(real)
+    fixed = bool(size and size[1])   # размер задан самим макетом (мета hub-frame, явные width и height): одна страница ровно такого размера
+    if fixed:
+        w, h = size
     w, h = max(200, min(int(w), PDF_MAX)), max(200, min(int(h), PDF_MAX))
-    url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "print=1&w=%d&h=%d" % (w, h))
+    url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")),
+                                           "print=1&w=%d&h=%d%s" % (w, h, "&fixed=1" if fixed else ""))
     with _pdf_lock:
         tmp = tempfile.mkdtemp(prefix="hub-design-pdf-")
         out = os.path.join(tmp, "out.pdf")
@@ -247,6 +258,124 @@ def pdf(real, w, h):
             if proc is not None:
                 kill_tree(proc)
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+FRAME_MIN, FRAME_MAX = 100, 8000    # размер рамки макета, заданного самим макетом, пикселей
+SIZE_READ = 256 * 1024              # откуда в файле ищем объявленный размер
+_META_FRAME = re.compile(r"<meta\b[^>]*\bname\s*=\s*[\"']hub-frame[\"'][^>]*>", re.I)
+_PX_DECL = re.compile(r"(?<![\w-])(width|height)\s*:\s*(\d+(?:\.\d+)?)px\s*(?:!important\s*)?(?=;|$)", re.I)
+
+
+def _size_ok(w, h):
+    return FRAME_MIN <= w <= FRAME_MAX and FRAME_MIN <= h <= FRAME_MAX
+
+
+def size_of(real):
+    """Размер макета, как он задан в самом файле: <meta name="hub-frame" content="1080x1350"> (первым), иначе явные width/height в px
+    у html и body (стили документа и style="" на тегах). Не задан — None; задана одна ширина — (w, None)."""
+    try:
+        with open(real, "rb") as f:
+            text = f.read(SIZE_READ).decode("utf-8", "replace")
+    except OSError:
+        return None
+    for tag in _META_FRAME.findall(text):
+        m = re.search(r"content\s*=\s*[\"']\s*(\d+)\s*[x×X*]\s*(\d+)", tag)
+        if m and _size_ok(int(m.group(1)), int(m.group(2))):
+            return (int(m.group(1)), int(m.group(2)))
+    got = {}
+
+    def take(decls):
+        for k, v in _PX_DECL.findall(decls):
+            got[k.lower()] = round(float(v))
+
+    for css in re.findall(r"<style[^>]*>(.*?)</style>", text, re.S | re.I):
+        css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        css = re.sub(r"@[\w-]+[^{};]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "", css)   # @media, @supports, @font-face: не безусловный размер
+        for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+            if any(x.strip().lower() in ("html", "body", "html body") for x in sel.split(",")):
+                take(body)
+    for tag in re.findall(r"<(?:html|body)\b[^>]*>", text, re.I):
+        m = re.search(r"\bstyle\s*=\s*[\"']([^\"']*)", tag, re.I)
+        if m:
+            take(m.group(1))
+    w, h = got.get("width"), got.get("height")
+    if w and FRAME_MIN <= w <= FRAME_MAX:
+        return (w, h if h and FRAME_MIN <= h <= FRAME_MAX else None)
+    return None
+
+
+def title_of(real):
+    """<title> макета для карточки в ленте; нет — пустая строка."""
+    try:
+        with open(real, "rb") as f:
+            head = f.read(TITLE_READ).decode("utf-8", "replace")
+    except OSError:
+        return ""
+    m = re.search(r"<title[^>]*>(.*?)</title>", head, re.S | re.I)
+    return re.sub(r"\s+", " ", html.unescape(m.group(1))).strip() if m else ""
+
+
+def thumb_dir():
+    return os.path.join(state_dir(), "hub-design", "thumbs")
+
+
+def thumb_path(real, stamp):
+    return os.path.join(thumb_dir(), hashlib.sha1(("%s|%s" % (real, stamp)).encode("utf-8")).hexdigest()[:24] + ".png")
+
+
+_thumb_lock = threading.Lock()
+
+
+def thumb(real):
+    """Снимок макета для карточки: свой headless Chrome (тот же, что печатает PDF) открывает файл как на диске и снимает окно 1440×900,
+    уменьшенное при съёмке. Кэш — по пути и времени правки папки макета. None — Chrome не настроен; PdfError — не вышло."""
+    chrome = chrome_path()
+    if not chrome:
+        return None
+    out = thumb_path(real, newest(real))
+    try:
+        with open(out, "rb") as f:
+            return f.read()
+    except OSError:
+        pass
+    url = "http://127.0.0.1:%d/f/%s?raw=1" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")))
+    size = size_of(real)
+    win = THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])   # макет с заданным размером снимаем целиком
+    with _thumb_lock:
+        tmp = tempfile.mkdtemp(prefix="hub-design-thumb-")
+        shot = os.path.join(tmp, "out.png")
+        cmd = [chrome, "--headless", "--disable-gpu", "--hide-scrollbars", "--user-data-dir=" + os.path.join(tmp, "profile"),
+               "--window-size=%d,%d" % win, "--force-device-scale-factor=%s" % THUMB_SCALE, "--virtual-time-budget=3000",
+               "--screenshot=" + shot, url]
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" else {"start_new_session": True}
+        proc = None
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+            try:
+                proc.wait(THUMB_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                raise PdfError("Chrome не успел снять макет за %d с" % THUMB_TIMEOUT)
+            try:
+                with open(shot, "rb") as f:
+                    data = f.read()
+            except OSError:
+                raise PdfError("Chrome не оставил снимок (код %s)" % proc.returncode)
+            if not data.startswith(b"\x89PNG"):
+                raise PdfError("Chrome вернул не картинку")
+        finally:
+            if proc is not None:
+                kill_tree(proc)
+            shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        os.makedirs(thumb_dir(), exist_ok=True)
+        with open(out, "wb") as f:
+            f.write(data)
+        old = sorted((os.path.join(thumb_dir(), n) for n in os.listdir(thumb_dir())), key=os.path.getmtime)
+        for p in old[:-THUMB_KEEP]:
+            os.remove(p)
+    except OSError:
+        pass   # кэш не записался — снимок всё равно отдадим
+    return data
 
 
 # правки руками — точечно в файл. Без состояния в процессе: исходник для пересчёта — копия <имя>.r<N>.html рядом, её имя и время
@@ -359,7 +488,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(length))
-        self.send_header("Cache-Control", "no-store")
+        if "Cache-Control" not in (extra or {}):
+            self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", "frame-ancestors 'self' " + " ".join(page_origins()))
         for k, v in (extra or {}).items():
@@ -458,6 +588,40 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(out, ensure_ascii=False).encode()
             self.head(200, "application/json; charset=utf-8", len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
+        if url.path == "/__canvas/size":
+            # размер макета из самого файла (мета hub-frame или явные width/height у html/body): {путь: [w, h|null]}, нет — не включён
+            paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
+            out = {}
+            for p in paths:
+                real = os.path.realpath(os.path.expanduser(p))
+                try:
+                    if real.lower().endswith(HTML) and allowed(real):
+                        size = size_of(real)
+                        if size:
+                            out[p] = list(size)
+                except OSError:
+                    pass
+            return self.say(200, out, self.cors())
+        if url.path == "/__canvas/card":
+            # карточка макета или видео в ленте чата: состояние файла, название, время правки. Только со страницы хаба (CORS)
+            real = os.path.realpath(os.path.expanduser(q.get("path", "")))
+            out = {"state": file_state(real), "title": "", "mtime": 0}
+            if out["state"] == "ok":
+                out["mtime"] = newest(real) if real.lower().endswith(HTML) else os.path.getmtime(real)
+                out["title"] = title_of(real) if real.lower().endswith(HTML) else ""
+            return self.say(200, out, self.cors())
+        if url.path == "/__canvas/thumb":
+            real = os.path.realpath(os.path.expanduser(q.get("path", "")))
+            if not real.lower().endswith(HTML) or not allowed(real):
+                return self.say(404, {"error": "no file"}, self.cors())
+            try:
+                data = thumb(real)
+            except PdfError as e:
+                return self.say(500, {"error": str(e)}, self.cors())
+            if data is None:   # Chrome не настроен — на карточке значок
+                return self.say(501, {"error": "no chrome"}, self.cors())
+            self.head(200, "image/png", len(data), {**self.cors(), "Cache-Control": "private, max-age=3600"})
+            return self.wfile.write(data) if self.command != "HEAD" else None
         if url.path == "/__canvas/stat":
             real = os.path.realpath(q.get("path", ""))
             if not real.lower().endswith(HTML) or not allowed(real):
@@ -473,8 +637,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.say(404, {"error": "no file"})
             if q.get("pdf") and real.lower().endswith(HTML):
                 return self.pdf(real, q)
+            if q.get("player") and not real.lower().endswith(HTML):
+                return self.player(real)
             return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")))
         self.say(404, {"error": "no page"})
+
+    def player(self, real):
+        """?player=1 — видео и гифка на холсте: простой проигрыватель на весь фрейм вместо ролика его натурального размера."""
+        src = html.escape(quote(os.path.basename(real)) + "?v=1")
+        tag = "img" if real.lower().endswith(".gif") else "video controls autoplay muted loop playsinline"
+        body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;height:100vh;background:#000;display:flex">'
+                '<%s src="%s" style="width:100%%;height:100%%;object-fit:contain"></body>' % (html.escape(os.path.basename(real)), tag, src)).encode()
+        self.head(200, TYPES[".html"], len(body))
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def pdf(self, real, q):
         """?pdf=1&w=&h= — макет файлом PDF. Страница хаба просит по своему origin (CORS только для неё)."""
@@ -518,9 +694,9 @@ class Handler(BaseHTTPRequestHandler):
             if start > end:
                 self.head(416, kind, 0, {"Content-Range": f"bytes */{size}"})
                 return
-            self.head(206, kind, end - start + 1, {"Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes"})
+            self.head(206, kind, end - start + 1, {"Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes", **self.cors()})
         else:
-            self.head(200, kind, size, {"Accept-Ranges": "bytes"})
+            self.head(200, kind, size, {"Accept-Ranges": "bytes", **self.cors()})   # CORS: страница снимает кадр видео для карточки в ленте
         if self.command == "HEAD":
             return
         with open(real, "rb") as f:

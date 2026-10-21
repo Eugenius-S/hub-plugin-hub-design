@@ -161,14 +161,34 @@ test("«N мин назад»", () => {
   assert.equal(ago(0, 5), "");
 });
 
-test("получатель: выбор владельца → писавший (лента или история) → только назвавший → никто, молча не дизайнер", () => {
-  const authors = [{ path: "/d/a.html", session: "gen-1", wrote: false }, { path: "/d/b.html", session: "designer", wrote: true }];
+test("получатель: выбор владельца → писавший (лента или история) → приславший → никто; назвавший автором не считается", () => {
+  const authors = [{ path: "/d/a.html", session: "gen-1", wrote: false, sent: false }, { path: "/d/b.html", session: "designer", wrote: true },
+    { path: "/d/s.html", session: "gen-2", wrote: false, sent: true }];
   assert.deepEqual(recipientOf("/d/b.html", { authors }), { session: "designer", how: "wrote" });
-  assert.deepEqual(recipientOf("/d/a.html", { authors }), { session: "gen-1", how: "named" });
+  assert.deepEqual(recipientOf("/d/a.html", { authors }), { session: "", how: "named" });   // путь только упомянули
+  assert.deepEqual(recipientOf("/d/s.html", { authors }), { session: "gen-2", how: "sent" });
+  assert.deepEqual(recipientOf("/d/s.html", { authors, found: { "/d/s.html": "designer" } }), { session: "designer", how: "wrote" });   // писавший из истории главнее приславшего
   assert.deepEqual(recipientOf("/d/a.html", { authors, found: { "/d/a.html": "designer" } }), { session: "designer", how: "wrote" });
   assert.deepEqual(recipientOf("/d/a.html", { authors, found: { "/d/a.html": "designer" }, picked: { "/d/a.html": "writer" } }), { session: "writer", how: "picked" });
   assert.deepEqual(recipientOf("/d/none.html", { authors }), { session: "", how: "none" });
   assert.deepEqual(recipientOf("/d/none.html"), { session: "", how: "none" });
+});
+
+test("автор макета: Write/Edit главнее send-file, send-file главнее упоминания; хаб-dev, назвавший путь, не автор", () => {
+  const file = "/Users/me/design/canva-bf/bf-post-1a.html";
+  const tl = {
+    designer: [{ kind: "tool", name: "Write", ts: 10, input: { file_path: file } }],
+    "hub-dev": [{ kind: "out", ts: 50, text: `Правки к ${file}: сдвинь тег` }],
+    other: [{ kind: "file", ts: 30, path: file }],
+  };
+  const a = htmlAuthored(tl).find((x) => x.path === file);
+  assert.equal(a.session, "designer");
+  assert.equal(a.wrote, true);
+  assert.deepEqual(recipientOf(file, { authors: htmlAuthored(tl) }), { session: "designer", how: "wrote" });
+  const only = htmlAuthored({ "hub-dev": tl["hub-dev"], other: tl.other }).find((x) => x.path === file);
+  assert.deepEqual([only.session, only.sent, only.wrote], ["other", true, false]);   // прислал — автор; позже упомянувший — нет
+  const named = htmlAuthored({ "hub-dev": tl["hub-dev"] });
+  assert.deepEqual(recipientOf(file, { authors: named }), { session: "", how: "named" });
 });
 
 test("Write макета ушёл за хвост ленты: ищем его в истории, назвавший в хвосте не автор", () => {
@@ -657,4 +677,53 @@ test("writable: правка, ушедшая дизайнеру словами (
   const f = "/a/page.html";
   const mk = (sel, extra = {}) => ({ file: f, sel, dx: 5, dy: 0, state: "sent", ...extra });
   assert.deepEqual(writable([mk("a"), mk("b", { handed: true })], f).map((c) => c.sel), ["a"]);
+});
+
+test("карточки: вид файла, имя, путь из адреса, «Hide», строки по языку", async () => {
+  const { cardKind, cardName, pathFromHref, hideToggle, cardText, HIDDEN_MAX, isAbsPath } = await import("../lib.js");
+  assert.equal(cardKind("/a/p.html"), "design");
+  for (const f of ["a.mp4", "a.MOV", "a.webm", "a.gif", "a.m4v"]) assert.equal(cardKind("/x/" + f), "video", f);
+  assert.equal(cardKind("/a/p.png"), null);
+  assert.equal(isAbsPath("/a/b.html"), true);
+  assert.equal(isAbsPath("C:\\a\\b.html"), true);
+  assert.equal(isAbsPath("a/b.html"), false);
+  assert.equal(cardName("/d/hero-v2_final.html"), "Hero v2 final");
+  assert.equal(cardName("/d/x.html", "  Чёрная\n пятница "), "Чёрная пятница");
+  assert.equal(cardName("/d/kolo/index.html"), "Kolo");
+  assert.equal(pathFromHref("/open?path=%2FUsers%2Fme%2Fa.mp4"), "/Users/me/a.mp4");
+  assert.equal(pathFromHref("/api/file?path=%2Fa%2Fb.mp4&w=200"), "/a/b.mp4");
+  assert.equal(pathFromHref("/somewhere"), "");
+  assert.deepEqual(hideToggle(["/a"], "/b", true), ["/a", "/b"]);
+  assert.deepEqual(hideToggle(["/a", "/b"], "/a", false), ["/b"]);
+  assert.deepEqual(hideToggle(["/a"], "/a", true), ["/a"]);
+  assert.equal(hideToggle(Array.from({ length: HIDDEN_MAX }, (_, i) => "/p" + i), "/new", true).length, HIDDEN_MAX);
+  assert.equal(cardText("ru").hide, "Скрыть");
+  assert.equal(cardText("ru-RU").hide, "Скрыть");
+  assert.equal(cardText("de").hide, "Hide");
+  assert.equal(cardText(undefined).open, "Open in Hub Design");
+});
+
+test("дашборд: макет, что открывали на холсте, остаётся в списке и после того, как рамка с холста ушла", () => {
+  const mac = ["/Users/me"];
+  const rows = dashboardFiles([], ["/Users/me/kolo/index.html", "/Users/me/a/a.html"], mac, { time: () => 5 });
+  assert.deepEqual(rows.map((r) => r.path), ["/Users/me/kolo/index.html", "/Users/me/a/a.html"]);
+  const authored = [{ path: "/Users/me/a/a.html", session: "designer", ts: 9, last: 9, wrote: true }];
+  assert.equal(dashboardFiles(authored, ["/Users/me/a/a.html"], mac).length, 1);   // автор по ленте не дублируется
+});
+
+test("agent.js: после правки текста выделение снимается (серый прямоугольник поверх слова)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../agent.js", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("function textEdit(el)"), src.indexOf("// --- рисование от руки"));
+  const finish = body.slice(body.indexOf("const finish = "), body.indexOf("const onBlur"));
+  assert.match(finish, /getSelection\(\)\.removeAllRanges\(\)/);
+  assert.ok(finish.indexOf("removeAllRanges") > finish.indexOf('removeAttribute("contenteditable")'));
+});
+
+test("whoGets: правки идут автору; автора нет — дизайнеру, а не сессии, с которой пришли (hub-dev, хаб)", async () => {
+  const { whoGets } = await import("../lib.js");
+  const ok = new Set(["designer", "hub-dev"]);
+  assert.equal(whoGets("animator", "hub-dev", ok), "animator");
+  assert.equal(whoGets("", "hub-dev", ok), "designer");
+  assert.equal(whoGets("", "hub-dev", new Set(["hub-dev"])), "hub-dev");   // дизайнера в хабе нет — что есть
 });
