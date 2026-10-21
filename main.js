@@ -496,6 +496,39 @@ async function install(name) {
   }
 }
 
+// «Скачать PDF»: печатает процесс плагина своим Chrome (hub.json testchrome.path); Chrome не настроен — печатает сама страница
+async function savePdf(path) {
+  const f = P.frames.find((q) => q.path === path) || {};
+  const size = `w=${Math.round(f.w || 1440)}&h=${Math.round(f.h || 900)}`;
+  const base = fileUrl(origin(), path);
+  let res = null;
+  try { res = await fetch(`${base}?pdf=1&${size}`); } catch { res = null; }
+  if (res && res.ok) {
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nameOf(path).replace(/\.html?$/i, "") + ".pdf";
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return true;
+  }
+  if (!res || res.status === 501) return printFrame(`${base}?print=1&auto=1&${size}`, f);
+  let why = "";
+  try { why = (await res.json()).error || ""; } catch { /* не JSON */ }
+  P.note = "PDF не вышел: " + (why || res.status);
+  paint();
+  return false;
+}
+// запасной путь: печатная версия во фрейме нужного размера, печать запускает она сама (окно печати браузера — «Сохранить как PDF»)
+function printFrame(url, f) {
+  const fr = document.createElement("iframe");
+  fr.src = url;
+  fr.style.cssText = `position:fixed;left:-99999px;top:0;border:0;width:${Math.round(f.w || 1440)}px;height:${Math.round(f.h || 900)}px`;
+  document.body.append(fr);
+  setTimeout(() => fr.remove(), 90000);
+  return true;
+}
+
 const recipient = (file) => recipientOf(file, { picked: P.picked, authors: P.authors, found: P.found, frames: P.frames });
 const app = {
   get P() { return P; },
@@ -504,6 +537,7 @@ const app = {
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
   fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), v: "1" }),
+  pdf: (path) => savePdf(path),
   play: (path) => { if (path) window.open(fileUrl(origin(), path), "_blank", "noopener"); },
   focusFrame: (path) => { if (P.focus !== path) { P.focus = path; paint(); } },
   addFrame: openChecked, fileState, verify, goHome, removeFrame, sizeFrame, setTool, deselect, undo, addNote,

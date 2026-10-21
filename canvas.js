@@ -234,10 +234,16 @@ export function createCanvas(app) {
       a.download = frameTitle(f.path);
       document.body.append(a); a.click(); a.remove();
     });
+    const pdf = btn("hdc-lb", svg("pdf"), "Скачать PDF", async () => {
+      if (pdf.disabled) return;
+      pdf.disabled = true;
+      pdf.title = "Готовлю PDF…";
+      try { await app.pdf(f.path); } finally { pdf.disabled = false; pdf.title = "Скачать PDF"; }
+    });
     const play = btn("hdc-lb", svg("play12"), "Смотреть", () => app.play(f.path));
     const err = btn("hdc-err", "", "", () => app.askFix(f.path));
     err.hidden = true;
-    label.append(title, err, tweak, dl, play);
+    label.append(title, err, tweak, dl, pdf, play);
     label.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button") || e.button !== 0) return;
       e.preventDefault();

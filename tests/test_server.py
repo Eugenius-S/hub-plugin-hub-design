@@ -1,7 +1,9 @@
 """Процесс Hub Design: отдаёт только файлы веба из папок сессий и проектов, подкладывает agent.js, чужим не отвечает."""
+import glob
 import http.client
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -227,3 +229,157 @@ class Inject(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+FAKE = """#!%s
+import os, sys, time
+a = sys.argv[1:]
+out = [x.split("=", 1)[1] for x in a if x.startswith("--print-to-pdf=")][0]
+open(os.environ["FAKE_LOG"], "w").write("\\n".join(a))
+mode = os.environ.get("FAKE_MODE", "ok")
+if mode == "hang":
+    open(os.environ["FAKE_LOG"] + ".pid", "w").write(str(os.getpid()))
+    time.sleep(60)
+if mode == "ok":
+    open(out, "wb").write(b"%%PDF-1.4 fake")
+"""
+
+
+class Pdf(unittest.TestCase):
+    """PDF: свой Chrome со своим профилем во временной папке; нет Chrome — 501 (страница печатает рамку сама)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = server.serve(0)
+        cls.port = cls.srv.server_address[1]
+        server.PORT = cls.port
+        server._roots["at"] = 0
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.page = "/f" + os.path.join(os.path.realpath(SITE), "index.html")
+        cls.fake = os.path.join(TMP, "fake-chrome")
+        with open(cls.fake, "w") as f:
+            f.write(FAKE % sys.executable)
+        os.chmod(cls.fake, 0o755)
+        cls.log = os.path.join(TMP, "fake.log")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        self.env = {k: os.environ.get(k) for k in ("HUB_TEST_CHROME", "FAKE_LOG", "FAKE_MODE")}
+        os.environ["FAKE_LOG"] = self.log
+        os.environ["HUB_TEST_CHROME"] = self.fake
+        os.environ.pop("FAKE_MODE", None)
+
+    def tearDown(self):
+        for k, v in self.env.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+    def get(self, path, headers=None, timeout=20):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+        c.request("GET", path, headers={"Host": f"localhost:{self.port}", **(headers or {})})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r, body
+
+    def test_pdf_is_printed_by_own_chrome_with_temp_profile(self):
+        r, body = self.get(self.page + "?pdf=1&w=1200&h=700", {"Origin": "http://localhost:8787"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.getheader("Content-Type"), "application/pdf")
+        self.assertIn("index.pdf", r.getheader("Content-Disposition"))
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
+        self.assertTrue(body.startswith(b"%PDF"))
+        args = open(self.log).read().split("\n")
+        profile = [a for a in args if a.startswith("--user-data-dir=")][0].split("=", 1)[1]
+        self.assertTrue(profile.startswith(tempfile.gettempdir()) or "hub-design-pdf-" in profile)
+        self.assertIn("--window-size=1200,700", args)
+        self.assertIn("--headless", args)
+        self.assertTrue(args[-1].startswith(f"http://127.0.0.1:{self.port}/f/") and args[-1].endswith("index.html?print=1&w=1200&h=700"))
+        self.assertFalse(os.path.exists(os.path.dirname(profile)), "временная папка убрана")
+
+    def test_no_chrome_is_501_so_the_page_prints_itself(self):
+        os.environ["HUB_TEST_CHROME"] = os.path.join(TMP, "nope")
+        r, body = self.get(self.page + "?pdf=1")
+        self.assertEqual(r.status, 501)
+        self.assertEqual(json.loads(body)["error"], "no chrome")
+
+    def test_chrome_that_prints_nothing_is_500_and_cleaned(self):
+        os.environ["FAKE_MODE"] = "none"
+        r, body = self.get(self.page + "?pdf=1")
+        self.assertEqual(r.status, 500)
+        self.assertIn("не оставил PDF", json.loads(body)["error"])
+
+    def test_hung_chrome_is_killed_by_pid(self):
+        os.environ["FAKE_MODE"] = "hang"
+        old, server.PDF_TIMEOUT = server.PDF_TIMEOUT, 1
+        try:
+            r, body = self.get(self.page + "?pdf=1")
+        finally:
+            server.PDF_TIMEOUT = old
+        self.assertEqual(r.status, 500)
+        self.assertIn("не успел", json.loads(body)["error"])
+        pid = int(open(self.log + ".pid").read())
+        time.sleep(0.3)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
+    def test_outside_files_and_non_html_are_not_printed(self):
+        r, _ = self.get("/f" + os.path.join(os.path.realpath(OUT), "x.html") + "?pdf=1")
+        self.assertEqual(r.status, 404)
+        r, _ = self.get("/f" + os.path.join(os.path.realpath(SITE), "assets", "clip.mp4") + "?pdf=1")
+        self.assertNotEqual(r.getheader("Content-Type"), "application/pdf")
+
+    def test_print_version_is_raw_document_with_page_size_and_no_agent(self):
+        r, body = self.get(self.page + "?print=1&w=800&h=600")
+        self.assertEqual(r.status, 200)
+        text = body.decode()
+        self.assertIn("@page{size:", text)
+        self.assertIn("print-color-adjust:exact", text)
+        self.assertNotIn("/__canvas/agent.js", text)
+
+    def test_real_chrome_page_is_window_sized(self):
+        found = glob.glob(os.path.expanduser("~/.config/hub-core/chrome-headless-shell/**/chrome-headless-shell"), recursive=True)
+        found = [f for f in found if os.path.isfile(f)]
+        if not found:
+            self.skipTest("нет chrome-headless-shell")
+        os.environ["HUB_TEST_CHROME"] = found[0]
+        r, body = self.get(self.page + "?pdf=1&w=1200&h=700", timeout=60)
+        self.assertEqual(r.status, 200, body[:200])
+        self.assertTrue(body.startswith(b"%PDF"))
+        box = re.search(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)", body)
+        self.assertTrue(box, "размер страницы в PDF")
+        self.assertAlmostEqual(float(box.group(1)), 1200 * 0.75, delta=2)   # 1 px = 0,75 pt
+        self.assertAlmostEqual(float(box.group(2)), 700 * 0.75, delta=2)
+
+    def real(self):
+        found = [f for f in glob.glob(os.path.expanduser("~/.config/hub-core/chrome-headless-shell/**/chrome-headless-shell"), recursive=True) if os.path.isfile(f)]
+        if not found:
+            self.skipTest("нет chrome-headless-shell")
+        os.environ["HUB_TEST_CHROME"] = found[0]
+
+    def pdf_of(self, name, html, query="w=1000&h=600"):
+        with open(os.path.join(SITE, name), "w", encoding="utf-8") as f:
+            f.write(html)
+        r, body = self.get("/f" + os.path.join(os.path.realpath(SITE), name) + "?pdf=1&" + query, timeout=60)
+        self.assertEqual(r.status, 200, body[:200])
+        return body
+
+    def test_real_chrome_tall_document_is_one_tall_page(self):
+        self.real()
+        body = self.pdf_of("tall.html", "<!doctype html><body style='margin:0'><div style='height:2400px;background:#abc'>тут высокий макет</div>")
+        box = re.search(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)", body)
+        self.assertAlmostEqual(float(box.group(1)), 1000 * 0.75, delta=2)
+        self.assertAlmostEqual(float(box.group(2)), 2400 * 0.75, delta=3)
+        self.assertEqual(len(re.findall(rb"/Type\s*/Page[^s]", body)), 1)
+
+    def test_real_chrome_slides_are_one_page_each_at_slide_size(self):
+        self.real()
+        slide = "<section class='slide' style='width:800px;height:450px;background:#%s'>слайд</section>"
+        body = self.pdf_of("deck.html", "<!doctype html><body style='margin:0'>" + "".join(slide % c for c in ("e66", "6e6", "66e")) + "</body>")
+        box = re.search(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)", body)
+        self.assertAlmostEqual(float(box.group(1)), 800 * 0.75, delta=2)
+        self.assertAlmostEqual(float(box.group(2)), 450 * 0.75, delta=2)
+        self.assertEqual(len(re.findall(rb"/Type\s*/Page[^s]", body)), 3)

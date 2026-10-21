@@ -8,7 +8,11 @@ import html
 import json
 import os
 import re
+import shutil
+import signal
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,10 +36,28 @@ WATCH_FILES = 2000   # файлов в папке дизайна, чьё вре�
 CHUNK = 256 * 1024
 HAVE_MAX = 60   # путей в одном вопросе «есть ли файлы»
 DRIVE = re.compile(r"^[A-Za-z]:$")
+PDF_TIMEOUT = 45   # секунд на печать одного макета, потом Chrome гасим
+PDF_SIZE = (1440, 900)   # окно макета, если страница не прислала своё
+PDF_MAX = 20000          # пикселей: выше PDF-страницу не растягиваем
 
 
 def state_dir():
     return os.environ.get("HUB_STATE_DIR") or os.path.expanduser("~/.hub-core")
+
+
+def config():
+    """hub.json этой машины; не прочитать — {}."""
+    try:
+        from core import catalog
+        path = catalog.config_path(state_dir())
+    except Exception:
+        path = os.environ.get("HUB_CONFIG") or ""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 _roots = {"at": 0.0, "list": []}
@@ -53,18 +75,9 @@ def roots():
                 found.add(s["cwd"])
     except Exception:   # хаба нет рядом (тесты, старая версия) — только проекты
         pass
-    try:
-        from core import catalog
-        path = catalog.config_path(state_dir())
-    except Exception:
-        path = os.environ.get("HUB_CONFIG") or ""
-    try:
-        with open(path, encoding="utf-8") as f:
-            for p in (json.load(f).get("projects") or {}).values():
-                if isinstance(p, dict) and p.get("path"):
-                    found.add(os.path.expanduser(p["path"]))
-    except (OSError, ValueError):
-        pass
+    for p in (config().get("projects") or {}).values():
+        if isinstance(p, dict) and p.get("path"):
+            found.add(os.path.expanduser(p["path"]))
     out = []
     for r in found:
         real = os.path.realpath(r)
@@ -148,6 +161,91 @@ def inject(body):
     return early(body)
 
 
+# печатная версия макета (?print=1&w=&h=): страница PDF — окно макета; макет выше окна — одна высокая страница; если в нём
+# слайды (.slide, [data-slide]) — страница по слайду и по странице на слайд. Подкладывается Chrome'у, которого запускает pdf()
+PRINT_JS = b"""<script>addEventListener("load",function(){
+var q=new URLSearchParams(location.search),W=+q.get("w")||%d,H=+q.get("h")||%d,max=%d;
+var sl=[].slice.call(document.querySelectorAll(".slide,[data-slide],section.slide")),css="*{-webkit-print-color-adjust:exact;print-color-adjust:exact}";
+if(sl.length>1){var r=sl[0].getBoundingClientRect();W=Math.round(r.width)||W;H=Math.round(r.height)||H;
+css+=".slide,[data-slide]{break-after:page;page-break-after:always}";}
+else H=Math.max(H,Math.ceil(Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)));
+H=Math.min(H,max);
+var st=document.createElement("style");st.textContent="@page{size:"+W+"px "+H+"px;margin:0}"+css;document.head.appendChild(st);
+document.documentElement.setAttribute("data-hd-print",W+"x"+H);
+if(q.get("auto"))setTimeout(function(){print();},300);});</script>""" % (PDF_SIZE[0], PDF_SIZE[1], PDF_MAX)
+
+
+def printable(body):
+    low = body.lower()
+    at = low.rfind(b"</body>")
+    return body + PRINT_JS if at < 0 else body[:at] + PRINT_JS + body[at:]
+
+
+def chrome_path():
+    """Браузер для печати в PDF: HUB_TEST_CHROME или testchrome.path из hub.json (тот же, что у снимков и тестов хаба).
+    Обычный Chrome владельца не берём. Нет такого — None, страница печатает рамку сама."""
+    path = (os.environ.get("HUB_TEST_CHROME") or (config().get("testchrome") or {}).get("path") or "").strip()
+    path = os.path.expanduser(path)
+    return path if path and os.path.isfile(path) else None
+
+
+def kill_tree(proc):
+    """Chrome с его помощниками: группа процессов (на Windows — дерево) по pid запуска."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, timeout=10)
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError, subprocess.SubprocessError):
+        pass
+    try:
+        proc.wait(5)
+    except subprocess.SubprocessError:
+        pass
+
+
+_pdf_lock = threading.Lock()
+
+
+class PdfError(Exception):
+    pass
+
+
+def pdf(real, w, h):
+    """PDF макета: свой процесс Chrome (headless, профиль во временной папке) печатает печатную версию с этого же сервера.
+    None — Chrome не настроен; PdfError — не вышло. Процесс и папка убираются всегда."""
+    chrome = chrome_path()
+    if not chrome:
+        return None
+    w, h = max(200, min(int(w), PDF_MAX)), max(200, min(int(h), PDF_MAX))
+    url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "print=1&w=%d&h=%d" % (w, h))
+    with _pdf_lock:
+        tmp = tempfile.mkdtemp(prefix="hub-design-pdf-")
+        out = os.path.join(tmp, "out.pdf")
+        cmd = [chrome, "--headless", "--disable-gpu", "--hide-scrollbars", "--no-pdf-header-footer", "--user-data-dir=" + os.path.join(tmp, "profile"),
+               "--window-size=%d,%d" % (w, h), "--virtual-time-budget=4000", "--print-to-pdf=" + out, url]
+        kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" else {"start_new_session": True}
+        proc = None
+        try:
+            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+            try:
+                proc.wait(PDF_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                raise PdfError("Chrome не успел напечатать за %d с" % PDF_TIMEOUT)
+            try:
+                with open(out, "rb") as f:
+                    data = f.read()
+            except OSError:
+                raise PdfError("Chrome не оставил PDF (код %s)" % proc.returncode)
+            if not data.startswith(b"%PDF"):
+                raise PdfError("Chrome вернул не PDF")
+            return data
+        finally:
+            if proc is not None:
+                kill_tree(proc)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 EARLY_TAG = b'<script src="/__canvas/early.js"></script>'
 _open_tags = [re.compile(rb"<head(?:\s[^>]*)?>", re.I), re.compile(rb"<html(?:\s[^>]*)?>", re.I), re.compile(rb"<!doctype[^>]*>", re.I)]
 
@@ -179,9 +277,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
 
-    def say(self, code, data):
+    def say(self, code, data, extra=None):
         body = json.dumps(data, ensure_ascii=False).encode()
-        self.head(code, "application/json; charset=utf-8", len(body))
+        self.head(code, "application/json; charset=utf-8", len(body), extra)
         if self.command != "HEAD":
             self.wfile.write(body)
 
@@ -247,15 +345,39 @@ class Handler(BaseHTTPRequestHandler):
                     self.head(404, TYPES[".html"], len(body))
                     return self.wfile.write(body) if self.command != "HEAD" else None
                 return self.say(404, {"error": "no file"})
-            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")))
+            if q.get("pdf") and real.lower().endswith(HTML):
+                return self.pdf(real, q)
+            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")))
         self.say(404, {"error": "no page"})
 
-    def file(self, real, raw=False, download=False):
-        """raw — HTML как на диске, без agent.js (показать во весь экран, скачать); download — ещё и как вложение."""
+    def pdf(self, real, q):
+        """?pdf=1&w=&h= — макет файлом PDF. Страница хаба просит по своему origin (CORS только для неё)."""
+        origin = self.headers.get("Origin")
+        extra = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else {}
+        def num(k, d):
+            try:
+                return int(float(q.get(k) or d))
+            except ValueError:
+                return d
+        try:
+            data = pdf(real, num("w", PDF_SIZE[0]), num("h", PDF_SIZE[1]))
+        except PdfError as e:
+            return self.say(500, {"error": str(e)}, extra)
+        if data is None:   # Chrome для печати не настроен — страница печатает рамку сама
+            return self.say(501, {"error": "no chrome"}, extra)
+        name = os.path.splitext(os.path.basename(real))[0] + ".pdf"
+        extra["Content-Disposition"] = "attachment; filename*=UTF-8''" + quote(name)
+        self.head(200, "application/pdf", len(data), extra)
+        if self.command != "HEAD":
+            self.wfile.write(data)
+
+    def file(self, real, raw=False, download=False, printing=False):
+        """raw — HTML как на диске, без agent.js (показать во весь экран, скачать); download — ещё и как вложение;
+        printing — как raw, плюс размер страницы для печати в PDF."""
         kind = TYPES[os.path.splitext(real)[1].lower()]
         if real.lower().endswith(HTML):
             with open(real, "rb") as f:
-                body = f.read() if raw else inject(f.read())
+                body = printable(f.read()) if printing else f.read() if raw else inject(f.read())
             extra = {"Content-Disposition": "attachment; filename*=UTF-8''" + quote(os.path.basename(real))} if download else None
             self.head(200, kind, len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
