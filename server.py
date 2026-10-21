@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import handwrite
+import mdrender
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_PORT = int(os.environ.get("HUB_WEB_PORT") or 8787)
@@ -31,9 +32,11 @@ TYPES = {
     ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif", ".ico": "image/x-icon",
     ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf", ".mp4": "video/mp4",
     ".webm": "video/webm", ".mov": "video/quicktime", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".txt": "text/plain; charset=utf-8",
-    ".lottie": "application/zip",
+    ".lottie": "application/zip", ".pdf": "application/pdf", ".md": "text/markdown; charset=utf-8", ".markdown": "text/markdown; charset=utf-8",
 }
 HTML = (".html", ".htm")
+MD = (".md", ".markdown")   # shown as a rendered page: a document is a design too
+PAGES = HTML + MD + (".pdf",)   # what a frame and a card open: a human page instead of JSON when the file is gone
 ROOTS_TTL = 15
 WATCH_FILES = 2000   # files in the design folder whose modification time /__canvas/stat watches
 CHUNK = 256 * 1024
@@ -44,6 +47,7 @@ PDF_SIZE = (1440, 900)   # the design window if the page did not send its own
 PDF_MAX = 20000          # pixels: we do not stretch a PDF page beyond this
 WRITE_MAX = 2 * 1024 * 1024   # request body for writing edits
 THUMB_SIZE = (1440, 900)   # the window a design is shot in for a card in the feed
+DOC_SIZE = (900, 634)       # the window a document is shot in: the same ratio as the card tile
 THUMB_SCALE = 0.34         # Chrome shrinks the shot at once: ~490 px wide
 THUMB_TIMEOUT = 30
 THUMB_KEEP = 300           # shots in the cache: older ones are erased
@@ -305,12 +309,14 @@ def size_of(real):
 
 
 def title_of(real):
-    """The design <title> for a card in the feed; none - an empty string."""
+    """The design <title> (a document: its first heading) for a card in the feed; none - an empty string."""
     try:
         with open(real, "rb") as f:
             head = f.read(TITLE_READ).decode("utf-8", "replace")
     except OSError:
         return ""
+    if real.lower().endswith(MD):
+        return mdrender.title_of(head)
     m = re.search(r"<title[^>]*>(.*?)</title>", head, re.S | re.I)
     return re.sub(r"\s+", " ", html.unescape(m.group(1))).strip() if m else ""
 
@@ -329,23 +335,29 @@ _thumb_lock = threading.Lock()
 def thumb(real):
     """A shot of the design for a card: our own headless Chrome (the one that prints PDF) opens the file as on disk and shoots a 1440×900 window,
     shrunk while shooting. The cache is by path and the edit time of the design folder. None - Chrome is not set up; PdfError - it failed."""
-    chrome = chrome_path()
-    if not chrome:
-        return None
     out = thumb_path(real, newest(real))
     try:
         with open(out, "rb") as f:
             return f.read()
     except OSError:
         pass
-    url = "http://127.0.0.1:%d/f/%s?raw=1" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")))
-    size = size_of(real)
-    win = THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])   # a design with a set size is shot whole
+    if real.lower().endswith(".pdf"):   # the headless Chrome has no PDF viewer ("Couldn't load plugin"): the first page - by the system's own rasterizer
+        data = pdf_shot(real)
+        if data:
+            keep_thumb(out, data)
+        return data
+    chrome = chrome_path()
+    if not chrome:
+        return None
+    doc = not real.lower().endswith(HTML)   # a document (md, pdf): a narrow window - its column fills the tile
+    url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "raw=1&player=1" if real.lower().endswith(".pdf") else "raw=1")
+    size = None if doc else size_of(real)
+    win = DOC_SIZE if doc else THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])   # a design with a set size is shot whole
     with _thumb_lock:
         tmp = tempfile.mkdtemp(prefix="hub-design-thumb-")
         shot = os.path.join(tmp, "out.png")
         cmd = [chrome, "--headless", "--disable-gpu", "--hide-scrollbars", "--user-data-dir=" + os.path.join(tmp, "profile"),
-               "--window-size=%d,%d" % win, "--force-device-scale-factor=%s" % THUMB_SCALE, "--virtual-time-budget=3000",
+               "--window-size=%d,%d" % win, "--force-device-scale-factor=%s" % (THUMB_SCALE * THUMB_SIZE[0] / win[0] if doc else THUMB_SCALE), "--virtual-time-budget=3000",
                "--screenshot=" + shot, url]
         kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" else {"start_new_session": True}
         proc = None
@@ -366,6 +378,11 @@ def thumb(real):
             if proc is not None:
                 kill_tree(proc)
             shutil.rmtree(tmp, ignore_errors=True)
+    keep_thumb(out, data)
+    return data
+
+
+def keep_thumb(out, data):
     try:
         os.makedirs(thumb_dir(), exist_ok=True)
         with open(out, "wb") as f:
@@ -375,7 +392,26 @@ def thumb(real):
             os.remove(p)
     except OSError:
         pass   # the cache was not written - the shot is served anyway
-    return data
+
+
+def pdf_shot(real):
+    """The first page of a PDF as a PNG ~490 px wide: macOS has it built in (sips); elsewhere None - the card keeps its icon."""
+    sips = shutil.which("sips")
+    if not sips:
+        return None
+    tmp = tempfile.mkdtemp(prefix="hub-design-pdf-")
+    try:
+        shot = os.path.join(tmp, "out.png")
+        try:
+            subprocess.run([sips, "-s", "format", "png", "--resampleWidth", str(round(THUMB_SIZE[0] * THUMB_SCALE)), real, "--out", shot],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=THUMB_TIMEOUT)
+            with open(shot, "rb") as f:
+                data = f.read()
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return data if data.startswith(b"\x89PNG") else None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 # hand edits go point by point into the file. No state in the process: the source for recomputing is the copy <name>.r<N>.html next to it; its name and the time
@@ -608,11 +644,11 @@ class Handler(BaseHTTPRequestHandler):
             out = {"state": file_state(real), "title": "", "mtime": 0}
             if out["state"] == "ok":
                 out["mtime"] = newest(real) if real.lower().endswith(HTML) else os.path.getmtime(real)
-                out["title"] = title_of(real) if real.lower().endswith(HTML) else ""
+                out["title"] = title_of(real) if real.lower().endswith(HTML + MD) else ""
             return self.say(200, out, self.cors())
         if url.path == "/__canvas/thumb":
             real = os.path.realpath(os.path.expanduser(q.get("path", "")))
-            if not real.lower().endswith(HTML) or not allowed(real):
+            if not real.lower().endswith(HTML + MD + (".pdf",)) or not allowed(real):
                 return self.say(404, {"error": "no file"}, self.cors())
             try:
                 data = thumb(real)
@@ -630,21 +666,26 @@ class Handler(BaseHTTPRequestHandler):
         if url.path.startswith("/f/"):
             real = from_url(url.path)
             if not allowed(real):
-                if real.lower().endswith(HTML):   # a document in a frame: a human page, not JSON
+                if real.lower().endswith(PAGES):   # a document in a frame: a human page, not JSON
                     body = gone_page(real, file_state(real))
                     self.head(404, TYPES[".html"], len(body))
                     return self.wfile.write(body) if self.command != "HEAD" else None
                 return self.say(404, {"error": "no file"})
             if q.get("pdf") and real.lower().endswith(HTML):
                 return self.pdf(real, q)
-            if q.get("player") and not real.lower().endswith(HTML):
+            if q.get("player") and not real.lower().endswith(HTML + MD):
                 return self.player(real)
-            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")))
+            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")), src=bool(q.get("src")))
         self.say(404, {"error": "no page"})
 
     def player(self, real):
-        """?player=1 - a video and a gif on the canvas: a simple player over the whole frame instead of the clip at its natural size."""
+        """?player=1 - a video and a gif on the canvas: a simple player over the whole frame instead of the clip at its natural size; a PDF - its pages."""
         src = html.escape(quote(os.path.basename(real)) + "?v=1")
+        if real.lower().endswith(".pdf"):   # pages: the browser's own viewer over the whole frame
+            body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;height:100vh;background:#525659">'
+                    '<embed src="%s" type="application/pdf" style="width:100%%;height:100%%;border:0"></body>' % (html.escape(os.path.basename(real)), src)).encode()
+            self.head(200, TYPES[".html"], len(body))
+            return self.wfile.write(body) if self.command != "HEAD" else None
         tag = "img" if real.lower().endswith(".gif") else "video controls autoplay muted loop playsinline"
         body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;height:100vh;background:#000;display:flex">'
                 '<%s src="%s" style="width:100%%;height:100%%;object-fit:contain"></body>' % (html.escape(os.path.basename(real)), tag, src)).encode()
@@ -673,10 +714,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(data)
 
-    def file(self, real, raw=False, download=False, printing=False):
+    def file(self, real, raw=False, download=False, printing=False, src=False):
         """raw: the HTML as on disk, without agent.js (show fullscreen, download); download: also as an attachment;
         printing: like raw, plus the page size for printing to PDF."""
         kind = TYPES[os.path.splitext(real)[1].lower()]
+        if real.lower().endswith(MD) and not download and not src:   # a document is a rendered page; the source is ?src=1 or the download
+            with open(real, "rb") as f:
+                body = mdrender.page(f.read().decode("utf-8", "replace"), os.path.splitext(os.path.basename(real))[0])
+            self.head(200, TYPES[".html"], len(body if raw else (body := inject(body))))
+            return self.wfile.write(body) if self.command != "HEAD" else None
         if real.lower().endswith(HTML):
             with open(real, "rb") as f:
                 body = printable(f.read()) if printing else f.read() if raw else inject(f.read())
@@ -684,6 +730,7 @@ class Handler(BaseHTTPRequestHandler):
             self.head(200, kind, len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
         size = os.path.getsize(real)
+        attach = {"Content-Disposition": "attachment; filename*=UTF-8''" + quote(os.path.basename(real))} if download else {}
         start, end = 0, size - 1
         m = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
         if m and size and (m.group(1) or m.group(2)):   # video: with seeking
@@ -694,9 +741,9 @@ class Handler(BaseHTTPRequestHandler):
             if start > end:
                 self.head(416, kind, 0, {"Content-Range": f"bytes */{size}"})
                 return
-            self.head(206, kind, end - start + 1, {"Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes", **self.cors()})
+            self.head(206, kind, end - start + 1, {"Content-Range": f"bytes {start}-{end}/{size}", "Accept-Ranges": "bytes", **self.cors(), **attach})
         else:
-            self.head(200, kind, size, {"Accept-Ranges": "bytes", **self.cors()})   # CORS: the page shoots a video frame for a card in the feed
+            self.head(200, kind, size, {"Accept-Ranges": "bytes", **self.cors(), **attach})   # CORS: the page shoots a video frame for a card in the feed
         if self.command == "HEAD":
             return
         with open(real, "rb") as f:

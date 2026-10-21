@@ -38,6 +38,10 @@ def setUpModule():
         f.write("{}")
     with open(os.path.join(SITE, "secret.env"), "w") as f:
         f.write("KEY=1")
+    with open(os.path.join(SITE, "notes.md"), "w", encoding="utf-8") as f:
+        f.write("# Launch notes\n\nA **bold** line <script>alert(1)</script> and [link](javascript:x)\n\n- one\n- two\n")
+    with open(os.path.join(SITE, "doc.pdf"), "wb") as f:
+        f.write(b"%PDF-1.4\n%%EOF\n")
     with open(os.path.join(OUT, "x.html"), "w") as f:
         f.write("<p>foreign</p>")
     with open(os.environ["HUB_CONFIG"], "w", encoding="utf-8") as f:
@@ -95,6 +99,29 @@ class Server(unittest.TestCase):
         self.assertIn("attachment", r.getheader("Content-Disposition"))
         self.assertIn("index.html", r.getheader("Content-Disposition"))
         self.assertNotIn(b"__canvas", body)
+
+    def test_markdown_is_a_rendered_page_pdf_is_the_viewer(self):
+        md = self.url(os.path.join(os.path.realpath(SITE), "notes.md"))
+        r, body = self.get(md)
+        self.assertEqual(r.status, 200)
+        self.assertIn("text/html", r.getheader("Content-Type"))
+        text = body.decode()
+        self.assertIn("<h1>Launch notes</h1>", text)
+        self.assertIn("<strong>bold</strong>", text)
+        self.assertNotIn("<script>alert", text)   # raw HTML of the source is text
+        self.assertNotIn("javascript:", text)
+        self.assertIn("/__canvas/agent.js", text)   # on the canvas: with pins
+        r, body = self.get(md + "?raw=1")
+        self.assertNotIn(b"__canvas", body)
+        r, body = self.get(md + "?dl=1")   # the download is the source
+        self.assertIn("attachment", r.getheader("Content-Disposition"))
+        self.assertTrue(body.startswith(b"# Launch notes"))
+        pdf = self.url(os.path.join(os.path.realpath(SITE), "doc.pdf"))
+        r, body = self.get(pdf)
+        self.assertEqual(r.getheader("Content-Type"), "application/pdf")
+        self.assertTrue(body.startswith(b"%PDF"))
+        r, body = self.get(pdf + "?player=1")
+        self.assertIn(b"application/pdf", body)
 
     def test_agent_served(self):
         r, body = self.get("/__canvas/agent.js")
@@ -256,6 +283,10 @@ class Server(unittest.TestCase):
         self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))
         r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(OUT, "x.html")}))
         self.assertEqual(json.loads(body)["state"], "denied")
+        r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "notes.md")}))   # a document: its first heading
+        self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", "Launch notes"))
+        r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "doc.pdf")}))
+        self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))
 
     def test_thumb_without_chrome_is_501_and_outside_is_404(self):
         from urllib.parse import urlencode
@@ -270,6 +301,21 @@ class Server(unittest.TestCase):
                 os.environ["HUB_TEST_CHROME"] = env
         r, _ = self.get("/__canvas/thumb?" + urlencode({"path": os.path.join(OUT, "x.html")}))
         self.assertEqual(r.status, 404)
+
+    def test_pdf_card_tile_is_the_first_page_not_the_headless_chrome_viewer(self):
+        # the headless Chrome has no PDF viewer and shoots "Couldn't load plugin": a PDF is never given to it
+        from urllib.parse import urlencode
+        pdf = os.path.join(os.path.realpath(SITE), "doc.pdf")
+        png = b"\x89PNG\r\n\x1a\nfake"
+        with unittest.mock.patch.object(server, "pdf_shot", return_value=png), \
+                unittest.mock.patch.object(server.subprocess, "Popen", side_effect=AssertionError("Chrome")):
+            r, body = self.get("/__canvas/thumb?" + urlencode({"path": pdf}))
+            self.assertEqual((r.status, r.getheader("Content-Type"), body), (200, "image/png", png))
+        for n in os.listdir(server.thumb_dir()):
+            os.remove(os.path.join(server.thumb_dir(), n))
+        with unittest.mock.patch.object(server, "pdf_shot", return_value=None):
+            r, _ = self.get("/__canvas/thumb?" + urlencode({"path": pdf}))
+            self.assertEqual(r.status, 501)   # no rasterizer: an icon on the card
 
     def test_video_is_readable_by_the_hub_page_for_the_card_frame(self):
         clip = os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")

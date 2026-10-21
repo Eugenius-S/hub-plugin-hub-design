@@ -38,7 +38,11 @@ The "Download PDF" button in the frame header prints the design at screen size (
 
 ### Cards in the chat feed
 
-When a session sends an `.html` design or a video (mp4, mov, webm, gif) as a file (`hub send-file`) or names its full path in a reply, the feed of any session shows a card instead of a bare link: a tile (a shot of the design, a video frame or an icon), a name (the design `<title>` or the file name), "Hub Design · agent", "Copy path" and "Hide". A click opens the design in Hub Design (a video - in a player). Hidden cards are remembered by the browser. Shots are made by the plugin process with its own Chrome and cached on disk; only on the computer the hub runs on.
+When a session sends an `.html` design, a `.pdf`, a Markdown document (`.md`) or a video (mp4, mov, webm, gif) as a file (`hub send-file`) or names its full path in a reply, the feed of any session shows a card instead of a bare link: a tile (a shot of the design, the first page of a PDF, a rendered document, a video frame or an icon), a name (the design `<title>`, the first heading of a document or the file name), "Hub Design · agent", an **Open in Hub Design** button, "Copy path" and "Hide". Pictures get no card. A click opens the file in Hub Design (a video - in a player). Hidden cards are remembered by the browser. Shots are made by the plugin process with its own Chrome and cached on disk; only on the computer the hub runs on. The first page of a PDF is rasterized by the system (macOS `sips`); elsewhere a PDF card keeps its icon.
+
+### Documents on the canvas
+
+A PDF opens in the browser's built-in viewer and a Markdown file is rendered to a page (headings, lists, tables, code, quotes; raw HTML in the source is shown as text, so a document cannot run anything), so pins and comments work on it. The frame's label has **Make a design based on this**: the designer gets a request to make a layout based on the document's path (in the hub language). Documents are read-only on the canvas: hand edits, tweaks and "Download PDF" are for designs.
 
 ### Who gets the edits
 

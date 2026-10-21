@@ -1,6 +1,6 @@
-// Cards of designs and videos in the chat feed. A design (.html) or a video (mp4/mov/webm/gif) that a session sent as a file (hub send-file) or
-// named by a full path in its reply becomes a card in the feed: a tile with a preview, a name, "Hub Design · agent", "share" and "Hide".
-// A click on a card opens the file in Hub Design. The feed is rebuilt from core snapshots, so the card nodes and everything asynchronous
+// Cards of designs, documents and videos in the chat feed. A design (.html), a document (.pdf, .md) or a video (mp4/mov/webm/gif) that a session
+// sent as a file (hub send-file) or named by a full path in its reply becomes a card in the feed: a tile with a preview, a name, "Hub Design · agent",
+// the "Open in Hub Design" button, "share" and "Hide". A click on a card opens the file in Hub Design. Pictures are not cards. The feed is rebuilt from core snapshots, so the card nodes and everything asynchronous
 // (title, shot, video frame - failures too) are kept in the page memory: a repaint takes the ready result, with no flicker and no requests.
 import { CARD_MAX, cardKind, cardName, cardText, fileUrl, hideToggle, isAbsPath, pathFromHref } from "./lib.js";
 
@@ -16,6 +16,8 @@ const MAX_NODES = 300;
 const SVG = (body) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 const ICONS = {
   design: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.600 17 3 12 3Zm-5 9a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 7 12Zm3-4a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 10 8Zm5 0a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 15 8Z"/></svg>',
+  pdf: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.400a1 1 0 0 0-.3-.7l-4.400-4.400a1 1 0 0 0-.7-.3H7Zm6.500 1.800L18.200 9.500H14.500a1 1 0 0 1-1-1V4.800ZM8 14h1.500a1.600 1.600 0 0 1 0 3.200H9V18H8v-4Zm1 .9v1.400h.5a.7.700 0 0 0 0-1.400H9Zm2.800-.9h1.200a2 2 0 0 1 0 4h-1.200v-4Zm1 .9v2.200h.2a1.100 1.100 0 0 0 0-2.200h-.2ZM16 14h2.200v.9H17v.7h1v.9h-1V18h-1v-4Z"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.400a1 1 0 0 0-.3-.7l-4.400-4.400a1 1 0 0 0-.7-.3H7Zm6.500 1.800L18.200 9.500H14.500a1 1 0 0 1-1-1V4.800ZM8 12.500h8v1.200H8v-1.200Zm0 3h8v1.200H8v-1.200Zm0-6h4v1.200H8V9.500Z"/></svg>',
   video: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M8 5.500v13a1 1 0 0 0 1.500.9l10.500-6.500a1 1 0 0 0 0-1.800L9.500 4.600A1 1 0 0 0 8 5.500Z"/></svg>',
   share: SVG('<path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>'),
   check: SVG('<path d="M5 12.500l4.500 4.500L19 7.500"/>'),
@@ -80,12 +82,12 @@ function showPicture(card, src) {
   img.src = src;
 }
 
-// the preview - when the card comes into view: a design is a shot (the plugin process Chrome, cached on disk), a video is a frame, a gif is itself
+// the preview - when the card comes into view: a design, a PDF and a document are a shot (the plugin process Chrome, cached on disk), a video is a frame, a gif is itself
 function preview(card) {
   const path = card.dataset.hdPath, kind = card.dataset.kind, m = meta.get(path);
   if (!m || m.state !== "ok" || card.dataset.pv === String(m.mtime)) return;
   card.dataset.pv = String(m.mtime);
-  if (kind === "design") {
+  if (kind === "design" || kind === "pdf" || kind === "doc") {
     const src = `${cfg.origin()}/__canvas/thumb?path=${q(path)}&m=${m.mtime}`;
     const bad = thumbs.get(src);
     if (bad && bad !== "ok" && Date.now() - bad < FAIL_TTL) return;
@@ -114,6 +116,7 @@ function paint(card, m) {
 
 function hideLabel(card) {
   const T = cardText(cfg.lang()), off = card.classList.contains("off"), b = card.querySelector(".hdcard-hide");
+  card.querySelector(".hdcard-open").textContent = T.open;
   b.textContent = off ? T.show : T.hide;
   b.setAttribute("aria-expanded", off ? "false" : "true");
 }
@@ -144,6 +147,10 @@ function build(path, kind, who) {
   tile.innerHTML = ICONS[kind];
   const text = el("div", "hdcard-text");
   text.append(el("div", "hdcard-title", cardName(path)), el("div", "hdcard-sub", [T.by, who || null].filter(Boolean).join(" · ")));
+  const open = el("button", "hdcard-open", T.open);
+  open.type = "button";
+  open.addEventListener("click", (e) => { e.stopPropagation(); cfg.open(path); });
+  text.append(open);
   const acts = el("div", "hdcard-acts");
   const share = el("button", "hdcard-btn hdcard-share");
   share.type = "button";

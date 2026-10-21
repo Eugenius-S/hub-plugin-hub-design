@@ -2,7 +2,7 @@
 // notes and comment pins. Edits inside the frames are made by agent.js and the batch is collected by main.js - the canvas only shows
 // the frames, catches gestures and passes the tool on. The pure view math is in lib.js (tests: tests/lib.test.mjs).
 import { CANVAS_ICONS as I } from "./icons.js";
-import { FRAME_TOP, GRIDS_MAX, GRID_KINDS, GRID_LIMITS, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, gridRects, gridTitle, isGone, nameOf, newGrid, normGrid, normGrids, zoomAt } from "./lib.js";
+import { FRAME_TOP, GRIDS_MAX, GRID_KINDS, GRID_LIMITS, LABEL_GAP, LABEL_H, SIZES, fitView, frameTitle, goneText, isDocument, gridRects, gridTitle, isGone, nameOf, newGrid, normGrid, normGrids, zoomAt } from "./lib.js";
 import { makeT } from "./i18n.js";
 
 // UI strings: en by default, ru when the hub language is Russian (see i18n.js); resolved at use time, never at load
@@ -12,7 +12,7 @@ export const STR = {
     err_one: "Error in the design", err_many: "Errors in the design: {n}",
     err_draft: "Added to edits", err_sent: "Sent to the designer", err_ask: "Ask to fix",
     err_title: "Add the errors to the batch of edits",
-    frame_menu: "Size, reload, remove", dl_html: "Download HTML", pdf: "Download PDF", pdf_busy: "Preparing PDF…", play: "Play",
+    frame_menu: "Size, reload, remove", dl_html: "Download HTML", pdf: "Download PDF", pdf_busy: "Preparing PDF…", play: "Play", based: "Make a design based on this",
     to_dash: "To the dashboard", to_dash_title: "Back to the list of designs", remove_canvas: "Remove from canvas",
     note_remove: "Remove note", note_ph: "A note to the designer…",
     design_size: "Design size", window_width: "Window width", grids_over: "Grids over the frame…", reload: "Reload", show_large: "Show large",
@@ -33,7 +33,7 @@ export const STR = {
     err_one: "Ошибка в макете", err_many: "Ошибок в макете: {n}",
     err_draft: "Добавлено в правки", err_sent: "Отправлено дизайнеру", err_ask: "Попросить исправить",
     err_title: "Добавить ошибки в пачку правок",
-    frame_menu: "Размер, перезагрузка, убрать", dl_html: "Скачать HTML", pdf: "Скачать PDF", pdf_busy: "Готовлю PDF…", play: "Смотреть",
+    frame_menu: "Размер, перезагрузка, убрать", dl_html: "Скачать HTML", pdf: "Скачать PDF", pdf_busy: "Готовлю PDF…", play: "Смотреть", based: "Сделать макет на основе этого",
     to_dash: "К дашборду", to_dash_title: "Вернуться к списку макетов", remove_canvas: "Убрать с холста",
     note_remove: "Убрать заметку", note_ph: "Заметка дизайнеру…",
     design_size: "Размер макета", window_width: "Ширина окна", grids_over: "Сетки поверх рамки…", reload: "Перезагрузить", show_large: "Показать крупно",
@@ -298,7 +298,11 @@ export function createCanvas(app) {
     const play = bind(own, btn("hdc-lb", svg("play12"), "", () => app.play(f.path)), "play");
     const err = btn("hdc-err", "", "", () => app.askFix(f.path));
     err.hidden = true;
-    label.append(title, err, tweak, dl, pdf, play);
+    // a document (md, pdf) is a basis, not a design to edit: no PDF printing, instead - "Make a design based on this"
+    const doc = isDocument(f.path);
+    const based = bind(own, btn("hdc-lb hdc-based", svg("palette"), "", () => app.basedOn(f.path)), "based");
+    if (doc) { pdf.hidden = true; tweak.hidden = true; }
+    label.append(title, err, ...(doc ? [based] : []), tweak, dl, pdf, play);
     label.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button") || e.button !== 0) return;
       e.preventDefault();

@@ -3,7 +3,7 @@
 // shapes — mark a place, a note — a sticker on the canvas. Manual edits go by themselves 8 s after the last one — to whoever is chosen at
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
-import { ASK_TTL, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
+import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -758,9 +758,10 @@ const app = {
   errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme(), lang: currentLang() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
-  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(cardKind(path) === "video" && !o.dl ? { player: "1" } : {}), v: "1" }),
+  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["video", "pdf"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1" }),
   pdf: (path) => savePdf(path),
-  play: (path) => { if (path) window.open(fileUrl(origin(), path), "_blank", "noopener"); },
+  play: (path) => { if (path) window.open(fileUrl(origin(), path) + (cardKind(path) === "doc" ? "?v=1" : ""), "_blank", "noopener"); },
+  basedOn,
   focusFrame: (path) => { if (P.focus !== path) { P.focus = path; paint(); } },
   addFrame: openChecked, fileState, verify, goHome, removeFrame, sizeFrame, setTool, deselect, undo,
   removeNote: (id) => { P.notes = P.notes.filter((n) => n.id !== id); save(); paint(); },
@@ -861,6 +862,18 @@ async function autoSend() {
 // the design's recipient is whoever wrote the file: in the live feed, then in the session history (the feed gives only the tail), then whoever named it; nobody —
 // the owner chooses (the list in the comment window), the "designer" is not silently substituted
 const authorOf = (file) => recipient(file).session;
+// "Design from this": a document (md, pdf) on the canvas becomes the basis of a new design - the designer gets the words and the path
+async function basedOn(path) {
+  if (P.busy) return;
+  const to = P.ok.has(DEFAULT_SESSION) ? DEFAULT_SESSION : P.session;   // a design is the designer's job
+  if (!to) { P.note = tr("pick_to"); return paint(); }
+  P.busy = true;
+  paint();
+  const r = await hub.post("/api/send", { session: to, text: basedOnText(path) });
+  P.busy = false;
+  P.note = r.error ? tr("not_sent", { err: r.error }) : "";
+  paint();
+}
 // the start screen: a chat with the specialist of the chosen kind (preset) or chosen by hand, otherwise with the designer
 const home = () => P.home || !P.frames.length;
 function wanted() {

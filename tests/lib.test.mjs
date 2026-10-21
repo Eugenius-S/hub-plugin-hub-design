@@ -689,7 +689,11 @@ test("cards: file kind, name, path from the address, Hide, strings by language",
   const { cardKind, cardName, pathFromHref, hideToggle, cardText, HIDDEN_MAX, isAbsPath } = await import("../lib.js");
   assert.equal(cardKind("/a/p.html"), "design");
   for (const f of ["a.mp4", "a.MOV", "a.webm", "a.gif", "a.m4v"]) assert.equal(cardKind("/x/" + f), "video", f);
-  assert.equal(cardKind("/a/p.png"), null);
+  assert.equal(cardKind("/a/p.png"), null);   // pictures are not cards
+  assert.equal(cardKind("/a/p.PDF"), "pdf");
+  for (const f of ["a.md", "A.MARKDOWN"]) assert.equal(cardKind("/x/" + f), "doc", f);
+  assert.equal(cardName("/d/launch-notes.md"), "Launch notes");
+  assert.equal(cardText("ru").doc, "документ");
   assert.equal(isAbsPath("/a/b.html"), true);
   assert.equal(isAbsPath("C:\\a\\b.html"), true);
   assert.equal(isAbsPath("a/b.html"), false);

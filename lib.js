@@ -57,6 +57,7 @@ export const STR = {
     e_head: "Errors in the design ({n}):\n",
     ago_now: "just now", ago_min: "{n} min ago", ago_h: "{n} h ago", ago_d: "{n} d ago",
     new_design: "New design (Hub Design): ",
+    based_on: "Make a design based on {f}",
     gone_denied: "The file is outside the hub's project and session folders, the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
     t_designer: "designer", t_animator: "animator",
@@ -116,6 +117,7 @@ export const STR = {
     e_head: "Ошибки в макете ({n}):\n",
     ago_now: "только что", ago_min: "{n} мин назад", ago_h: "{n} ч назад", ago_d: "{n} дн назад",
     new_design: "Новый макет (Hub Design): ",
+    based_on: "Сделай макет на основе {f}",
     gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
     gone_missing: "Файл не найден: {path}",
     t_designer: "дизайнер", t_animator: "аниматор",
@@ -733,7 +735,7 @@ export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
 // one design name everywhere: index.html is named by its folder - "demo", not "index"
 export const nameOf = (path) => {
   const parts = String(path).split(/[\\/]/).filter(Boolean);
-  const name = frameTitle(path).replace(/\.html?$/i, "");
+  const name = frameTitle(path).replace(/\.(html?|md|markdown|pdf)$/i, "");
   return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
 };
 
@@ -777,6 +779,8 @@ export function ago(ts, now = Date.now() / 1000) {
 
 // the owner's words before the text when there is no design yet: the designer makes a new one instead of editing an open one
 export const newDesignPrefix = () => tr("new_design");
+// "Design from this": the message to the designer for a document (md, pdf) taken as the basis
+export const basedOnText = (path) => tr("based_on", { f: path });
 
 // --- designs by session timelines: by events, without a timer ------------------------------------------------------------
 // The timeline keeps only what is about HTML. The page pulls the session timeline when its edit number in the snapshot has grown (an event) and takes only
@@ -871,7 +875,10 @@ export function scrollsRight({ scrollLeft, clientWidth, scrollWidth }) {
 
 // --- cards in the chat feed: a design or a video the session sent as a file or named by a full path -----------------------
 export const CARD_MAX = 4;   // cards in one reply; the other paths stay links
-export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.(mp4|mov|m4v|webm|gif)$/i.test(path || "") ? "video" : null);
+// design - HTML; pdf and doc (markdown) - documents: opened on the canvas and taken as the basis of a new design; video - in a player. Pictures are not cards
+export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.pdf$/i.test(path || "") ? "pdf" : /\.(md|markdown)$/i.test(path || "") ? "doc"
+  : /\.(mp4|mov|m4v|webm|gif)$/i.test(path || "") ? "video" : null);
+export const isDocument = (path) => ["pdf", "doc"].includes(cardKind(path));
 export const isAbsPath = (p) => /^(~[\\/]|\/|[A-Za-z]:[\\/])/.test(p || "");
 
 // a human name: "hero-v2_final.html" -> "Hero v2 final"; a design with a <title> is named by it, index.html - by its folder
@@ -897,7 +904,7 @@ export function hideToggle(list, path, hidden) {
 
 // card strings: the language is hub.lang (read at use time), any other - English
 export const CARD_STR = {
-  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", design: "design", video: "video", gone: "file unavailable" },
-  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", design: "макет", video: "видео", gone: "файл недоступен" },
+  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", design: "design", video: "video", pdf: "PDF", doc: "document", gone: "file unavailable" },
+  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", design: "макет", video: "видео", pdf: "PDF", doc: "документ", gone: "файл недоступен" },
 };
 export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;
