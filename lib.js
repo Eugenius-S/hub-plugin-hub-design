@@ -21,7 +21,7 @@ export function fileUrl(origin, path) {
   return `${origin}/f/${p.split("/").map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s))).join("/")}`;
 }
 
-// путь в кавычках может быть с пробелами («…/!!Work/!!! 2M DESIGN/…/a.html»); без кавычек пробел обрывает путь, а откусывать от него хвост нельзя:
+// путь в кавычках может быть с пробелами («…/My Projects/Demo Site/…/a.html»); без кавычек пробел обрывает путь, а откусывать от него хвост нельзя:
 // «/analytics/weekly/a.html» из «Threads/analytics/weekly/a.html» — несуществующий файл, а на холсте он сырой ответ сервера (0.5.1)
 const QUOTED_PATH = /(["'`])((?:~|\/|[A-Za-z]:[\\/])[^"'`\n<>]*?\.html?)\1/gu;
 const HTML_PATH = /(?<![\p{L}\p{N}_\/.~:!-])(?:~|\/|[A-Za-z]:[\\/])[^\s"'`<>()\[\]{}|,;*]*?\.html?(?![\w])/gu;
@@ -533,21 +533,21 @@ export const windowHeight = (w) => ({ 1440: 900, 1280: 800, 768: 1024, 390: 844 
 // подпись фрейма: имя файла без .html
 export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
 
-// имя макета везде одно: index.html называют по папке — «kolo», а не «index»
+// имя макета везде одно: index.html называют по папке — «demo», а не «index»
 export const nameOf = (path) => {
   const parts = String(path).split(/[\\/]/).filter(Boolean);
   const name = frameTitle(path).replace(/\.html?$/i, "");
   return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
 };
 
-// какого вида пути у этой машины: по cwd сессий хаба. Путь другой ОС («C:\\…» на Маке, «!Проекты/…» без корня) на дашборде не показываем
+// какого вида пути у этой машины: по cwd сессий хаба. Путь другой ОС («C:\\…» на Маке, «!Projects/…» без корня) на дашборде не показываем
 export function nativePath(path, cwds = []) {
   const p = String(path || "");
   const win = (cwds || []).some((c) => /^[A-Za-z]:[\\/]/.test(c || "")) && !(cwds || []).some((c) => String(c || "").startsWith("/"));
   return win ? /^([A-Za-z]:[\\/]|\\\\)/.test(p) : /^(\/|~\/)/.test(p);
 }
 
-// макеты для дашборда: авторы по лентам и те, что открыты на холсте (их писал не специалист хаба — Kolo, добавленный по пути)
+// макеты для дашборда: авторы по лентам и те, что открыты на холсте (их писал не специалист хаба — макет, добавленный по пути)
 export function dashboardFiles(authors, frames, cwds, { who = () => "", time = () => 0 } = {}) {
   const out = (authors || []).filter((a) => nativePath(a.path, cwds));
   for (const f of frames || []) {

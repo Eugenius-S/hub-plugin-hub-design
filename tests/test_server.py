@@ -138,7 +138,7 @@ class Server(unittest.TestCase):
         ok = os.path.join(os.path.realpath(SITE), "index.html")
         gone = os.path.join(os.path.realpath(SITE), "weekly", "weekly-2026-10-17.html")
         out = os.path.join(os.path.realpath(OUT), "x.html")
-        nowhere = "/!Проекты/Icons8/analytics/weekly/weekly-2026-10-17.html"
+        nowhere = "/!Projects/demo/analytics/weekly/weekly-2026-10-17.html"
         from urllib.parse import urlencode
         q = "/__canvas/have?" + urlencode([("path", p) for p in (ok, gone, out, nowhere)])
         r, body = self.get(q, headers={"Origin": "http://localhost:8787"})

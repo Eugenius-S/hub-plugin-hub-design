@@ -181,7 +181,7 @@ test("Write макета ушёл за хвост ленты: ищем его в
 });
 
 test("путь с пробелами берётся целиком из кавычек, обрубки и хвосты относительных путей — нет (0.5.1: «{error: no file}» в рамке)", () => {
-  const real = "/Users/me/Disk/!!Work/!!! 2M DESIGN/!Проекты/smm/weekly/weekly-2026-10-17.html";
+  const real = "/Users/me/Disk/Work/!!! Demo Co/!Projects/demo/weekly/weekly-2026-10-17.html";
   assert.deepEqual(htmlPaths(`Откроется: \`${real}\` и Threads/analytics/weekly/weekly-2026-10-17.html`), [real]);
   assert.deepEqual(htmlPaths(`лежит в ${real} рядом`), []);     // без кавычек пробел обрывает путь — гадать про хвост нельзя
   assert.deepEqual(htmlPaths("файл /a/b.html, и 'C:\\Мои файлы\\x.html' и /c/d.htm."), ["/a/b.html", "C:\\Мои файлы\\x.html", "/c/d.htm"]);
@@ -310,20 +310,20 @@ test("имя макета одно везде: index.html — по папке", 
 
 test("дашборд: пути чужой ОС и без корня не показываем, открытый на холсте — показываем", () => {
   const mac = ["/Users/me/p", "/Users/me/q"];
-  assert.ok(nativePath("/Users/me/kolo/index.html", mac));
+  assert.ok(nativePath("/Users/me/projects/demo/index.html", mac));
   assert.ok(nativePath("~/x/a.html", mac));
-  assert.ok(!nativePath("C:\\Users\\jiraf\\kolo\\index.html", mac));
-  assert.ok(!nativePath("!Проекты/smm/a.html", mac));
-  assert.ok(nativePath("C:\\Users\\jiraf\\kolo\\index.html", ["C:\\Users\\jiraf"]));
-  assert.ok(!nativePath("/Users/me/a.html", ["C:\\Users\\jiraf"]));
-  const authors = [{ path: "C:\\Users\\jiraf\\kolo\\index.html", session: "designer", ts: 5, last: 5 }, { path: "/Users/me/a/a.html", session: "designer", ts: 6, last: 6 }];
-  const rows = dashboardFiles(authors, [{ path: "/Users/me/kolo/index.html" }, { path: "/Users/me/a/a.html" }], mac);
-  assert.deepEqual(rows.map((r) => r.path), ["/Users/me/a/a.html", "/Users/me/kolo/index.html"]);
+  assert.ok(!nativePath("C:\\Users\\me\\demo\\index.html", mac));
+  assert.ok(!nativePath("!Projects/demo/a.html", mac));
+  assert.ok(nativePath("C:\\Users\\me\\demo\\index.html", ["C:\\Users\\me"]));
+  assert.ok(!nativePath("/Users/me/a.html", ["C:\\Users\\me"]));
+  const authors = [{ path: "C:\\Users\\me\\demo\\index.html", session: "designer", ts: 5, last: 5 }, { path: "/Users/me/a/a.html", session: "designer", ts: 6, last: 6 }];
+  const rows = dashboardFiles(authors, [{ path: "/Users/me/projects/demo/index.html" }, { path: "/Users/me/a/a.html" }], mac);
+  assert.deepEqual(rows.map((r) => r.path), ["/Users/me/a/a.html", "/Users/me/projects/demo/index.html"]);
   assert.equal(rows[0].session, "designer");
 });
 
 test("дашборд: у макета только с холста — автор и время правки файла, не пустая строка", () => {
-  const rows = dashboardFiles([], [{ path: "/Users/me/kolo/index.html" }], ["/Users/me"], { who: () => "designer", time: () => 1000 });
+  const rows = dashboardFiles([], [{ path: "/Users/me/projects/demo/index.html" }], ["/Users/me"], { who: () => "designer", time: () => 1000 });
   assert.equal(rows[0].session, "designer");
   assert.equal(rows[0].last, 1000);
   assert.equal(dashboardFiles([], [{ path: "/Users/me/k.html" }], ["/Users/me"])[0].session, "");
