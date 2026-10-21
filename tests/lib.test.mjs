@@ -540,3 +540,53 @@ test("коммент без id в вёрстке: в сообщении прим
   assert.match(lost, /элемент не найден — макет перевёрстан, точка осталась на прежнем месте\): крупнее/);
   assert.equal(anchorNote({ fp: { ...fp, id: "x" } }), "");
 });
+
+test("запись в файл: набор — черновики и отправленные, без done и без пустых; копия — рядом с файлом", async () => {
+  const { writable, markWritten, markUnwritten, copyPath } = await import("../lib.js");
+  const f = "/a/b/page.html";
+  const list = [
+    { file: f, state: "draft", sel: "a.btn", label: "Купить", tag: "a", dx: 5, dy: 0, x0: 1, y0: 2 },
+    { file: f, state: "sent", sel: "h1", t0: "Старый", t: "Новый", w: null },
+    { file: f, state: "done", sel: "p", dx: 9 },
+    { file: f, state: "draft", sel: "i", dx: 0, dy: 0 },
+    { file: "/other.html", state: "draft", sel: "a", dx: 1 },
+  ];
+  assert.deepEqual(writable(list, f).map((c) => c.sel), ["a.btn", "h1"]);
+  assert.deepEqual(writable(list, f)[0], { sel: "a.btn", label: "Купить", tag: "a", t0: null, t: null, dx: 5, dy: 0, w: null, h: null, css: {} });
+  assert.equal(copyPath(f, "page.r3.html"), "/a/b/page.r3.html");
+  assert.equal(copyPath("C:\\d\\page.html", "page.r1.html"), "C:\\d\\page.r1.html");
+  assert.equal(copyPath(f, ""), "");
+  const tw = [{ file: f, state: "draft", key: "k" }];
+  markWritten(list, tw, f, { done: ["a.btn"], skipped: [{ sel: "h1", why: "тег другой" }], ops: "done" });
+  assert.equal(list[0].inFile, true);
+  assert.equal(list[1].inFile, false);
+  assert.equal(list[1].noWrite, "тег другой");
+  assert.equal(list[2].inFile, undefined);   // done не трогаем
+  assert.equal(list[4].inFile, undefined);   // чужой файл
+  assert.equal(tw[0].inFile, true);
+  markUnwritten(list, tw, f);
+  assert.deepEqual([list[0].inFile, list[1].noWrite, tw[0].inFile], [false, undefined, false]);
+});
+
+test("message: записанные в файл пункты помечены, остальное — как раньше; путь копии и просьба её не трогать", () => {
+  const f = "/a/b/page.html";
+  const mk = (inFile) => ({ file: f, sel: "a.btn", label: "Купить", dx: 5, dy: 0, x0: 10, y0: 20, w0: 100, h0: 30, inFile });
+  const base = { path: f, round: 2, comments: [], changes: [mk(false)] };
+  const plain = message(base);
+  assert.ok(!plain.includes("уже в файле"));
+  assert.ok(plain.includes("перенеси их в код"));
+  const done = message({ ...base, changes: [mk(true)], copies: { [f]: "page.r2.html" } });
+  assert.match(done, /1\. Поправил руками `a\.btn` «Купить»: сдвиг .* — уже в файле\./);
+  assert.ok(done.includes("`/a/b/page.r2.html`"));
+  assert.ok(done.includes("не перезаписывай"));
+  assert.ok(!done.includes("перенеси их в код"));
+  // часть записана, часть нет — обе подсказки
+  const mixed = message({ ...base, changes: [mk(true), { ...mk(false), sel: "h1", dx: 7 }], copies: { [f]: "page.r2.html" } });
+  assert.equal(mixed.match(/уже в файле/g).length, 2);   // пометка пункта и «Пункты «уже в файле»…»
+  assert.ok(mixed.includes("перенеси их в код"));
+  // крутилка
+  const tw = { file: f, key: "accent", label: "Акцент", editor: "color", from: "#000", to: "#f00", inFile: true };
+  const t = message({ ...base, changes: [], tweaks: [tw], copies: { [f]: "page.r2.html" } });
+  assert.match(t, /Крутилка `accent`: .* — уже в файле\./);
+  assert.ok(!t.includes("сделай новые значениями по умолчанию"));
+});

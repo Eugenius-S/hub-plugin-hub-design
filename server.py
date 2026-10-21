@@ -18,6 +18,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import handwrite
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_PORT = int(os.environ.get("HUB_WEB_PORT") or 8787)
 PORT = int(os.environ.get("HUB_DESIGN_PORT") or os.environ.get("DESIGN_CANVAS_PORT") or WEB_PORT + 11)
@@ -39,6 +41,7 @@ DRIVE = re.compile(r"^[A-Za-z]:$")
 PDF_TIMEOUT = 45   # секунд на печать одного макета, потом Chrome гасим
 PDF_SIZE = (1440, 900)   # окно макета, если страница не прислала своё
 PDF_MAX = 20000          # пикселей: выше PDF-страницу не растягиваем
+WRITE_MAX = 2 * 1024 * 1024   # тело запроса на запись правок
 
 
 def state_dir():
@@ -246,6 +249,92 @@ def pdf(real, w, h):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+# правки руками — точечно в файл. Без состояния в процессе: исходник для пересчёта — копия <имя>.r<N>.html рядом, её имя и время
+# файла после прошлой записи приходят со страницы; файл с другим временем правил кто-то ещё — отказ «changed», страница начинает заново
+_write_lock = threading.Lock()
+
+
+class WriteError(Exception):
+    def __init__(self, code, text):
+        super().__init__(text)
+        self.code, self.text = code, text
+
+
+def read_text(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read().decode("utf-8")
+    except UnicodeDecodeError:
+        raise WriteError(400, "файл не в UTF-8")
+
+
+def free_copy(real, start):
+    stem, ext = os.path.splitext(real)
+    n = max(0, int(start))
+    while os.path.exists("%s.r%d%s" % (stem, n, ext)):
+        n += 1
+    return "%s.r%d%s" % (stem, n, ext)
+
+
+def write_file(real, data):
+    """Подмена файла целиком за один шаг: вотчеры и браузер не видят полузаписанного."""
+    tmp = os.path.join(os.path.dirname(real), ".hub-design-%d.tmp" % os.getpid())
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data.encode("utf-8"))
+        try:
+            shutil.copymode(real, tmp)
+        except OSError:
+            pass
+        os.replace(tmp, real)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def write(real, body):
+    """Записать правки руками в real. body: changes, ops, busy, round, copy (имя копии, если уже делали), fmtime (время файла после
+    нашей записи). Отказ — WriteError: 409 busy (автор макета в ходе), 409 changed (файл правили без нас)."""
+    changes = [c for c in (body.get("changes") or [])[:400] if isinstance(c, dict)]
+    ops = [o for o in (body.get("ops") or [])[:60] if isinstance(o, dict)]
+    if body.get("busy"):
+        raise WriteError(409, "busy")
+    stem, ext = os.path.splitext(real)
+    copy = os.path.basename(str(body.get("copy") or ""))
+    fmtime = int(body.get("fmtime") or 0)
+    with _write_lock:
+        now = int(os.stat(real).st_mtime * 1000)
+        cur = read_text(real)
+        copy_path = os.path.join(os.path.dirname(real), copy) if copy else ""
+        if copy or fmtime:
+            ok = copy and re.fullmatch(re.escape(os.path.basename(stem)) + r"\.r\d+" + re.escape(ext), copy) and os.path.isfile(copy_path) and abs(now - fmtime) <= 1
+            if not ok:
+                raise WriteError(409, "changed")
+            base = read_text(copy_path)
+        else:
+            base = cur
+        out, done, skipped, ops_state, ops_why = handwrite.apply(base, changes, ops)
+        touched = out != base
+        if not touched:   # писать нечего: файл — как был до нас; своя копия больше не нужна
+            if copy and cur != base:
+                write_file(real, base)
+            if copy:
+                try:
+                    os.remove(copy_path)
+                except OSError:
+                    pass
+            copy_path = ""
+        else:
+            if not copy_path:   # первая запись: копия исходника рядом, и только потом правка
+                copy_path = free_copy(real, body.get("round") or 0)
+                with open(copy_path, "xb") as f:
+                    f.write(base.encode("utf-8"))
+            if out != cur:
+                write_file(real, out)
+        return {"ok": True, "copy": os.path.basename(copy_path), "fmtime": int(os.stat(real).st_mtime * 1000), "stamp": newest(real),
+                "done": done, "skipped": skipped, "ops": ops_state, "opsWhy": ops_why}
+
+
 EARLY_TAG = b'<script src="/__canvas/early.js"></script>'
 _open_tags = [re.compile(rb"<head(?:\s[^>]*)?>", re.I), re.compile(rb"<html(?:\s[^>]*)?>", re.I), re.compile(rb"<!doctype[^>]*>", re.I)]
 
@@ -291,6 +380,43 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Sec-Fetch-Site") == "cross-site":
             return "cross-site"
         return None
+
+    def cors(self):
+        origin = self.headers.get("Origin")
+        return {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in page_origins() else {}
+
+    def do_OPTIONS(self):
+        bad = self.guard()
+        if bad or not self.cors():
+            return self.say(403, {"error": bad or "origin"})
+        self.head(204, "text/plain", 0, {**self.cors(), "Access-Control-Allow-Methods": "POST", "Access-Control-Allow-Headers": "Content-Type",
+                                          "Access-Control-Max-Age": "600"})
+
+    def do_POST(self):
+        """/__canvas/write — правки руками в файл. Только со страницы хаба (Origin) и только файл, который процесс и так показывает."""
+        bad = self.guard()
+        url = urlparse(self.path)
+        if bad or url.path != "/__canvas/write":
+            return self.say(403 if bad else 404, {"error": bad or "no page"})
+        extra = self.cors()
+        if not extra:
+            return self.say(403, {"error": "origin"})
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+            if size <= 0 or size > WRITE_MAX:
+                return self.say(413, {"error": "body"}, extra)
+            body = json.loads(self.rfile.read(size).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self.say(400, {"error": "body"}, extra)
+        real = os.path.realpath(str(body.get("path") or "")) if isinstance(body, dict) else ""
+        if not real.lower().endswith(HTML) or not allowed(real):
+            return self.say(404, {"error": "no file"}, extra)
+        try:
+            return self.say(200, write(real, body), extra)
+        except WriteError as e:
+            return self.say(e.code, {"error": e.text}, extra)
+        except OSError as e:
+            return self.say(500, {"error": "не записать: " + (e.strerror or str(e))}, extra)
 
     def do_HEAD(self):
         self.do_GET()

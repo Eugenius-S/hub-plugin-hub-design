@@ -19,7 +19,7 @@
   let framed = null;      // элемент, которому открыт комментарий
   let drag = null;
   let stroke = null;      // рисунок в процессе
-  const state = new WeakMap();   // элемент → {sel, label, x0, y0, w0, h0, t0, dx, dy, w, h, t, css, attr}
+  const state = new WeakMap();   // элемент → {sel, label, tag, x0, y0, w0, h0, t0, dx, dy, w, h, t, css, attr}
   const touched = new Set();
   const undo = [], redo = [];
 
@@ -296,7 +296,7 @@
     let s = state.get(el);
     if (!s) {
       const r = pageRect(el);
-      s = { sel: selector(el), label: label(el), x0: r.x, y0: r.y, w0: r.w, h0: r.h, t0: null, dx: 0, dy: 0, w: null, h: null, t: null, css: {},
+      s = { sel: selector(el), label: label(el), tag: el.tagName.toLowerCase(), x0: r.x, y0: r.y, w0: r.w, h0: r.h, t0: null, dx: 0, dy: 0, w: null, h: null, t: null, css: {},
         attr: el.getAttribute("style") };
       state.set(el, s);
       touched.add(el);
@@ -306,7 +306,7 @@
   const report = (el) => {
     const s = state.get(el);
     if (!s) return;
-    send({ t: "change", change: { sel: s.sel, label: s.label, x0: s.x0, y0: s.y0, w0: s.w0, h0: s.h0, dx: s.dx, dy: s.dy, w: s.w, h: s.h, t0: s.t0, t: s.t, css: s.css } });
+    send({ t: "change", change: { sel: s.sel, label: s.label, tag: s.tag, x0: s.x0, y0: s.y0, w0: s.w0, h0: s.h0, dx: s.dx, dy: s.dy, w: s.w, h: s.h, t0: s.t0, t: s.t, css: s.css } });
   };
   // собрать вид элемента заново из записи: исходный style, затем сдвиг, размер, стили; текст — отдельно
   function paintState(el) {

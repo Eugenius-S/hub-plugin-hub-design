@@ -5,7 +5,7 @@
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
 import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight,
-  describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt } from "./lib.js";
+  describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
@@ -23,7 +23,7 @@ const specs = new Map();   // файл → {list: разобранные кру�
 const eps = new Map();   // фрейм → {id, path, iframe, ready}: у каждого фрейма свой agent.js
 const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
-  frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
+  frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
   authors: [], have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
 };
@@ -117,7 +117,7 @@ function sidebar(hide) {
 
 // --- хранение пачки: одна доска в браузере — перезагрузка страницы её не теряет -----------------------------------
 function save() {
-  localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks, errs: P.errs,
+  localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks, errs: P.errs, writers: P.writers,
     round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found }));
   hold();
 }
@@ -134,6 +134,7 @@ function load() {
   P.notes = b.notes || [];
   P.tweaks = b.tweaks || [];
   P.errs = b.errs || [];
+  P.writers = b.writers || {};
   P.round = b.round || 1;
   try { P.asked = JSON.parse(localStorage.getItem(STORE + "asked") || "{}") || {}; } catch { P.asked = {}; }
   if (b.cv) P.cv = { x: 56, y: 84, k: 1, auto: true, ...b.cv };
@@ -167,7 +168,7 @@ const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h:
 // выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок «Отправить дизайнеру» не включает
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
-  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), ...extra }));
+  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), ...extra }));
 const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 
 // получателя не помним между открытиями: им управляет открытый макет (wanted); перенос из чата — поверх
@@ -282,6 +283,7 @@ function removeFrame(path, keepDrafts = false) {
     P.drawings = P.drawings.filter((d) => d.file !== path);
     P.tweaks = P.tweaks.filter((t) => t.file !== path);
     P.errs = P.errs.filter((e) => e.file !== path);
+    flushWrite(path);   // черновики убраны — файл возвращается к виду до наших правок
   }
   specs.delete(path);
   liveErrs.delete(path);
@@ -312,7 +314,98 @@ function clearDrafts() {
   P.sel = null;
   renumber();
   save();
-  reloadAll();
+  paint();
+  Promise.all(P.frames.map((f) => flushWrite(f.path))).then(() => { reloadAll(); paint(); });   // сперва файл — к виду до правок, потом рамки
+}
+
+// дизайнер поменял файл: прошлый раунд отработан — его пины гаснут, его сдвиги уже в коде; наша копия и записи больше не нужны
+function fileChanged(file) {
+  const w = writers.get(file);
+  if (w) { w.maxStamp = 0; w.fails = 0; }
+  delete P.writers[file];
+  markUnwritten(P.changes, P.tweaks, file);
+  const mine = (x) => x.file === file;
+  for (const p of P.pins) if (mine(p) && p.state === "sent") p.state = "done";
+  for (const d of P.drawings) if (mine(d) && d.state === "sent") d.state = "done";
+  for (const c of P.changes) if (mine(c) && c.state === "sent") c.state = "done";
+  P.tweaks = P.tweaks.filter((t) => !mine(t) || t.state !== "sent");   // значения по умолчанию теперь в самом файле
+  P.errs = P.errs.filter((e) => !mine(e) || e.state !== "sent");
+  P.pins = P.pins.filter((p) => !mine(p) || p.state !== "done" || p.round >= P.round - 3);
+  P.drawings = P.drawings.filter((d) => !mine(d) || d.state !== "done");
+  P.changes = P.changes.filter((c) => !mine(c) || c.state !== "done");
+  if (P.sel && P.sel.file === file) P.sel = null;
+  P.hist[file] = { undo: 0, redo: 0 };
+  renumber();
+  ui.cv.reloadFrame(file);
+}
+
+// --- запись правок руками в файл ---------------------------------------------------------------------------------
+// Правки руками и крутилки — в сам файл (server.py /__canvas/write), точечно и от копии <имя>.r<N>.html: каждый раз весь набор заново
+// от копии, поэтому откат правки возвращает файл. Автор макета в ходе — не пишем (его файл не трогаем), пункты уходят ему словами.
+const writers = new Map();   // файл → {timer, inflight, again, deferred, maxStamp, fails}; copy и fmtime живут в P.writers (переживают перезагрузку)
+const writerOf = (file) => {
+  if (!writers.has(file)) writers.set(file, { timer: 0, inflight: null, again: false, deferred: [], maxStamp: 0, fails: 0 });
+  return writers.get(file);
+};
+const authorBusy = (file) => {
+  const name = authorOf(file);
+  const s = ((hub.snapshot() || {}).sessions || []).find((x) => x.name === name);
+  return !!s && s.state === "busy";
+};
+const tweakOps = (file) => (specs.get(file)?.list || [])
+  .filter((t) => P.tweaks.some((x) => x.file === file && x.key === t.key && x.state !== "done")).flatMap((t) => opsFor(file, t.key));
+function scheduleWrite(file, ms = 500) {
+  const w = writerOf(file);
+  clearTimeout(w.timer);
+  w.timer = setTimeout(() => flushWrite(file), ms);
+}
+function flushWrite(file) {
+  const w = writerOf(file);
+  clearTimeout(w.timer);
+  w.timer = 0;
+  if (w.inflight) { w.again = true; return w.inflight; }
+  w.inflight = (async () => { do { w.again = false; await writeOnce(file, w); } while (w.again); })()
+    .catch(() => {})
+    .finally(() => {
+      w.inflight = null;
+      const late = w.deferred.filter((m) => m > w.maxStamp);   // чужая правка файла, пока шла наша запись
+      w.deferred = [];
+      if (late.length) { fileChanged(file); save(); paint(); }
+    });
+  return w.inflight;
+}
+async function writeOnce(file, w) {
+  const items = writable(P.changes, file);
+  const ops = tweakOps(file);
+  const known = P.writers[file] || {};
+  if (!items.length && !ops.length && !known.copy) return;   // писать нечего, и копии нет
+  const busy = authorBusy(file);
+  let res = null;
+  try {
+    const r = await fetch(origin() + "/__canvas/write", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: file, round: Math.max(1, P.round - 1), changes: items, ops, busy, copy: known.copy || "", fmtime: known.fmtime || 0 }) });
+    res = { status: r.status, ...(await r.json().catch(() => ({}))) };
+  } catch { res = { status: 0 }; }
+  if (res.status === 200) {
+    w.fails = 0;
+    w.maxStamp = Math.max(w.maxStamp, res.stamp || 0);
+    if (res.copy) P.writers[file] = { copy: res.copy, fmtime: res.fmtime }; else delete P.writers[file];
+    // пометка «в файле» — только тем правкам, у которых значение с тех пор не менялось
+    const sent = new Map(items.map((i) => [i.sel, JSON.stringify(i)]));
+    const same = (sel) => { const c = P.changes.find((q) => q.file === file && q.sel === sel && q.state !== "done"); const n = c && writable([c], file)[0]; return !!n && JSON.stringify(n) === sent.get(sel); };
+    markWritten(P.changes, P.tweaks, file, { ...res, done: (res.done || []).filter(same), ops: JSON.stringify(tweakOps(file)) === JSON.stringify(ops) ? res.ops : "skipped" });
+  } else if (res.status === 409 && res.error === "changed") {
+    fileChanged(file);   // файл правили без нас — это правка автора, начинаем с чистого
+  } else if (res.status === 409 && res.error === "busy") {
+    markUnwritten(P.changes, P.tweaks, file);   // автор в ходе: файл не трогаем, ждём конца хода
+    if (P.frames.some((f) => f.path === file)) scheduleWrite(file, 5000);
+  } else {
+    markUnwritten(P.changes, P.tweaks, file);
+    w.fails += 1;
+    if (res.status === 404 || res.status === 413 || res.status === 403 || w.fails > 3) { P.note = "Правки в файл не записались — уйдут дизайнеру словами"; w.fails = 0; }
+    else if (P.frames.some((f) => f.path === file)) scheduleWrite(file, 5000);   // автор в ходе или процесс перезапускается — пробуем позже
+  }
+  save();
   paint();
 }
 
@@ -363,6 +456,7 @@ function handle(file, m, ep = epOf(file)) {
     const keep = P.changes.filter((c) => c.file === file && c.state !== "done");
     if (keep.length) tellEp(ep, { t: "apply", changes: keep });
     readTweaks(file, ep, m.tweaks);
+    scheduleWrite(file);   // черновики с прошлого раза или после перезагрузки рамки — в файл
     liveErrs.delete(file);   // макет загрузился заново — свежий список пришлёт он сам
     ui.cv.paintErrs();
     return;
@@ -415,8 +509,10 @@ function handle(file, m, ep = epOf(file)) {
     else if (i >= 0) P.changes[i] = c;
     else P.changes.push(c);
     P.lastEdit = file;
+    scheduleWrite(file);
   } else if (m.t === "revert") {
     P.changes = P.changes.filter((q) => !(q.file === file && q.sel === m.sel && q.state === "draft"));
+    scheduleWrite(file);
   } else if (m.t === "selected") {
     if (m.sel) {
       P.sel = { file, sel: m.sel, label: m.label, tag: m.tag, css: m.css || {}, flex: !!m.flex, grid: !!m.grid, kids: m.kids || 0, decl: m.decl || "" };
@@ -427,20 +523,10 @@ function handle(file, m, ep = epOf(file)) {
   } else if (m.t === "history") {
     P.hist[file] = { undo: m.undo, redo: m.redo };
   } else if (m.t === "changed") {
-    // дизайнер поменял файл: прошлый раунд отработан — его пины гаснут, его сдвиги уже в коде
-    const mine = (x) => x.file === file;
-    for (const p of P.pins) if (mine(p) && p.state === "sent") p.state = "done";
-    for (const d of P.drawings) if (mine(d) && d.state === "sent") d.state = "done";
-    for (const c of P.changes) if (mine(c) && c.state === "sent") c.state = "done";
-    P.tweaks = P.tweaks.filter((t) => !mine(t) || t.state !== "sent");   // значения по умолчанию теперь в самом файле
-    P.errs = P.errs.filter((e) => !mine(e) || e.state !== "sent");
-    P.pins = P.pins.filter((p) => !mine(p) || p.state !== "done" || p.round >= P.round - 3);
-    P.drawings = P.drawings.filter((d) => !mine(d) || d.state !== "done");
-    P.changes = P.changes.filter((c) => !mine(c) || c.state !== "done");
-    if (P.sel && P.sel.file === file) P.sel = null;
-    P.hist[file] = { undo: 0, redo: 0 };
-    renumber();
-    ui.cv.reloadFrame(file);
+    const w = writers.get(file);
+    if (w && m.mtime <= w.maxStamp) return;   // наша запись правок руками
+    if (w && w.inflight) { w.deferred.push(m.mtime); return; }   // запись идёт: чья это правка, решит её ответ
+    fileChanged(file);
   } else return;
   save();
   paint();
@@ -1017,8 +1103,10 @@ function setTweak(file, t, raw) {
     P.tweaks.push(e);
   }
   e.to = value;
+  e.inFile = false;
   if (!tweakEffect(e)) P.tweaks = P.tweaks.filter((x) => x !== e);
   tellFile(file, { t: "tweaks", ops: tweakApply(t, value) });
+  scheduleWrite(file);
   save();
   paint();
   return true;
@@ -1161,7 +1249,7 @@ function paintCard() {
     ...P.drawings.filter((d) => d.state === "draft").map((d) => ({ text: describeDrawing(d), ic: "draw", del: () => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: "Заметка: " + d.text, ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
     ...draftErrs().map((e) => ({ text: `Ошибки макета: ${normErrors(e.items).length}`, ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
-    ...draftTweaks().map((t) => ({ text: describeTweak(t), ic: "edit", del: () => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); } })),
+    ...draftTweaks().map((t) => ({ text: describeTweak(t), ic: "edit", del: () => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); scheduleWrite(t.file); } })),
   ];
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
@@ -1203,7 +1291,8 @@ function paintComments() {
   for (const c of changes) {
     const li = el("div", "hd-citem " + c.state);
     li.append(el("b", "hd-n edit", "✎"), el("span", "hd-ct", `${c.label || c.sel}: ${describeChange(c)}`));
-    li.title = c.sel;
+    if (c.inFile) li.append(el("span", "hd-infile", "в файле"));
+    li.title = c.noWrite ? `${c.sel} — в файл не записана: ${c.noWrite}` : c.sel;
     rows.push(li);
   }
   for (const d of drawings) {
@@ -1214,6 +1303,7 @@ function paintComments() {
   for (const t of tweaks) {
     const li = el("div", "hd-citem " + t.state);
     li.append(el("b", "hd-n edit", "⚙"), el("span", "hd-ct", describeTweak(t)));
+    if (t.inFile) li.append(el("span", "hd-infile", "в файле"));
     rows.push(li);
   }
   for (const e of errs) {

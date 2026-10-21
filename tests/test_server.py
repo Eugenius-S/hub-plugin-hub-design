@@ -383,3 +383,148 @@ class Pdf(unittest.TestCase):
         self.assertAlmostEqual(float(box.group(1)), 800 * 0.75, delta=2)
         self.assertAlmostEqual(float(box.group(2)), 450 * 0.75, delta=2)
         self.assertEqual(len(re.findall(rb"/Type\s*/Page[^s]", body)), 3)
+
+
+class Write(unittest.TestCase):
+    """POST /__canvas/write: правка руками — точечно в файл, перед первой записью копия <имя>.r<N>.html."""
+
+    ORIGIN = "http://localhost:8787"
+    HTML = ('<!doctype html><html><body><div class="card"><a class="btn" href="/x">Купить</a></div>'
+            '<div class="card"><a class="btn" href="/y">Купить</a></div></body></html>')
+    BTN = "div.card:nth-of-type(2) > a.btn"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = server.serve(0)
+        cls.port = cls.srv.server_address[1]
+        server.PORT = cls.port
+        server._roots["at"] = 0
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(dir=SITE)
+        self.path = os.path.join(os.path.realpath(self.dir), "page.html")
+        self.put(self.path, self.HTML)
+
+    def put(self, path, text):
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def text(self, path=None):
+        with open(path or self.path, encoding="utf-8") as f:
+            return f.read()
+
+    def post(self, body, origin=ORIGIN, host=None, raw=None):
+        data = raw if raw is not None else json.dumps(body).encode()
+        h = {"Host": host or f"localhost:{self.port}", "Content-Type": "application/json"}
+        if origin:
+            h["Origin"] = origin
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("POST", "/__canvas/write", body=data, headers=h)
+        r = c.getresponse()
+        out = r.read()
+        c.close()
+        return r, (json.loads(out) if out else {})
+
+    def move(self, dx, **kw):
+        return {"path": self.path, "round": 3, "changes": [{"sel": self.BTN, "label": "Купить", "tag": "a", "dx": dx, "dy": 0}], **kw}
+
+    def test_first_write_keeps_a_copy_and_edits_only_the_element(self):
+        r, d = self.post(self.move(12))
+        self.assertEqual((r.status, d["ok"], d["copy"]), (200, True, "page.r3.html"))
+        self.assertEqual(d["done"], [self.BTN])
+        self.assertEqual(self.text(os.path.join(os.path.dirname(self.path), "page.r3.html")), self.HTML)
+        self.assertEqual(self.text(), self.HTML.replace('<a class="btn" href="/y">', '<a style="translate: 12px 0px" class="btn" href="/y">'))
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), self.ORIGIN)
+
+    def test_next_write_recomputes_from_the_copy_not_from_the_file(self):
+        _, a = self.post(self.move(12))
+        _, b = self.post(self.move(30, copy=a["copy"], fmtime=a["fmtime"]))
+        self.assertEqual(b["copy"], "page.r3.html")
+        self.assertIn("translate: 30px 0px", self.text())
+        self.assertNotIn("12px", self.text())
+        self.assertEqual(self.text().count("translate"), 1)
+
+    def test_empty_state_restores_the_file_and_drops_the_copy(self):
+        _, a = self.post(self.move(12))
+        _, b = self.post({"path": self.path, "changes": [], "copy": a["copy"], "fmtime": a["fmtime"]})
+        self.assertEqual((b["ok"], b["copy"]), (True, ""))
+        self.assertEqual(self.text(), self.HTML)
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(self.path), "page.r3.html")))
+
+    def test_nothing_to_write_makes_no_copy(self):
+        r, d = self.post({"path": self.path, "round": 1, "changes": [{"sel": "#nope", "label": "x", "dx": 4}]})
+        self.assertEqual((d["copy"], d["done"], d["skipped"][0]["sel"]), ("", [], "#nope"))
+        self.assertEqual(self.text(), self.HTML)
+        self.assertEqual([f for f in os.listdir(os.path.dirname(self.path)) if ".r" in f], [])
+
+    def test_copy_name_does_not_overwrite_an_existing_file(self):
+        self.put(os.path.join(os.path.dirname(self.path), "page.r3.html"), "<p>прошлая копия</p>")
+        _, d = self.post(self.move(5))
+        self.assertNotEqual(d["copy"], "page.r3.html")
+        self.assertEqual(self.text(os.path.join(os.path.dirname(self.path), "page.r3.html")), "<p>прошлая копия</p>")
+        self.assertEqual(self.text(os.path.join(os.path.dirname(self.path), d["copy"])), self.HTML)
+
+    def test_author_in_turn_means_409_and_file_untouched(self):
+        r, d = self.post(self.move(12, busy=True))
+        self.assertEqual((r.status, d["error"]), (409, "busy"))
+        self.assertEqual(self.text(), self.HTML)
+        self.assertEqual([f for f in os.listdir(os.path.dirname(self.path)) if ".r" in f], [])
+
+    def test_file_changed_by_someone_else_means_409(self):
+        _, a = self.post(self.move(12))
+        time.sleep(0.02)
+        self.put(self.path, self.text() + "<!-- дизайнер -->")
+        os.utime(self.path, (time.time() + 5, time.time() + 5))
+        r, d = self.post(self.move(30, copy=a["copy"], fmtime=a["fmtime"]))
+        self.assertEqual((r.status, d["error"]), (409, "changed"))
+        self.assertIn("дизайнер", self.text())
+        self.assertIn("12px", self.text())
+
+    def test_copy_name_from_the_outside_is_refused(self):
+        for name in ("../page.r3.html", "other.r3.html", "page.html", "page.r3.html"):
+            r, d = self.post(self.move(1, copy=name, fmtime=1))
+            self.assertEqual((r.status, d["error"]), (409, "changed"), name)
+
+    def test_only_the_hub_page_may_write(self):
+        for origin in (None, "http://evil.example", "http://localhost:9999"):
+            r, d = self.post(self.move(1), origin=origin)
+            self.assertEqual(r.status, 403, origin)
+        r, d = self.post(self.move(1), host="evil.example")
+        self.assertEqual(r.status, 403)
+        self.assertEqual(self.text(), self.HTML)
+
+    def test_only_html_inside_the_roots(self):
+        outside = os.path.join(OUT, "x.html")
+        before = self.text(outside)
+        r, _ = self.post({**self.move(1), "path": outside})
+        self.assertEqual(r.status, 404)
+        self.assertEqual(self.text(outside), before)
+        secret = os.path.join(SITE, "secret.env")
+        r, _ = self.post({**self.move(1), "path": secret})
+        self.assertEqual(r.status, 404)
+        r, _ = self.post({**self.move(1), "path": os.path.join(SITE, ".git", "config.json")})
+        self.assertEqual(r.status, 404)
+
+    def test_bad_body(self):
+        self.assertEqual(self.post(None, raw=b"{oops")[0].status, 400)
+        self.assertEqual(self.post(None, raw=b"[]")[0].status, 404)
+
+    def test_tweaks_are_written_to_html_tag(self):
+        r, d = self.post({"path": self.path, "round": 2, "changes": [], "ops": [{"kind": "var", "name": "--accent", "value": "#f00"}]})
+        self.assertEqual((d["ops"], d["copy"]), ("done", "page.r2.html"))
+        self.assertIn('<html style="--accent: #f00">', self.text())
+
+    def test_preflight(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("OPTIONS", "/__canvas/write", headers={"Host": f"localhost:{self.port}", "Origin": self.ORIGIN, "Access-Control-Request-Method": "POST"})
+        r = c.getresponse()
+        r.read()
+        self.assertEqual(r.status, 204)
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), self.ORIGIN)
+        self.assertIn("POST", r.getheader("Access-Control-Allow-Methods"))

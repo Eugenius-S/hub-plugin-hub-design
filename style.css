@@ -208,3 +208,4 @@ html.hs-hidden .hd-top{padding-left:56px}
 .hd-segb{flex:1;min-width:0;border:0;background:var(--background);padding:3px 6px;font-size:var(--text-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hd-segb+.hd-segb{border-left:1px solid var(--border)}
 .hd .hd-segb.on{background:var(--hd-acc);color:var(--hd-on)}
+.hd-infile{flex:none;align-self:center;font-size:11px;line-height:1;padding:3px 6px;border-radius:999px;background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}

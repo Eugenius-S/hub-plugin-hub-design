@@ -335,7 +335,29 @@ export function anchorNote(c) {
 
 // сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки, заметки; файл правит он сам.
 // Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
-export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [] }) {
+// --- правки руками прямо в файл (server.py /__canvas/write): что отправить и что отметить «уже в файле» -------------------------------
+// черновики и отправленные, ещё не принятые дизайнером: файл всегда собирается заново от копии — одним полным набором
+export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && hasEffect(c))
+  .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // один элемент — одна запись, последняя
+// ответ сервера → пометки на правках: inFile — записана в файл, noWrite — почему пропущена (осталась дизайнеру)
+export function markWritten(changes, tweaks, file, res) {
+  const done = new Set((res && res.done) || []);
+  const why = Object.fromEntries(((res && res.skipped) || []).map((x) => [x.sel, x.why]));
+  for (const c of changes) {
+    if (c.file !== file || c.state === "done") continue;
+    c.inFile = done.has(c.sel);
+    if (!c.inFile && why[c.sel]) c.noWrite = why[c.sel]; else delete c.noWrite;
+  }
+  for (const t of tweaks) if (t.file === file && t.state !== "done") t.inFile = !!res && res.ops === "done";
+}
+export function markUnwritten(changes, tweaks, file) {
+  for (const c of changes) if (c.file === file) { c.inFile = false; delete c.noWrite; }
+  for (const t of tweaks) if (t.file === file) t.inFile = false;
+}
+// полный путь копии рядом с файлом
+export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/, copy) : "");
+
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {} }) {
   const files = [];
   const add = (f) => { if (!files.includes(f)) files.push(f); };
   const of = (x) => x.file || path;
@@ -357,7 +379,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       const what = describeChange(c);
       if (!what) continue;
       n += 1;
-      lines.push(`${n}. Поправил руками \`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}: ${what}.`);
+      lines.push(`${n}. Поправил руками \`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}: ${what}${c.inFile ? " — уже в файле" : ""}.`);
     }
     for (const d of drawings.filter((x) => of(x) === f)) {
       n += 1;
@@ -366,7 +388,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
     const turned = tweaks.filter((x) => of(x) === f && tweakEffect(x));
     for (const c of turned) {
       n += 1;
-      lines.push(`${n}. ${describeTweak(c)}.`);
+      lines.push(`${n}. ${describeTweak(c)}${c.inFile ? " — уже в файле" : ""}.`);
     }
     for (const e of errors.filter((x) => of(x) === f)) {
       const t = describeErrors(e.items);
@@ -375,8 +397,12 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       lines.push(`${n}. ${t}`);
     }
     if (!n) continue;
-    if (turned.length) lines.push("Крутилки — это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.");
-    if (mine.some(hasEffect)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
+    if (turned.some((c) => !c.inFile)) lines.push("Крутилки — это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.");
+    if (mine.some((c) => hasEffect(c) && !c.inFile)) lines.push("Правки руками я сделал прямо в предпросмотре — перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).");
+    if (mine.some((c) => hasEffect(c) && c.inFile) || turned.some((c) => c.inFile)) {
+      const copy = copyPath(f, copies[f]);
+      lines.push(`Пункты «уже в файле» Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки — на <html>${copy ? `; копия файла до этих правок — \`${copy}\`, её не перезаписывай и не удаляй` : ""}. Вид на экране верный — сохрани его; заменить inline обычной вёрсткой можно, если вид не изменится.`);
+    }
     blocks.push(lines.join("\n"));
   }
   const said = notes.filter((x) => String(x.text || "").trim());
