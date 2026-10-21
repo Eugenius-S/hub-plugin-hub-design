@@ -1,25 +1,26 @@
-// Hub Design: скрипт внутри предпросмотра (его подкладывает server.py). Рисует рамку под курсором, пины комментов, рамку
-// выделения и рисунки; тянуть, менять размер, текст и стили — прямо в документе. Всё, что сделал владелец, уходит странице
-// хаба (postMessage), она ведёт список и шлёт его дизайнеру. Файл на диске скрипт не трогает.
+// Hub Design: the script inside the preview (server.py injects it). Draws the box under the cursor, comment pins, the
+// selection box and drawings; dragging, resizing, text and style edits happen right in the document. Everything the user
+// did goes to the hub page (postMessage), which keeps the list and sends it to the designer. The script never touches the
+// file on disk. UI texts: en by default, ru when the hub page says so (`lang` in the hello and theme messages).
 (() => {
   if (window.__canvasAgent || window.top === window) return;
   window.__canvasAgent = true;
   const ORIGINS = (window.__canvas && window.__canvas.origins) || [];
   let hubOrigin = null;
   let mode = "view";      // view | comment | edit | draw | text
-  let tool = "select";    // инструмент холста: select | hand | text | note | comment | pencil | shape
-  let shape = "free";     // что рисует «draw»: free | arrow | rect | oval
-  let external = false;   // внутри холста: колесо, клавиши и редактор комментария уходят на страницу хаба
-  let inv = 1;            // 1 / масштаб холста: рамки и пины остаются одного размера на экране
-  let T = null;           // цвета хаба (переменных темы во фрейме нет — ядро присылает значениями)
+  let tool = "select";    // canvas tool: select | hand | text | note | comment | pencil | shape
+  let shape = "free";     // what "draw" draws: free | arrow | rect | oval
+  let external = false;   // inside the canvas: the wheel, keys and the comment editor go to the hub page
+  let inv = 1;            // 1 / canvas scale: boxes and pins keep one size on screen
+  let T = null;           // hub colors (the frame has no theme variables: the page sends the values)
   let pins = [];
   let drawings = [];
-  let propList = [];      // свойства, значения которых нужны панели «Правка»
-  let selected = null;    // элемент, выбранный в режимах «Правка» и «Комментарий»
-  let framed = null;      // элемент, которому открыт комментарий
+  let propList = [];      // properties whose values the "Edit" panel needs
+  let selected = null;    // the element selected in the Edit and Comment modes
+  let framed = null;      // the element whose comment is open
   let drag = null;
-  let stroke = null;      // рисунок в процессе
-  const state = new WeakMap();   // элемент → {sel, label, tag, x0, y0, w0, h0, t0, dx, dy, w, h, t, css, attr}
+  let stroke = null;      // the drawing in progress
+  const state = new WeakMap();   // element → {sel, label, tag, x0, y0, w0, h0, t0, dx, dy, w, h, t, css, attr}
   const touched = new Set();
   const undo = [], redo = [];
 
@@ -30,7 +31,36 @@
 
   const send = (msg) => { if (hubOrigin) parent.postMessage({ canvas: 1, ...msg }, hubOrigin); };
 
-  // --- оверлей в тени: стили дизайна его не трогают, его — дизайн -------------------------------------------------
+  // --- UI texts: en by default, ru when the hub page says so. Looked up at use time, never cached ----------------
+  const STR = {
+    en: {
+      parent: "Select parent",
+      revert: "Revert to original",
+      resize: "Resize",
+      lost: "Element not found — the point stays where it was. ",
+      comment: "Comment",
+      comment_ph: "What should change here?",
+      close: "Close",
+      delete: "Delete",
+      send: "Send",
+    },
+    ru: {
+      parent: "Выбрать родителя",
+      revert: "Вернуть как было",
+      resize: "Размер",
+      lost: "Элемент не найден — точка на прежнем месте. ",
+      comment: "Комментарий",
+      comment_ph: "Что поменять здесь?",
+      close: "Закрыть",
+      delete: "Удалить",
+      send: "Отправить",
+    },
+  };
+  let lang = "en";   // from the `lang` field of the hello and theme messages; any language but ru shows English
+  const t = (key) => (STR[lang] || STR.en)[key] ?? STR.en[key] ?? key;
+  const normLang = (l) => (String(l || "").split("-")[0].toLowerCase() === "ru" ? "ru" : "en");
+
+  // --- overlay in a shadow root: the design's styles do not touch it, and it does not touch the design -------------------------------------------------
   const host = document.createElement("div");
   host.setAttribute("data-canvas-overlay", "");
   host.style.cssText = "all:initial;position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;";
@@ -64,19 +94,26 @@
     svg.draw{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
     svg.draw *{fill:none;stroke:var(--a);stroke-width:calc(3px * var(--s));stroke-linecap:round;stroke-linejoin:round}
     svg.draw .sent{stroke:var(--mu)}
-  </style><svg class="draw"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up" title="Выбрать родителя">↑</button><button class="rev" title="Вернуть как было">↺</button></div><div class="grip" title="Размер"></div></div><div class="pins"></div>`;
+  </style><svg class="draw"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up">↑</button><button class="rev">↺</button></div><div class="grip"></div></div><div class="pins"></div>`;
   const hoverBox = root.querySelector(".hover");
   const selBox = root.querySelector(".sel");
   const frameBox = root.querySelector(".frame");
   const pinsBox = root.querySelector(".pins");
   const svg = root.querySelector("svg.draw");
+  // texts of the overlay: the static ones and the open comment editor; called after the template, the editor and a language change
+  const LABELS = [[".up", "title", "parent"], [".rev", "title", "revert"], [".grip", "title", "resize"], [".ed h4", "textContent", "comment"],
+    [".ed textarea", "placeholder", "comment_ph"], [".ed .x", "textContent", "close"], [".ed .del", "textContent", "delete"], [".ed .go", "textContent", "send"]];
+  function applyLabels() {
+    for (const [sel, prop, key] of LABELS) { const n = root.querySelector(sel); if (n) n[prop] = t(key); }
+  }
+  applyLabels();
   const mount = () => { if (!host.isConnected) document.documentElement.appendChild(host); };
   mount();
   new MutationObserver(mount).observe(document.documentElement, { childList: true });
 
   const ours = (el) => el === host || (el && el.getRootNode && el.getRootNode() === root);
 
-  // --- селектор и подпись элемента ---------------------------------------------------------------------------------
+  // --- selector and label of an element ---------------------------------------------------------------------------------
   const unique = (s, el) => { try { const l = document.querySelectorAll(s); return l.length === 1 && l[0] === el; } catch { return false; } };
   const transient = /^(is-|js-|has-|active$|hover$|focus|open$|show$|visible$|in-view|animate)/;
   function selector(el) {
@@ -99,7 +136,7 @@
       }
       parts.unshift(part);
       const s = parts.join(" > ");
-      // уникальный и узнаваемый: с классом или id где-то в пути, а не голое «a:nth-of-type(4)»
+      // unique and recognizable: with a class or id somewhere in the path, not a bare "a:nth-of-type(4)"
       if (unique(s, el) && (parts.some((p) => /[.#]/.test(p)) || parts.length >= 4)) return s;
       cur = cur.parentElement;
     }
@@ -127,7 +164,7 @@
     return el;
   };
 
-  // --- рамка под курсором ------------------------------------------------------------------------------------------
+  // --- box under the cursor ------------------------------------------------------------------------------------------
   function showHover(el) {
     if (!el || mode === "view" || mode === "draw" || drag) { hoverBox.style.display = "none"; return; }
     const r = el.getBoundingClientRect();
@@ -135,14 +172,14 @@
     hoverBox.firstChild.textContent = `${short(el)}  ${Math.round(r.width)}×${Math.round(r.height)}`;
   }
 
-  // --- пины --------------------------------------------------------------------------------------------------------
-  // элемент пина: сперва его селектор, но только если там всё ещё он (приметы совпали); иначе ищем по приметам во всём
-  // документе. Не нашли — пин остаётся на своих координатах с пометкой «элемент не найден», на чужой не садится.
+  // --- pins --------------------------------------------------------------------------------------------------------
+  // the pin's element: its selector first, but only if it is still the same element (fingerprint matches); otherwise search by fingerprint in the whole
+  // document. Not found: the pin stays at its coordinates marked "element not found" and never lands on a foreign element.
   const A = window.HubAnchor;
-  const RECHECK = 300;           // не чаще: пока макет живёт анимацией, DOM меняется каждый кадр
+  const RECHECK = 300;           // not more often: while the design animates, the DOM changes every frame
   let domRev = 0;
   new MutationObserver(() => { domRev += 1; }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["id", "class"] });
-  const bound = new Map();       // id пина → { el, lost, rev, at, key }
+  const bound = new Map();       // pin id → { el, lost, rev, at, key }
   function resolve(p) {
     const key = p.sel + "|" + (p.fp ? p.fp.text + p.fp.x + p.fp.y : "");
     const c = bound.get(p.id);
@@ -159,7 +196,7 @@
     if (A && p.fp) reportPin(p, r);
     return r;
   }
-  const told = new Map();        // id → что страница уже знает про пин (чтобы не повторять)
+  const told = new Map();        // id → what the page already knows about the pin (to avoid repeating it)
   function reportPin(p, r) {
     const sel = r.el ? selector(r.el) : p.sel;
     const was = told.get(p.id);
@@ -199,7 +236,7 @@
       }
       n.textContent = String(p.n);
       n.className = "pin " + (p.state || "draft") + (p.lost ? " lost" : "");
-      n.title = (p.lost ? "Элемент не найден — точка на прежнем месте. " : "") + (p.text || "");
+      n.title = (p.lost ? t("lost") : "") + (p.text || "");
     }
     for (const n of have.values()) n.remove();
     const ed = root.querySelector(".ed");
@@ -259,7 +296,7 @@
     if (!p) return;
     root.querySelector(".ed")?.remove();
     framed = find(p.sel);
-    if (external) {   // окно комментария рисует страница хаба: во фрейме в масштабе холста оно стало бы крошечным
+    if (external) {   // the hub page draws the comment window: inside the frame at canvas scale it would be tiny
       const at = pinXY(p);
       send({ t: "editor", id, x: at.x - scrollX, y: at.y - scrollY });
       return;
@@ -267,7 +304,7 @@
     const ed = document.createElement("div");
     ed.className = "ed";
     ed.dataset.id = id;
-    ed.innerHTML = `<h4>Комментарий</h4><textarea placeholder="Что поменять здесь?"></textarea><div class="row"><span><button class="b x">Закрыть</button><button class="b del">Удалить</button></span><button class="b go">Отправить</button></div>`;
+    ed.innerHTML = `<h4></h4><textarea></textarea><div class="row"><span><button class="b x"></button><button class="b del"></button></span><button class="b go"></button></div>`;
     const ta = ed.querySelector("textarea");
     ta.value = p.text || "";
     const close = () => { ed.remove(); framed = null; };
@@ -287,11 +324,12 @@
     ed.querySelector(".x").addEventListener("click", () => done(false));
     ed.querySelector(".del").addEventListener("click", () => { close(); send({ t: "remove", id }); });
     root.append(ed);
+    applyLabels();
     place();
     setTimeout(() => ta.focus({ preventScroll: true }), 0);
   }
 
-  // --- правки руками -----------------------------------------------------------------------------------------------
+  // --- hand edits -----------------------------------------------------------------------------------------------
   function track(el) {
     let s = state.get(el);
     if (!s) {
@@ -308,7 +346,7 @@
     if (!s) return;
     send({ t: "change", change: { sel: s.sel, label: s.label, tag: s.tag, x0: s.x0, y0: s.y0, w0: s.w0, h0: s.h0, dx: s.dx, dy: s.dy, w: s.w, h: s.h, t0: s.t0, t: s.t, css: s.css } });
   };
-  // собрать вид элемента заново из записи: исходный style, затем сдвиг, размер, стили; текст — отдельно
+  // rebuild the element's look from its record: original style, then shift, size, styles; text separately
   function paintState(el) {
     const s = state.get(el);
     if (s.attr == null) el.removeAttribute("style"); else el.setAttribute("style", s.attr);
@@ -355,14 +393,14 @@
   }
   const textLeaf = (el) => el.childNodes.length > 0 && [...el.childNodes].every((n) => n.nodeType === 3 || (n.nodeType === 1 && n.tagName === "BR"));
 
-  // --- выбранный элемент и его свойства для панели ------------------------------------------------------------------
+  // --- the selected element and its properties for the panel ------------------------------------------------------------------
   const hex = (v) => {
     const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(v);
     if (!m) return v;
     if (m[4] === "0") return "transparent";
     return "#" + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, "0")).join("");
   };
-  // что записано в стиле макета (инлайн или правило таблицы стилей): computed отдаёт уже раскрытые дорожки, а нужна форма repeat(N, …)
+  // what the design's style declares (inline or a stylesheet rule): computed gives already expanded tracks, but the repeat(N, …) form is needed
   function declared(el, prop) {
     let v = el.style.getPropertyValue(prop);
     if (v) return v.trim();
@@ -371,12 +409,12 @@
         if (r.cssRules && (r.media ? matchMedia(r.media.mediaText).matches : !r.selectorText)) walk(r.cssRules);
         if (!r.selectorText) continue;
         let hit = false;
-        try { hit = el.matches(r.selectorText); } catch { /* чужой селектор */ }
+        try { hit = el.matches(r.selectorText); } catch { /* a foreign selector */ }
         const x = hit ? r.style.getPropertyValue(prop) : "";
         if (x) v = x.trim();
       }
     };
-    for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch { /* чужой домен */ } }
+    for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch { /* a foreign origin */ } }
     return v;
   }
   function sendSelected() {
@@ -463,7 +501,7 @@
     el.addEventListener("keydown", onKey, true);
   }
 
-  // --- рисование от руки -------------------------------------------------------------------------------------------
+  // --- freehand drawing -------------------------------------------------------------------------------------------
   function finishShape(a, b, kind) {
     const bx = Math.min(a[0], b[0]), by = Math.min(a[1], b[1]), bw = Math.abs(b[0] - a[0]), bh = Math.abs(b[1] - a[1]);
     if (kind !== "arrow" && (bw < 8 || bh < 8)) return;
@@ -503,7 +541,7 @@
     Object.entries(set).forEach(([k, v]) => node.setAttribute(k, v));
   }
 
-  // --- события документа: в режимах коммента, правки и рисунка клики дизайну не достаются --------------------------
+  // --- document events: in the comment, edit and draw modes clicks do not reach the design --------------------------
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
   addEventListener("pointermove", (e) => {
     if (stroke) {
@@ -578,7 +616,7 @@
     stop(e);
     if (mode === "edit" && pickable(e.target) && textLeaf(e.target)) { select(e.target); textEdit(e.target); }
   }, true);
-  // колесо без Ctrl/⌘ листает страницу внутри рамки, пока она длиннее окна (рамка — экранной высоты); иначе уходит холсту (зум, панорама)
+  // the wheel without Ctrl/⌘ scrolls the page inside the frame while it is taller than the window (the frame is screen height); otherwise it goes to the canvas (zoom, pan)
   const wheelOut = (e) => {
     if (!external) return;
     const root = document.scrollingElement || document.documentElement;
@@ -587,7 +625,7 @@
     send({ t: "wheel", x: e.clientX, y: e.clientY, dx: e.deltaX, dy: e.deltaY, ctrl: e.ctrlKey || e.metaKey });
   };
   addEventListener("wheel", wheelOut, { passive: false });
-  // клавиши холста, пока фокус во фрейме: пробел, буквы инструментов, Esc, масштаб, отмена
+  // canvas keys while the focus is in the frame: space, tool letters, Esc, zoom, undo
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const KEYS = /^[vhtncprf0]$/i;
   const keyOut = (down) => (e) => {
@@ -606,16 +644,25 @@
   addEventListener("keyup", keyOut(false), true);
   addEventListener("scroll", () => send({ t: "scroll", x: scrollX, y: scrollY }), { passive: true });
 
-  // цвета хаба: рамки и пины в цвете акцента темы, окошки — в её фоне и шрифте
-  function applyTheme(t) {
-    if (!t) return;
-    T = t;
+  // hub colors: boxes and pins in the theme accent, popups in its background and font
+  function applyTheme(th) {
+    if (!th) return;
+    T = th;
     const set = (k, v) => v && host.style.setProperty(k, v);
-    set("--a", t.primary); set("--on", t.onPrimary); set("--bg", t.bg); set("--fg", t.fg); set("--bd", t.border); set("--mu", t.muted); set("--font", t.font);
+    set("--a", th.primary); set("--on", th.onPrimary); set("--bg", th.bg); set("--fg", th.fg); set("--bd", th.border); set("--mu", th.muted); set("--font", th.font);
+  }
+  // the page names its language in hello and theme; a change re-labels the overlay and the pins
+  function setLang(l) {
+    if (l == null) return;
+    const next = normLang(l);
+    if (next === lang) return;
+    lang = next;
+    applyLabels();
+    drawPins();
   }
 
-  // --- крутилки: объявление макета (#hub-tweaks) и применение значений страницы хаба ------------------------------------
-  // разбирает и проверяет страница хаба; здесь — только прочитать объявление, текущие значения и записать var/attr
+  // --- tweaks: the design's declaration (#hub-tweaks) and applying values from the hub page ------------------------------------
+  // the hub page parses and validates; here we only read the declaration and current values and write var/attr
   function tweaksDecl() {
     const node = document.getElementById("hub-tweaks");
     if (!node) return null;
@@ -639,7 +686,7 @@
     if (selected) place();
   }
 
-  // --- ошибки макета: список собирает early.js (с самой загрузки), сюда — только отправка странице -------------------
+  // --- design errors: early.js collects the list (from the very load), here we only send it to the page -------------------
   let errTimer = 0, errSent = "";
   function sendErrors() {
     errTimer = 0;
@@ -651,7 +698,7 @@
   }
   window.__hdOnError = () => { if (!errTimer) errTimer = setTimeout(sendErrors, 300); };
 
-  // --- связь со страницей хаба -------------------------------------------------------------------------------------
+  // --- link to the hub page -------------------------------------------------------------------------------------
   addEventListener("message", (e) => {
     const m = e.data;
     if (e.source !== parent || !ORIGINS.includes(e.origin) || !m || m.canvas !== 1) return;
@@ -660,6 +707,7 @@
       if (m.props) propList = m.props;
       external = !!m.external;
       if (m.theme) applyTheme(m.theme);
+      setLang(m.lang);
       send({ t: "ready", path, tweaks: tweaksDecl(), w: innerWidth, h: innerHeight, dh: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) });
       sendHistory();
       errSent = "";
@@ -678,6 +726,7 @@
       host.style.setProperty("--s", String(inv));
     } else if (m.t === "theme") {
       applyTheme(m.theme);
+      setLang(m.lang);
     } else if (m.t === "deselect") {
       select(null);
     } else if (m.t === "unframe") {
@@ -715,7 +764,7 @@
     }
   });
 
-  // файл дизайна поменялся на диске (дизайнер внёс правки) — странице: перезагрузить предпросмотр
+  // the design file changed on disk (the designer made edits): tell the page to reload the preview
   let watching = false;
   function watch() {
     if (watching) return;
@@ -729,7 +778,7 @@
           if (last != null && mtime !== last) send({ t: "changed", mtime });
           last = mtime;
         }
-      } catch { /* процесс перезапускается — следующий круг */ }
+      } catch { /* the process is restarting: next round */ }
       setTimeout(tick, document.hidden ? 4000 : 1500);
     };
     tick();

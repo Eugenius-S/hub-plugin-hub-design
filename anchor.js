@@ -1,21 +1,21 @@
-// Hub Design: приметы элемента под пином. Пин держится не за один селектор, а за набор примет (id, ближайший предок с id,
-// тег, текст, родной текст соседей, классы, размер, место). После перезагрузки макета элемент ищут по приметам: лучшее
-// совпадение выше порога — пин садится на него; нет такого или два одинаково похожих — «элемент не найден», пин остаётся
-// на своих координатах и не садится на чужой. Файл — и классический скрипт (его подкладывает server.py перед agent.js),
-// и модуль для тестов: DOM берёт только через узкий набор свойств.
+// Hub Design: fingerprints of the element under a pin. A pin holds not on one selector but on a set of marks (id, nearest
+// ancestor with an id, tag, text, own text of the neighbors, classes, size, place). After the design is reloaded the element
+// is searched by these marks: the best match above the threshold gets the pin; none, or two equally similar ones: "element
+// not found", the pin stays at its own coordinates and never lands on a foreign element. The file is both a classic script
+// (server.py injects it before agent.js) and a module for tests: it reads the DOM through a narrow set of properties only.
 (function (g) {
   const TEXT_MAX = 80;
   const NEAR_MAX = 60;
-  const SCAN_MAX = 4000;       // сколько кандидатов смотрим в большом документе
-  const FOUND = 0.65;          // порог поиска по приметам: ниже — «не найден»
-  const TRUST = 0.85;          // селектор что-то нашёл: оставляем его, только если элемент почти не изменился
-  const MARGIN = 0.04;         // лучший должен оторваться от второго, иначе это двойник и выбирать нельзя
+  const SCAN_MAX = 4000;       // how many candidates we look at in a big document
+  const FOUND = 0.65;          // search threshold by marks: below it, "not found"
+  const TRUST = 0.85;          // the selector found something: keep it only if the element has hardly changed
+  const MARGIN = 0.04;         // the best must beat the second one, otherwise it is a twin and we must not choose
   const W = { tag: 0.08, text: 0.2, attr: 0.07, near: 0.15, cls: 0.08, anc: 0.08, path: 0.04, size: 0.1, pos: 0.2 };
   const transient = /^(is-|js-|has-|active$|hover$|focus|open$|show$|visible$|in-view|animate)/;
 
   const norm = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
   const words = (s) => String(s || "").toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
-  // 0..1; null — сравнивать нечего (с обеих сторон пусто)
+  // 0..1; null: nothing to compare (empty on both sides)
   function sim(a, b) {
     const x = words(a), y = words(b);
     if (!x.length && !y.length) return null;
@@ -33,7 +33,7 @@
   };
   const classesOf = (el) => [...(el.classList || [])].filter((c) => !transient.test(c)).slice(0, 3);
 
-  // rect — { x, y, w, h } элемента в координатах страницы
+  // rect: { x, y, w, h } of the element in page coordinates
   function fingerprint(el, rect) {
     const par = el.parentElement;
     let anc = "", path = [];
@@ -49,7 +49,7 @@
     };
   }
 
-  const part = (v, weight) => (v == null ? weight * 0.5 : v * weight);   // «сравнивать нечего» — полбалла, не ноль и не всё
+  const part = (v, weight) => (v == null ? weight * 0.5 : v * weight);   // "nothing to compare" is half a point, not zero and not all
   const ratio = (a, b) => (a === b ? 1 : Math.min(a, b) / Math.max(a, b, 1));
   function score(fp, c) {
     if (fp.tag !== c.tag) return 0;
@@ -67,10 +67,10 @@
     return s;
   }
 
-  // тот ли это элемент (для селектора, который что-то нашёл)
+  // is this the same element (for a selector that found something)
   const matches = (fp, el, rectOf) => !!fp && score(fp, fingerprint(el, rectOf(el))) >= TRUST;
 
-  // найти элемент по приметам: { el, score } или null
+  // find the element by its marks: { el, score } or null
   function locate(fp, doc, rectOf) {
     if (!fp) return null;
     if (fp.id) {

@@ -1,4 +1,4 @@
-"""Процесс Hub Design: отдаёт только файлы веба из папок сессий и проектов, подкладывает agent.js, чужим не отвечает."""
+"""The Hub Design process: serves only web files from session and project folders, injects agent.js, never answers foreign sites."""
 import glob
 import http.client
 import json
@@ -14,7 +14,7 @@ import unittest.mock
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="dc-test-")
-# живой хаб не трогаем: состояние и настройки — временные, безусловно
+# never touch the live hub: state and settings are temporary, unconditionally
 os.environ["HUB_STATE_DIR"] = os.path.join(TMP, "state")
 os.environ["HUB_CONFIG"] = os.path.join(TMP, "hub.json")
 os.environ["HUB_DESIGN_PORT"] = "0"
@@ -31,7 +31,7 @@ def setUpModule():
     os.makedirs(OUT)
     os.makedirs(os.environ["HUB_STATE_DIR"])
     with open(os.path.join(SITE, "index.html"), "w", encoding="utf-8") as f:
-        f.write("<!doctype html><html><body><h1>Привет</h1></body></html>")
+        f.write("<!doctype html><html><body><h1>Hello, café</h1></body></html>")
     with open(os.path.join(SITE, "assets", "clip.mp4"), "wb") as f:
         f.write(bytes(range(256)) * 4)
     with open(os.path.join(SITE, ".git", "config.json"), "w") as f:
@@ -39,7 +39,7 @@ def setUpModule():
     with open(os.path.join(SITE, "secret.env"), "w") as f:
         f.write("KEY=1")
     with open(os.path.join(OUT, "x.html"), "w") as f:
-        f.write("<p>чужое</p>")
+        f.write("<p>foreign</p>")
     with open(os.environ["HUB_CONFIG"], "w", encoding="utf-8") as f:
         json.dump({"projects": {"site": {"path": SITE}}}, f)
 
@@ -80,7 +80,7 @@ class Server(unittest.TestCase):
         self.assertEqual(r.status, 200)
         text = body.decode()
         self.assertIn('<script src="/__canvas/agent.js"></script></body>', text)
-        self.assertLess(text.index("/__canvas/anchor.js"), text.index("/__canvas/agent.js"))   # приметы пина — до агента
+        self.assertLess(text.index("/__canvas/anchor.js"), text.index("/__canvas/agent.js"))   # pin fingerprints come before the agent
         self.assertIn('"http://localhost:8787"', text)
         self.assertIn("frame-ancestors 'self' http://localhost:", r.getheader("Content-Security-Policy"))
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
@@ -139,7 +139,7 @@ class Server(unittest.TestCase):
         ok = os.path.join(os.path.realpath(SITE), "index.html")
         gone = os.path.join(os.path.realpath(SITE), "weekly", "weekly-2026-10-17.html")
         out = os.path.join(os.path.realpath(OUT), "x.html")
-        nowhere = "/!Проекты/Icons8/analytics/weekly/weekly-2026-10-17.html"
+        nowhere = "/!Projects/demo/analytics/weekly/weekly-2026-10-17.html"
         from urllib.parse import urlencode
         q = "/__canvas/have?" + urlencode([("path", p) for p in (ok, gone, out, nowhere)])
         r, body = self.get(q, headers={"Origin": "http://localhost:8787"})
@@ -147,7 +147,7 @@ class Server(unittest.TestCase):
         self.assertEqual(json.loads(body), {ok: "ok", gone: "missing", out: "denied", nowhere: "missing"})
         self.assertEqual(r.getheader("Access-Control-Allow-Origin"), "http://localhost:8787")
         r, _ = self.get(q, headers={"Origin": "http://evil.example"})
-        self.assertIsNone(r.getheader("Access-Control-Allow-Origin"))   # читать ответ может только страница хаба
+        self.assertIsNone(r.getheader("Access-Control-Allow-Origin"))   # only the hub page may read the answer
         r, _ = self.get(q, headers={"Sec-Fetch-Site": "cross-site"})
         self.assertEqual(r.status, 403)
 
@@ -171,12 +171,12 @@ class Server(unittest.TestCase):
         r, body = self.get(self.url(gone))
         self.assertEqual(r.status, 404)
         self.assertIn("text/html", r.getheader("Content-Type"))
-        self.assertIn("Файл не найден", body.decode())
-        self.assertIn("a&amp;b.html", body.decode())                    # путь экранирован
+        self.assertIn("File not found", body.decode())
+        self.assertIn("a&amp;b.html", body.decode())                    # the path is escaped
         self.assertNotIn("no file", body.decode())
-        self.assertIn("frame-ancestors", r.getheader("Content-Security-Policy"))   # в рамке показывается
+        self.assertIn("frame-ancestors", r.getheader("Content-Security-Policy"))   # shown in a frame
         r, body = self.get(self.url(os.path.join(os.path.realpath(SITE), "gone.png")))
-        self.assertEqual(json.loads(body), {"error": "no file"})        # не документ — как было
+        self.assertEqual(json.loads(body), {"error": "no file"})        # not a document: as before
 
     def test_range_for_video(self):
         r, body = self.get(self.url(os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")), headers={"Range": "bytes=10-19"})
@@ -188,7 +188,7 @@ class Server(unittest.TestCase):
         try:
             from core import journal
         except ImportError:
-            self.skipTest("кода хаба нет в PYTHONPATH")
+            self.skipTest("hub code is not on PYTHONPATH")
         j = journal.Journal(os.path.join(os.environ["HUB_STATE_DIR"], "journal.jsonl"))
         work = os.path.join(TMP, "work")
         os.makedirs(work, exist_ok=True)
@@ -312,7 +312,7 @@ class Inject(unittest.TestCase):
         tag = server.EARLY_TAG
         self.assertIn(b"<head>" + tag + b"<title>", server.inject(b"<!doctype html><html><HEAD><title>x</title></HEAD><body></body></html>").replace(b"<HEAD>", b"<head>"))
         self.assertTrue(server.inject(b"<html lang=ru><body>x</body>").startswith(b"<html lang=ru>" + tag))
-        self.assertTrue(server.inject(b"<!DOCTYPE html><p>x</p>").startswith(b"<!DOCTYPE html>" + tag))   # doctype остаётся первым — иначе режим совместимости
+        self.assertTrue(server.inject(b"<!DOCTYPE html><p>x</p>").startswith(b"<!DOCTYPE html>" + tag))   # doctype stays first, otherwise quirks mode
         self.assertTrue(server.inject(b"<p>x</p>").startswith(tag))
         self.assertEqual(server.inject(b"<head></head><body></body>").count(tag), 1)
 
@@ -320,7 +320,7 @@ class Inject(unittest.TestCase):
         src = open(os.path.join(server.HERE, "early.js"), encoding="utf-8").read()
         self.assertIn('addEventListener("error"', src)
         self.assertIn('addEventListener("unhandledrejection"', src)
-        self.assertNotIn("console.error", src.replace("не console.error", ""))
+        self.assertNotIn("console.error", src.replace("not console.error", ""))
 
 
 if __name__ == "__main__":
@@ -342,7 +342,7 @@ if mode == "ok":
 
 
 class Pdf(unittest.TestCase):
-    """PDF: свой Chrome со своим профилем во временной папке; нет Chrome — 501 (страница печатает рамку сама)."""
+    """PDF: our own Chrome with its own profile in a temp folder; no Chrome: 501 (the page prints the frame itself)."""
 
     @classmethod
     def setUpClass(cls):
@@ -394,7 +394,7 @@ class Pdf(unittest.TestCase):
         self.assertIn("--window-size=1200,700", args)
         self.assertIn("--headless", args)
         self.assertTrue(args[-1].startswith(f"http://127.0.0.1:{self.port}/f/") and args[-1].endswith("index.html?print=1&w=1200&h=700"))
-        self.assertFalse(os.path.exists(os.path.dirname(profile)), "временная папка убрана")
+        self.assertFalse(os.path.exists(os.path.dirname(profile)), "the temp folder is removed")
 
     def test_no_chrome_is_501_so_the_page_prints_itself(self):
         os.environ["HUB_TEST_CHROME"] = os.path.join(TMP, "nope")
@@ -406,7 +406,7 @@ class Pdf(unittest.TestCase):
         os.environ["FAKE_MODE"] = "none"
         r, body = self.get(self.page + "?pdf=1")
         self.assertEqual(r.status, 500)
-        self.assertIn("не оставил PDF", json.loads(body)["error"])
+        self.assertIn("left no PDF", json.loads(body)["error"])
 
     def test_hung_chrome_is_killed_by_pid(self):
         os.environ["FAKE_MODE"] = "hang"
@@ -416,7 +416,7 @@ class Pdf(unittest.TestCase):
         finally:
             server.PDF_TIMEOUT = old
         self.assertEqual(r.status, 500)
-        self.assertIn("не успел", json.loads(body)["error"])
+        self.assertIn("did not finish", json.loads(body)["error"])
         pid = int(open(self.log + ".pid").read())
         time.sleep(0.3)
         with self.assertRaises(ProcessLookupError):
@@ -456,20 +456,20 @@ class Pdf(unittest.TestCase):
         found = glob.glob(os.path.expanduser("~/.config/hub-core/chrome-headless-shell/**/chrome-headless-shell"), recursive=True)
         found = [f for f in found if os.path.isfile(f)]
         if not found:
-            self.skipTest("нет chrome-headless-shell")
+            self.skipTest("no chrome-headless-shell")
         os.environ["HUB_TEST_CHROME"] = found[0]
         r, body = self.get(self.page + "?pdf=1&w=1200&h=700", timeout=60)
         self.assertEqual(r.status, 200, body[:200])
         self.assertTrue(body.startswith(b"%PDF"))
         box = re.search(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)", body)
-        self.assertTrue(box, "размер страницы в PDF")
-        self.assertAlmostEqual(float(box.group(1)), 1200 * 0.75, delta=2)   # 1 px = 0,75 pt
+        self.assertTrue(box, "page size in the PDF")
+        self.assertAlmostEqual(float(box.group(1)), 1200 * 0.75, delta=2)   # 1 px = 0.75 pt
         self.assertAlmostEqual(float(box.group(2)), 700 * 0.75, delta=2)
 
     def real(self):
         found = [f for f in glob.glob(os.path.expanduser("~/.config/hub-core/chrome-headless-shell/**/chrome-headless-shell"), recursive=True) if os.path.isfile(f)]
         if not found:
-            self.skipTest("нет chrome-headless-shell")
+            self.skipTest("no chrome-headless-shell")
         os.environ["HUB_TEST_CHROME"] = found[0]
 
     def pdf_of(self, name, html, query="w=1000&h=600"):
@@ -481,7 +481,7 @@ class Pdf(unittest.TestCase):
 
     def test_real_chrome_tall_document_is_one_tall_page(self):
         self.real()
-        body = self.pdf_of("tall.html", "<!doctype html><body style='margin:0'><div style='height:2400px;background:#abc'>тут высокий макет</div>")
+        body = self.pdf_of("tall.html", "<!doctype html><body style='margin:0'><div style='height:2400px;background:#abc'>a tall design here</div>")
         box = re.search(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)", body)
         self.assertAlmostEqual(float(box.group(1)), 1000 * 0.75, delta=2)
         self.assertAlmostEqual(float(box.group(2)), 2400 * 0.75, delta=3)
@@ -489,7 +489,7 @@ class Pdf(unittest.TestCase):
 
     def test_real_chrome_slides_are_one_page_each_at_slide_size(self):
         self.real()
-        slide = "<section class='slide' style='width:800px;height:450px;background:#%s'>слайд</section>"
+        slide = "<section class='slide' style='width:800px;height:450px;background:#%s'>slide</section>"
         body = self.pdf_of("deck.html", "<!doctype html><body style='margin:0'>" + "".join(slide % c for c in ("e66", "6e6", "66e")) + "</body>")
         box = re.search(rb"/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)", body)
         self.assertAlmostEqual(float(box.group(1)), 800 * 0.75, delta=2)
@@ -498,11 +498,11 @@ class Pdf(unittest.TestCase):
 
 
 class Write(unittest.TestCase):
-    """POST /__canvas/write: правка руками — точечно в файл, перед первой записью копия <имя>.r<N>.html."""
+    """POST /__canvas/write: a hand edit goes point by point into the file, with a copy <name>.r<N>.html before the first write."""
 
     ORIGIN = "http://localhost:8787"
-    HTML = ('<!doctype html><html><body><div class="card"><a class="btn" href="/x">Купить</a></div>'
-            '<div class="card"><a class="btn" href="/y">Купить</a></div></body></html>')
+    HTML = ('<!doctype html><html><body><div class="card"><a class="btn" href="/x">Buy</a></div>'
+            '<div class="card"><a class="btn" href="/y">Buy</a></div></body></html>')
     BTN = "div.card:nth-of-type(2) > a.btn"
 
     @classmethod
@@ -544,7 +544,7 @@ class Write(unittest.TestCase):
         return r, (json.loads(out) if out else {})
 
     def move(self, dx, **kw):
-        return {"path": self.path, "round": 3, "changes": [{"sel": self.BTN, "label": "Купить", "tag": "a", "dx": dx, "dy": 0}], **kw}
+        return {"path": self.path, "round": 3, "changes": [{"sel": self.BTN, "label": "Buy", "tag": "a", "dx": dx, "dy": 0}], **kw}
 
     def test_first_write_keeps_a_copy_and_edits_only_the_element(self):
         r, d = self.post(self.move(12))
@@ -576,10 +576,10 @@ class Write(unittest.TestCase):
         self.assertEqual([f for f in os.listdir(os.path.dirname(self.path)) if ".r" in f], [])
 
     def test_copy_name_does_not_overwrite_an_existing_file(self):
-        self.put(os.path.join(os.path.dirname(self.path), "page.r3.html"), "<p>прошлая копия</p>")
+        self.put(os.path.join(os.path.dirname(self.path), "page.r3.html"), "<p>previous copy</p>")
         _, d = self.post(self.move(5))
         self.assertNotEqual(d["copy"], "page.r3.html")
-        self.assertEqual(self.text(os.path.join(os.path.dirname(self.path), "page.r3.html")), "<p>прошлая копия</p>")
+        self.assertEqual(self.text(os.path.join(os.path.dirname(self.path), "page.r3.html")), "<p>previous copy</p>")
         self.assertEqual(self.text(os.path.join(os.path.dirname(self.path), d["copy"])), self.HTML)
 
     def test_author_in_turn_means_409_and_file_untouched(self):
@@ -591,11 +591,11 @@ class Write(unittest.TestCase):
     def test_file_changed_by_someone_else_means_409(self):
         _, a = self.post(self.move(12))
         time.sleep(0.02)
-        self.put(self.path, self.text() + "<!-- дизайнер -->")
+        self.put(self.path, self.text() + "<!-- designer -->")
         os.utime(self.path, (time.time() + 5, time.time() + 5))
         r, d = self.post(self.move(30, copy=a["copy"], fmtime=a["fmtime"]))
         self.assertEqual((r.status, d["error"]), (409, "changed"))
-        self.assertIn("дизайнер", self.text())
+        self.assertIn("designer", self.text())
         self.assertIn("12px", self.text())
 
     def test_copy_name_from_the_outside_is_refused(self):
@@ -643,7 +643,7 @@ class Write(unittest.TestCase):
 
 
 class AutoSend(unittest.TestCase):
-    """Автоотправка (0.8.1): плашки «Отправить дизайнеру» над полем нет, получатель — выбранный внизу, комментарии не трогаем."""
+    """Auto-send (0.8.1): no \"Send to the designer\" banner above the field, the recipient is the one picked below, comments are left alone."""
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def src(self, name):
@@ -652,6 +652,7 @@ class AutoSend(unittest.TestCase):
 
     def test_no_banner_and_no_reset(self):
         main, css = self.src("main.js"), self.src("style.css")
+        # the Russian words are the old banner texts, kept on purpose: they must not come back in any language table
         for word in ("hd-banner", "hd-go", "hd-drop", "Отправьте правки", "Сбросить"):
             self.assertNotIn(word, main + css, word)
 
@@ -659,9 +660,9 @@ class AutoSend(unittest.TestCase):
         main = self.src("main.js")
         body = main[main.index("async function autoSend()"):]
         body = body[:body.index("\n}\n")]
-        self.assertIn('hub.post("/api/send", { session: P.session, text })', body)   # P.session — то, что выбрано в «Кому уходят правки»
-        self.assertIn("comments: [], notes: [], errors: []", body)   # комментарии уходят своей кнопкой, не автоотправкой
-        self.assertIn("flushWrite", body)   # сперва запись в файл — пункты уходят с «уже в файле»
+        self.assertIn('hub.post("/api/send", { session: P.session, text })', body)   # P.session is what is picked in the edit recipient selector
+        self.assertIn("comments: [], notes: [], errors: []", body)   # comments go by their own button, not by auto-send
+        self.assertIn("flushWrite", body)   # the file write comes first: items go marked as already in the file
 
     def test_watches_every_paint(self):
         main = self.src("main.js")
@@ -671,8 +672,8 @@ class AutoSend(unittest.TestCase):
         main = self.src("main.js")
         card = main[main.index("function paintCard()"):main.index("function paintComments()")]
         for word in ("draftChanges", "draftTweaks", "draftDrawings", "P.changes", "P.tweaks", "P.drawings"):
-            self.assertNotIn(word, card, word)   # над полем только комментарии: пины, заметки, ошибки макета
+            self.assertNotIn(word, card, word)   # above the field only comments: pins, notes, design errors
         comments = main[main.index("function paintComments()"):main.index("function paintChat()")]
         for word in ("dropEdit.change", "dropEdit.tweak", "dropEdit.drawing"):
-            self.assertIn(word, comments, word)   # × у правки руками — во вкладке «Комментарии»
+            self.assertIn(word, comments, word)   # the × of a hand edit lives in the Comments tab
 

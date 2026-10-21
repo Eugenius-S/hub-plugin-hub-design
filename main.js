@@ -1,27 +1,128 @@
-// Hub Design: холст с HTML-дизайнами и разговор с дизайнером слева. На холсте (canvas.js) фреймы-артборды: выбор — рамка и
-// перетаскивание элементов внутри фрейма, стили и цвет — в панели, «Комментарий» — клик ставит пин с текстом, карандаш и
-// фигуры — отметить место, заметка — стикер на холсте. Правки руками уходят сами через 8 с после последней — тому,
-// кто выбран внизу (по умолчанию дизайнер); комментарии — своей кнопкой или вместе с вашим текстом. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
-// Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
-import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
+// Hub Design: a canvas with HTML designs and a conversation with the designer on the left. On the canvas (canvas.js) the frames are artboards:
+// select — a frame and dragging elements inside it, styles and color — in the panel, "Comment" — a click puts a pin with text, the pencil and
+// shapes — mark a place, a note — a sticker on the canvas. Manual edits go by themselves 8 s after the last one — to whoever is chosen at
+// the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
+// The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
+import { ASK_TTL, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
+import { currentLang, makeT, setLangSource } from "./i18n.js";
 
+// UI strings: en by default, ru when the hub language is Russian (see i18n.js); texts are resolved at use time, never at load
+const STR = {
+  en: {
+    subtitle: "canvas, pins and edits for the designer",
+    open_in: "Open in Hub Design: this session's conversation and the typed text",
+    local_only: "Hub Design works only on this computer: open the hub via localhost.",
+    no_proc: "The plugin process is not responding at {origin}. Restart the plugin: hub restart ext:{id}",
+    write_fail: "The edits were not written to the file — they will go to the designer in words",
+    not_sent: "Not sent: {err}",
+    pdf_fail: "PDF failed: {why}",
+    del_edit: "Remove the edit",
+    pick_to: "Choose who to send the comment to",
+    home_title: "Start screen: presets and previous files",
+    tab_chat: "Chat",
+    tab_comments: "Comments",
+    tab_comments_n: "Comments {n}",
+    add_design: "Add a design",
+    add_html: "Add an HTML file to the canvas",
+    placeholder: "Describe what to change…",
+    who_title: "Who receives the edits",
+    exit_title: "Leave Hub Design for the chat: {name}",
+    q_failed: "Not removed",
+    q_removed: "Removed from the queue",
+    q_retry: "Retry",
+    q_undo: "Undo",
+    q_n: "Queued · {n}",
+    q_now: "Send now",
+    q_remove: "Remove",
+    props_hint: "Select an element on the canvas to change its color and styles.",
+    colors: "Color",
+    fill: "Fill",
+    text: "Text",
+    layout: "Layout",
+    to_flex: "To flex",
+    to_grid: "To grid",
+    flex_title: "display: flex — children in a row",
+    grid_title: "display: grid — two columns",
+    tweaks: "Tweaks",
+    own_color: "Custom color",
+    note_chip: "Note: {text}",
+    design_errors: "Design errors: {n}",
+    remove: "Remove",
+    lost_prefix: "⚠ element not found · ",
+    lost_title: "Element not found — the design was re-laid out, the point stays where it was",
+    in_file: "in the file",
+    not_written: "{sel} — not written to the file: {why}",
+    no_comments: "No comments yet. Choose “Comment” on the canvas toolbar and click the place you mean.",
+    show_on_canvas: "Show on the canvas: {path}",
+    no_talk: "No conversation with {name} yet.",
+  },
+  ru: {
+    subtitle: "холст, пины и правки дизайнеру",
+    open_in: "Открыть в Hub Design: разговор этой сессии и набранный текст",
+    local_only: "Hub Design работает только на этом компьютере: откройте хаб по localhost.",
+    no_proc: "Процесс плагина не отвечает на {origin}. Перезапустите плагин: hub restart ext:{id}",
+    write_fail: "Правки в файл не записались — уйдут дизайнеру словами",
+    not_sent: "Не ушло: {err}",
+    pdf_fail: "PDF не вышел: {why}",
+    del_edit: "Убрать правку",
+    pick_to: "Выберите, кому отправить комментарий",
+    home_title: "Стартовый экран: пресеты и прошлые файлы",
+    tab_chat: "Чат",
+    tab_comments: "Комментарии",
+    tab_comments_n: "Комментарии {n}",
+    add_design: "Добавить макет",
+    add_html: "Добавить HTML на холст",
+    placeholder: "Опишите, что нужно изменить…",
+    who_title: "Кому уходят правки",
+    exit_title: "Выйти из Hub Design в чат: {name}",
+    q_failed: "Не убрано",
+    q_removed: "Убрано из очереди",
+    q_retry: "Повторить",
+    q_undo: "Отменить",
+    q_n: "В очереди · {n}",
+    q_now: "Отправить сейчас",
+    q_remove: "Убрать",
+    props_hint: "Выберите элемент на холсте, чтобы поменять цвет и стили.",
+    colors: "Цвет",
+    fill: "Заливка",
+    text: "Текст",
+    layout: "Раскладка",
+    to_flex: "Во flex",
+    to_grid: "В grid",
+    flex_title: "display: flex — дети в ряд",
+    grid_title: "display: grid — две колонки",
+    tweaks: "Крутилки",
+    own_color: "Свой цвет",
+    note_chip: "Заметка: {text}",
+    design_errors: "Ошибки макета: {n}",
+    remove: "Убрать",
+    lost_prefix: "⚠ элемент не найден · ",
+    lost_title: "Элемент не найден — макет перевёрстан, точка на прежнем месте",
+    in_file: "в файле",
+    not_written: "{sel} — в файл не записана: {why}",
+    no_comments: "Комментариев пока нет. Выберите «Комментарий» на панели холста и нажмите на нужное место.",
+    show_on_canvas: "Показать на холсте: {path}",
+    no_talk: "С {name} ещё не говорили.",
+  },
+};
+const tr = makeT(STR);
 const ID = "hub-design";
 const STORE = "hub-design:";
-const OLD_STORE = "design-canvas:";   // ключи до 0.2.0 (плагин назывался design-canvas): подхватываем один раз
+const OLD_STORE = "design-canvas:";   // keys before 0.2.0 (the plugin was called design-canvas): picked up once
 const DEFAULT_SESSION = "designer";
 const HOLD = "Hub Design";
 const PROP_LIST = [...new Set(PROPS.flatMap((g) => g.rows.flat().map((f) => f.p)))];
 
 let hub = null;
-let ui = null;        // узлы вида, живут между снимками
-const specs = new Map();   // файл → {list: разобранные крутилки макета, base: {ключ: исходное значение}}
-const eps = new Map();   // фрейм → {id, path, iframe, ready}: у каждого фрейма свой agent.js
+let ui = null;        // the view's nodes, they live between snapshots
+const specs = new Map();   // file → {list: parsed tweaks of the design, base: {key: original value}}
+const eps = new Map();   // frame → {id, path, iframe, ready}: every frame has its own agent.js
 const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
@@ -29,7 +130,7 @@ const P = {
   authors: [], opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
 };
 
-globalThis.__hubDesign = () => P;   // для проверки в песочнице: пачка и состояние вида
+globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
 
 const origin = () => `${location.protocol}//${location.hostname}:${canvasPort(location.port)}`;
 const local = () => ["localhost", "127.0.0.1"].includes(location.hostname);
@@ -37,13 +138,14 @@ const getKey = (k) => localStorage.getItem(STORE + k) ?? localStorage.getItem(OL
 
 export default function register(h) {
   hub = h;
+  setLangSource(() => hub.lang);   // read on every use, never at load
   hub.addStyle("style.css");
   hub.addStyle("dashboard.css");
   hub.addStyle("card.css");
   addEventListener("message", onFrame);
-  // карточки макетов и видео в ленте чата любой сессии; клик по карточке открывает файл здесь
+  // cards of designs and videos in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
-  // адрес до Hub Design: «✕» возвращает туда (нет — на главную)
+  // the address before Hub Design: "✕" returns there (none — to the home page)
   let prev = location.hash;
   addEventListener("hashchange", (e) => {
     const was = e.oldURL ? new URL(e.oldURL).hash : prev;
@@ -51,20 +153,20 @@ export default function register(h) {
     if (was && !was.startsWith("#/x/" + ID)) P.back = was;
   });
   hub.addView({
-    id: ID, title: "Hub Design", subtitle: "холст, пины и правки дизайнеру", icon: "icon.svg", full: true,
+    id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", full: true,
     render, show() { P.shown = true; sidebar(true); fromAddress(); ping(); }, hide() { P.shown = false; sidebar(false); },
   });
-  // кнопка-палитра в поле ввода сессии (место composer.tools — дополнение этого хаба): открыть Hub Design с этим разговором
+  // a palette button in the session input (the composer.tools slot — an addition of this hub): open Hub Design with this conversation
   if (typeof hub.addSlot === "function") {
     hub.addSlot("composer.tools", {
       id: "design",
       render(root, snap, ctx) {
         root.__ctx = ctx;
-        if (!ctx.session) return root.replaceChildren();   // не чат сессии (своё поле Hub Design, формы)
-        if (root.firstChild) return;
+        if (!ctx.session) return root.replaceChildren();   // not a session chat (Hub Design's own input, forms)
+        if (root.firstChild) { root.firstChild.title = tr("open_in"); root.firstChild.setAttribute("aria-label", tr("open_in")); return; }
         const b = hub.el("button", "btn round quiet hd-palette");
         b.type = "button";
-        b.title = "Открыть в Hub Design: разговор этой сессии и набранный текст";
+        b.title = tr("open_in");
         b.setAttribute("aria-label", b.title);
         b.innerHTML = PALETTE;
         b.addEventListener("click", () => handoff(root));
@@ -76,8 +178,8 @@ export default function register(h) {
 
 const PALETTE = '<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Zm-5 9a1.4 1.4 0 1 1 0-2.800A1.400 1.400 0 0 1 7 12Zm3-4a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 10 8Zm5 0a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 15 8Z"/></svg>';
 
-// перенос из чата сессии: набранное в поле уезжает в Hub Design (поле у сессии очищается — текст не пропадёт, он в поле у дизайнера).
-// Получатель — не эта сессия, а специалист макета: дизайнер или автор открытого файла; сессия лишь подсказывает, какой макет открыть
+// a handoff from a session chat: what is typed in the input moves to Hub Design (the session's input is cleared — the text is not lost, it is in the designer's input).
+// The recipient is not this session but the design's specialist: the designer or the author of the open file; the session only hints which design to open
 function handoff(root) {
   const ctx = root.__ctx;
   if (!ctx?.session) return;
@@ -86,7 +188,7 @@ function handoff(root) {
   P.handoff = { session: ctx.session.name, text };
   if (ta && text) { ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); }
   hub.go(ID);
-  // вид мог быть уже открыт и скрыт — show() сам заберёт перенос; если открыт сейчас — забираем здесь
+  // the view could be already open and hidden — show() picks up the handoff itself; if it is open now — pick it up here
   setTimeout(applyHandoff, 0);
 }
 function applyHandoff() {
@@ -94,7 +196,7 @@ function applyHandoff() {
   if (!h || !ui) return;
   P.handoff = null;
   P.tab = "chat";
-  P.openFrom = h.session;   // откроем последний макет этой сессии на холсте, если он у неё есть (пока в списке его нет — ждём ленты)
+  P.openFrom = h.session;   // open this session's last design on the canvas if it has one (while it is not in the list — wait for the feeds)
   const ta = ui.input.node.querySelector("textarea");
   if (ta && h.text) {
     ta.value = ta.value ? ta.value + "\n" + h.text : h.text;
@@ -114,12 +216,12 @@ function openFromSession() {
   if (!P.frames.some((f) => f.path === mine.path)) addFrame(mine.path, true, true); else { P.focus = mine.path; ui.cv.focusOn(mine.path); }
 }
 
-// боковую панель хаба прячет отдельный плагин hide-sidebar; нет его — события никто не слушает
+// the hub's sidebar is hidden by a separate plugin, hide-sidebar; without it nobody listens to the event
 function sidebar(hide) {
-  try { window.dispatchEvent(new CustomEvent("hub-sidebar", { detail: { hide, by: "hub-design" } })); } catch { /* старый браузер */ }
+  try { window.dispatchEvent(new CustomEvent("hub-sidebar", { detail: { hide, by: "hub-design" } })); } catch { /* an old browser */ }
 }
 
-// --- хранение пачки: одна доска в браузере — перезагрузка страницы её не теряет -----------------------------------
+// --- storage of the batch: one board in the browser — a page reload does not lose it -----------------------------
 function save() {
   localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks, errs: P.errs, writers: P.writers,
     round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found, opened: P.opened }));
@@ -129,10 +231,10 @@ function load() {
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
-  P.frames = (b.frames || []).filter((f) => f && f.path).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // до 0.4.1 рамка тянулась по высоте документа
+  P.frames = (b.frames || []).filter((f) => f && f.path).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // before 0.4.1 the frame stretched to the document height
   P.picked = b.picked || {};
   P.found = b.found || {};
-  P.opened = b.opened || {};   // когда-либо открытые на холсте макеты: с холста рамка уходит, с дашборда — нет
+  P.opened = b.opened || {};   // designs ever opened on the canvas: a frame leaves the canvas, the dashboard keeps the design
   P.pins = b.pins || [];
   P.changes = b.changes || [];
   P.drawings = b.drawings || [];
@@ -146,7 +248,7 @@ function load() {
   if (b.shapes) P.shapes = { ...P.shapes, ...b.shapes };
   P.seq = [...P.pins, ...P.drawings, ...P.notes].reduce((m, p) => Math.max(m, Number(String(p.id).slice(1)) || 0), 0);
 }
-// доска версии 0.2.0 — один файл с пачкой по его пути
+// the board of version 0.2.0 — a single file with the batch under its path
 function legacy() {
   let last = {}, d = {};
   try { last = JSON.parse(getKey("last") || "{}"); } catch { last = {}; }
@@ -156,7 +258,7 @@ function legacy() {
   return { frames: [{ path: last.path, x: 0, y: 0, w: 1440, h: 900, auto: true }], pins: (d.pins || []).map(stamp), changes: (d.changes || []).map(stamp),
     drawings: (d.drawings || []).map(stamp), round: d.round || 1 };
 }
-// пачка не ушла — страница не перезагружается сама на новую версию хаба
+// the batch has not been sent — the page does not reload itself for a new hub version
 function hold() {
   const html = document.documentElement;
   if (drafts() > 0) html.setAttribute("data-hub-hold", HOLD);
@@ -170,19 +272,19 @@ const draftTweaks = () => P.tweaks.filter((t) => t.state === "draft" && tweakEff
 const draftErrs = () => P.errs.filter((e) => e.state === "draft" && normErrors(e.items).length);
 const drafts = () => draftCount(draftPins(), draftChanges(), draftDrawings(), draftNotes(), draftTweaks(), draftErrs());
 const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h: f.h, grids: f.gridsOff ? [] : f.grids }]));
-// выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок автоотправку не заводит
+// the selected element goes into the chat message and together with the batch; a lone selection without edits does not start auto-send
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
   changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), ...extra }));
 const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 
-// получателя не помним между открытиями: им управляет открытый макет (wanted); перенос из чата — поверх
+// the recipient is not remembered between openings: the open design drives it (wanted); a handoff from a chat overrides
 function fromAddress() {
   applyHandoff();
   applyOpen();
 }
 
-// файл из карточки в ленте: открыть вид и поставить файл на холст (вид ещё не нарисован — ждёт render)
+// a file from a card in the feed: open the view and put the file on the canvas (the view is not drawn yet - wait for render)
 function openFile(path) {
   P.openPath = path;
   if (location.hash.startsWith("#/x/" + ID)) applyOpen(); else hub.go(ID);
@@ -198,23 +300,23 @@ function applyOpen() {
 
 async function ping() {
   const was = P.alive;
-  if (!local()) { P.alive = false; P.note = "Hub Design работает только на этом компьютере: откройте хаб по localhost."; return paint(); }
+  if (!local()) { P.alive = false; P.note = tr("local_only"); return paint(); }
   try {
     await fetch(origin() + "/__canvas/ping", { mode: "no-cors", cache: "no-store" });
     P.alive = true;
     P.note = "";
   } catch {
     P.alive = false;
-    P.note = `Процесс плагина не отвечает на ${origin()}. Перезапустите плагин: hub restart ext:${ID}`;
+    P.note = tr("no_proc", { origin: origin(), id: ID });
   }
   paint();
   if (P.alive) verifyAll();
   if (P.alive && was === false) reloadAll();
 }
 
-// --- файлы макетов на месте ---------------------------------------------------------------------------------------
-// процесс плагина говорит по каждому пути: ok | missing | denied. Спрашиваем по событиям: список макетов изменился, открыли дашборд или файл,
-// перезагрузили рамку — не по таймеру. Пропавший файл — пометка на карточке и понятная строка в рамке, не сырой ответ сервера.
+// --- the design files are in place -------------------------------------------------------------------------------
+// the plugin process answers for every path: ok | missing | denied. We ask on events: the design list changed, the dashboard or a file was opened,
+// a frame was reloaded — not on a timer. A missing file — a mark on the card and a clear line in the frame, not the server's raw answer.
 const abs = (p) => String(p).trim().replace(/^~(?=\/)/, homeGuess());
 const fileState = (path) => P.have[abs(path)];
 async function verify(paths, force = false) {
@@ -227,14 +329,14 @@ async function verify(paths, force = false) {
     try {
       const res = await fetch(origin() + "/__canvas/have?" + new URLSearchParams(part.map((p) => ["path", p])), { cache: "no-store" });
       r = res.ok ? await res.json() : null;
-    } catch { /* процесс не отвечает — это покажет ping */ }
+    } catch { /* the process does not answer — ping will show it */ }
     if (!r) return;
     for (const p of part) if (r[p] && P.have[p] !== r[p]) { P.have[p] = r[p]; changed = true; }
   }
   if (changed) paint();
   loadTimes(want.filter((p) => P.have[p] === "ok"));
 }
-// когда правили файлы — для строки «изменён …» у макетов, которых нет в лентах сессий (открыты только на холсте)
+// when the files were edited — for the "edited …" line of designs that are not in the session feeds (open only on the canvas)
 async function loadTimes(paths) {
   let changed = false;
   for (let i = 0; i < paths.length; i += 40) {
@@ -250,7 +352,7 @@ async function loadTimes(paths) {
   if (changed) paint();
 }
 const verifyAll = () => verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);
-// вернулись во вкладку или к окну — файлы могли поменять мимо хаба
+// came back to the tab or the window — the files could have been changed behind the hub's back
 window.addEventListener("focus", () => { if (P.shown) verifyAll(); });
 document.addEventListener("visibilitychange", () => { if (P.shown && !document.hidden) verifyAll(); });
 function goHome() {
@@ -260,7 +362,7 @@ function goHome() {
   for (const f of P.frames) ensureAuthor(f.path);
   paint();
 }
-// открыть макет на холсте: сначала убедиться, что файл есть — вместо пустой рамки владелец читает, чего не хватает
+// open a design on the canvas: first make sure the file exists — instead of an empty frame the owner reads what is missing
 async function openChecked(path, focus = true, only = false) {
   await verify([path], true);
   const st = fileState(path);
@@ -272,13 +374,13 @@ async function openChecked(path, focus = true, only = false) {
   addFrame(path, focus, only);
 }
 
-// --- фреймы ------------------------------------------------------------------------------------------------------
+// --- frames ------------------------------------------------------------------------------------------------------
 const homeGuess = () => {
   const s = (hub.snapshot()?.sessions || []).find((x) => x.cwd && /^\/Users\/[^/]+|^\/home\/[^/]+/.test(x.cwd));
   return s ? s.cwd.match(/^\/(Users|home)\/[^/]+/)[0] : "~";
 };
-// only: макет открыт из дашборда, карточки или сессии — один файл, одна страница: чужие рамки с холста уходят (черновики остаются);
-// «+» на холсте добавляет рядом
+// only: the design is opened from the dashboard, a card or a session - one file, one page: other frames leave the canvas (drafts stay);
+// "+" on the canvas adds one beside
 function addFrame(path, focus, only = false) {
   path = String(path).trim().replace(/^~(?=\/)/, homeGuess());
   if (!path) return;
@@ -300,8 +402,8 @@ function addFrame(path, focus, only = false) {
   paint();
   if (focus && ui) { if (P.frames.length === 1) ui.cv.fit(); else ui.cv.focusOn(path); }
 }
-// размер рамки задаёт сам макет (<meta name="hub-frame" content="1080x1350"> или явные width/height у html/body): рамка ровно такая,
-// без переключателя ширин, PDF — одной страницей такого размера. Нет размера — окно по ширине, как раньше
+// the design sets the frame size itself (<meta name="hub-frame" content="1080x1350"> or an explicit width/height on html/body): the frame is exactly that,
+// no width switch, the PDF is one page of that size. No size - a window by width, as before
 async function designSize(f, fresh = false) {
   let r = null;
   try {
@@ -333,7 +435,7 @@ function removeFrame(path, keepDrafts = false) {
     P.drawings = P.drawings.filter((d) => d.file !== path);
     P.tweaks = P.tweaks.filter((t) => t.file !== path);
     P.errs = P.errs.filter((e) => e.file !== path);
-    flushWrite(path);   // черновики убраны — файл возвращается к виду до наших правок
+    flushWrite(path);   // the drafts are removed — the file returns to its look before our edits
   }
   specs.delete(path);
   liveErrs.delete(path);
@@ -353,7 +455,7 @@ function sizeFrame(path, w) {
   ui?.cv.reloadFrame(path);
 }
 function reloadAll() { if (ui) for (const f of P.frames) ui.cv.reloadFrame(f.path); }
-// дизайнер поменял файл: прошлый раунд отработан — его пины гаснут, его сдвиги уже в коде; наша копия и записи больше не нужны
+// the designer changed the file: the previous round is done — its pins fade, its shifts are already in the code; our copy and records are no longer needed
 function fileChanged(file) {
   const w = writers.get(file);
   if (w) { w.maxStamp = 0; w.fails = 0; }
@@ -363,7 +465,7 @@ function fileChanged(file) {
   for (const p of P.pins) if (mine(p) && p.state === "sent") p.state = "done";
   for (const d of P.drawings) if (mine(d) && d.state === "sent") d.state = "done";
   for (const c of P.changes) if (mine(c) && c.state === "sent") c.state = "done";
-  P.tweaks = P.tweaks.filter((t) => !mine(t) || t.state !== "sent");   // значения по умолчанию теперь в самом файле
+  P.tweaks = P.tweaks.filter((t) => !mine(t) || t.state !== "sent");   // the defaults are now in the file itself
   P.errs = P.errs.filter((e) => !mine(e) || e.state !== "sent");
   P.pins = P.pins.filter((p) => !mine(p) || p.state !== "done" || p.round >= P.round - 3);
   P.drawings = P.drawings.filter((d) => !mine(d) || d.state !== "done");
@@ -374,10 +476,10 @@ function fileChanged(file) {
   ui.cv.reloadFrame(file);
 }
 
-// --- запись правок руками в файл ---------------------------------------------------------------------------------
-// Правки руками и крутилки — в сам файл (server.py /__canvas/write), точечно и от копии <имя>.r<N>.html: каждый раз весь набор заново
-// от копии, поэтому откат правки возвращает файл. Автор макета в ходе — не пишем (его файл не трогаем), пункты уходят ему словами.
-const writers = new Map();   // файл → {timer, inflight, again, deferred, maxStamp, fails}; copy и fmtime живут в P.writers (переживают перезагрузку)
+// --- writing manual edits into the file --------------------------------------------------------------------------
+// Manual edits and tweaks go into the file itself (server.py /__canvas/write), pointwise and from the copy <name>.r<N>.html: every time the whole set anew
+// from the copy, so rolling an edit back returns the file. The author of the design is in a turn — we do not write (his file is not touched), the items go to him in words.
+const writers = new Map();   // file → {timer, inflight, again, deferred, maxStamp, fails}; copy and fmtime live in P.writers (they survive a reload)
 const writerOf = (file) => {
   if (!writers.has(file)) writers.set(file, { timer: 0, inflight: null, again: false, deferred: [], maxStamp: 0, fails: 0 });
   return writers.get(file);
@@ -403,7 +505,7 @@ function flushWrite(file) {
     .catch(() => {})
     .finally(() => {
       w.inflight = null;
-      const late = w.deferred.filter((m) => m > w.maxStamp);   // чужая правка файла, пока шла наша запись
+      const late = w.deferred.filter((m) => m > w.maxStamp);   // someone else's edit of the file while ours was being written
       w.deferred = [];
       if (late.length) { fileChanged(file); save(); paint(); }
     });
@@ -413,7 +515,7 @@ async function writeOnce(file, w) {
   const items = writable(P.changes, file);
   const ops = tweakOps(file);
   const known = P.writers[file] || {};
-  if (!items.length && !ops.length && !known.copy) return;   // писать нечего, и копии нет
+  if (!items.length && !ops.length && !known.copy) return;   // nothing to write, and no copy
   const busy = authorBusy(file);
   let res = null;
   try {
@@ -425,32 +527,32 @@ async function writeOnce(file, w) {
     w.fails = 0;
     w.maxStamp = Math.max(w.maxStamp, res.stamp || 0);
     if (res.copy) P.writers[file] = { copy: res.copy, fmtime: res.fmtime }; else delete P.writers[file];
-    // пометка «в файле» — только тем правкам, у которых значение с тех пор не менялось
+    // the "in the file" mark — only for the edits whose value has not changed since
     const sent = new Map(items.map((i) => [i.sel, JSON.stringify(i)]));
     const same = (sel) => { const c = P.changes.find((q) => q.file === file && q.sel === sel && q.state !== "done"); const n = c && writable([c], file)[0]; return !!n && JSON.stringify(n) === sent.get(sel); };
     markWritten(P.changes, P.tweaks, file, { ...res, done: (res.done || []).filter(same), ops: JSON.stringify(tweakOps(file)) === JSON.stringify(ops) ? res.ops : "skipped" });
   } else if (res.status === 409 && res.error === "changed") {
-    fileChanged(file);   // файл правили без нас — это правка автора, начинаем с чистого
+    fileChanged(file);   // the file was edited without us — it is the author's edit, start clean
   } else if (res.status === 409 && res.error === "busy") {
-    markUnwritten(P.changes, P.tweaks, file);   // автор в ходе: файл не трогаем, ждём конца хода
+    markUnwritten(P.changes, P.tweaks, file);   // the author is in a turn: do not touch the file, wait for the end of the turn
     if (P.frames.some((f) => f.path === file)) scheduleWrite(file, 5000);
   } else {
     markUnwritten(P.changes, P.tweaks, file);
     w.fails += 1;
-    if (res.status === 404 || res.status === 413 || res.status === 403 || w.fails > 3) { P.note = "Правки в файл не записались — уйдут дизайнеру словами"; w.fails = 0; }
-    else if (P.frames.some((f) => f.path === file)) scheduleWrite(file, 5000);   // автор в ходе или процесс перезапускается — пробуем позже
+    if (res.status === 404 || res.status === 413 || res.status === 403 || w.fails > 3) { P.note = tr("write_fail"); w.fails = 0; }
+    else if (P.frames.some((f) => f.path === file)) scheduleWrite(file, 5000);   // the author is in a turn or the process is restarting — try later
   }
   save();
   paint();
 }
 
-// --- связь с agent.js во фреймах ---------------------------------------------------------------------------------
+// --- the link with agent.js in the frames ------------------------------------------------------------------------
 const tellEp = (ep, msg) => { if (ep?.iframe.contentWindow) ep.iframe.contentWindow.postMessage({ canvas: 1, ...msg }, origin()); };
 const epOf = (file) => eps.get("f:" + file);
 const tellFile = (file, msg) => tellEp(epOf(file), msg);
 const tellAll = (msg) => { for (const ep of eps.values()) tellEp(ep, msg); };
 
-// цвета хаба для рамок и пинов внутри фрейма: фрейм живёт на другом адресе и переменных темы не видит
+// the hub's colors for frames and pins inside a frame: the frame lives at another address and does not see the theme variables
 function theme() {
   const probe = (v) => {
     const n = document.createElement("span");
@@ -486,14 +588,14 @@ function handle(file, m, ep = epOf(file)) {
     ep.ready = true;
     if (frame) designSize(frame);
     if (frame && frame.auto && !frame.fixed && frame.h !== windowHeight(frame.w)) { frame.h = windowHeight(frame.w); ui.cv.paint(); if (P.cv.auto) ui.cv.fit(); }
-    tellEp(ep, { t: "theme", theme: theme() });
+    tellEp(ep, { t: "theme", theme: theme(), lang: currentLang() });
     ui.cv.scaleTo(ep);
     syncEp(ep);
     const keep = P.changes.filter((c) => c.file === file && c.state !== "done");
     if (keep.length) tellEp(ep, { t: "apply", changes: keep });
     readTweaks(file, ep, m.tweaks);
-    scheduleWrite(file);   // черновики с прошлого раза или после перезагрузки рамки — в файл
-    liveErrs.delete(file);   // макет загрузился заново — свежий список пришлёт он сам
+    scheduleWrite(file);   // drafts from last time or after a frame reload — into the file
+    liveErrs.delete(file);   // the design loaded again — it will send a fresh list itself
     ui.cv.paintErrs();
     return;
   }
@@ -514,7 +616,7 @@ function handle(file, m, ep = epOf(file)) {
     P.focus = file;
     syncAll({ file, id: pin.id });
   } else if (m.t === "pinfix") {
-    // макет перечитан: пин нашёл свой элемент заново (другой селектор) или потерял его
+    // the design was re-read: the pin found its element again (another selector) or lost it
     const p = P.pins.find((q) => q.id === m.id);
     if (!p || (!!p.lost === !!m.lost && p.sel === m.sel)) return;
     p.lost = !!m.lost;
@@ -547,7 +649,7 @@ function handle(file, m, ep = epOf(file)) {
     P.lastEdit = file;
     scheduleWrite(file);
   } else if (m.t === "revert") {
-    P.changes = P.changes.filter((q) => !(q.file === file && q.sel === m.sel && (q.state === "draft" || q.state === "sent" && q.inFile)));   // ушедшая правка, уже записанная в файл, — тоже: файл вернётся к копии
+    P.changes = P.changes.filter((q) => !(q.file === file && q.sel === m.sel && (q.state === "draft" || q.state === "sent" && q.inFile)));   // a sent edit already written to the file — too: the file will return to the copy
     scheduleWrite(file);
   } else if (m.t === "selected") {
     if (m.sel) {
@@ -560,8 +662,8 @@ function handle(file, m, ep = epOf(file)) {
     P.hist[file] = { undo: m.undo, redo: m.redo };
   } else if (m.t === "changed") {
     const w = writers.get(file);
-    if (w && m.mtime <= w.maxStamp) return;   // наша запись правок руками
-    if (w && w.inflight) { w.deferred.push(m.mtime); return; }   // запись идёт: чья это правка, решит её ответ
+    if (w && m.mtime <= w.maxStamp) return;   // our own write of manual edits
+    if (w && w.inflight) { w.deferred.push(m.mtime); return; }   // a write is in progress: its answer will decide whose edit this is
     fileChanged(file);
   } else return;
   save();
@@ -573,7 +675,7 @@ function renumber() {
   for (const p of P.pins) if (p.state !== "done") p.n = ++n;
 }
 
-// --- инструменты холста --------------------------------------------------------------------------------------------
+// --- canvas tools --------------------------------------------------------------------------------------------------
 function setTool(tool, shape) {
   if (shape && P.shapes[tool] !== undefined) P.shapes[tool] = shape;
   P.tool = tool;
@@ -601,9 +703,9 @@ function addNote(x, y) {
   ui.cv.focusNote(n.id);
 }
 
-// кого из нужных специалистов в хабе нет (по снимку: появился — пропадает сам); просили — «ждём»
+// which of the needed specialists are not in the hub (by the snapshot: appeared — it disappears itself); asked — "waiting"
 const lackNow = () => lacking((ui?.snap || hub.snapshot() || {}).sessions || [], P.asked);
-// «Поставить»: сообщение хабу от владельца — ставит только хаб или владелец; ждём, пока сессия появится в снимке
+// "Install": a message to the hub from the owner — only the hub or the owner installs; wait until the session appears in the snapshot
 async function install(name) {
   if (P.asked[name] && Date.now() - P.asked[name] < ASK_TTL) return;
   P.asked[name] = Date.now();
@@ -613,12 +715,12 @@ async function install(name) {
   if (r.error) {
     delete P.asked[name];
     localStorage.setItem(STORE + "asked", JSON.stringify(P.asked));
-    P.note = "Не ушло: " + r.error;
+    P.note = tr("not_sent", { err: r.error });
     paint();
   }
 }
 
-// «Скачать PDF»: печатает процесс плагина своим Chrome (hub.json testchrome.path); Chrome не настроен — печатает сама страница
+// "Download PDF": the plugin process prints with its own Chrome (hub.json testchrome.path); Chrome is not set up — the page prints itself
 async function savePdf(path) {
   const f = P.frames.find((q) => q.path === path) || {};
   const size = `w=${Math.round(f.w || 1440)}&h=${Math.round(f.h || 900)}${f.fixed ? "&fixed=1" : ""}`;
@@ -636,12 +738,12 @@ async function savePdf(path) {
   }
   if (!res || res.status === 501) return printFrame(`${base}?print=1&auto=1&${size}`, f);
   let why = "";
-  try { why = (await res.json()).error || ""; } catch { /* не JSON */ }
-  P.note = "PDF не вышел: " + (why || res.status);
+  try { why = (await res.json()).error || ""; } catch { /* not JSON */ }
+  P.note = tr("pdf_fail", { why: why || res.status });
   paint();
   return false;
 }
-// запасной путь: печатная версия во фрейме нужного размера, печать запускает она сама (окно печати браузера — «Сохранить как PDF»)
+// the fallback: a print version in a frame of the needed size, it starts printing itself (the browser's print dialog — "Save as PDF")
 function printFrame(url, f) {
   const fr = document.createElement("iframe");
   fr.src = url;
@@ -656,7 +758,7 @@ const app = {
   get P() { return P; },
   get hub() { return hub; },
   errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
-  hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme() }),
+  hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme(), lang: currentLang() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
   fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(cardKind(path) === "video" && !o.dl ? { player: "1" } : {}), v: "1" }),
   pdf: (path) => savePdf(path),
@@ -668,26 +770,26 @@ const app = {
   recent: () => recentHtml(P.items),
   handle, visible: () => P.shown, lacking: lackNow, install,
   recipient, recipients: () => [...P.ok].sort(), pickRecipient, ensureAuthor,
-  // ✕ закрывает открытый макет (его комментарии и правки остаются черновиками) и ведёт на стартовый дашборд
+  // ✕ closes the open design (its comments and edits stay drafts) and leads to the start dashboard
   close() {
     const path = P.focus || (P.frames[0] && P.frames[0].path);
     if (path) removeFrame(path, true);
     goHome();
   },
-  // «Exit Hub Design»: выйти из вида в чат специалиста, с которым шёл разговор
+  // "Exit Hub Design": leave the view for the chat of the specialist the conversation was with
   exit() { location.hash = exitTarget(P.session, [...P.ok], P.back, ID); },
   toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; paint(); },
 };
 
-// убрать правку руками, крутилку или рисунок (× во вкладке «Комментарии»): вид в рамке возвращается, записанное в файл откатывается к копии
+// remove a manual edit, a tweak or a drawing (× in the "Comments" tab): the view in the frame returns, what was written to the file rolls back to the copy
 const dropEdit = {
   change: (c) => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); scheduleWrite(c.file); },
   tweak: (t) => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); scheduleWrite(t.file); },
   drawing: (d) => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); },
 };
-const delBtn = (fn) => button("hd-cx", "×", "Убрать правку", () => { fn(); save(); paint(); });
+const delBtn = (fn) => button("hd-cx", "×", tr("del_edit"), () => { fn(); save(); paint(); });
 
-// --- отправка пачки ----------------------------------------------------------------------------------------------
+// --- sending the batch -------------------------------------------------------------------------------------------
 function markSent() {
   for (const p of draftPins()) p.state = "sent";
   for (const c of draftChanges()) c.state = "sent";
@@ -697,7 +799,7 @@ function markSent() {
   P.errs = P.errs.filter((e) => e.state !== "draft");
   P.tweaks = P.tweaks.filter((t) => t.state !== "draft");
   for (const n of P.notes) if (n.state === "draft" && String(n.text || "").trim()) n.state = "sent";
-  P.pins = P.pins.filter((p) => p.state !== "draft" || p.text.trim());   // пустые пины не нужны
+  P.pins = P.pins.filter((p) => p.state !== "draft" || p.text.trim());   // empty pins are not needed
   P.notes = P.notes.filter((n) => n.state !== "draft" || String(n.text || "").trim());
   P.round += 1;
   renumber();
@@ -705,18 +807,18 @@ function markSent() {
   syncAll();
   paint();
 }
-// «Отправить» в окне комментария: уходит один комментарий (точка и элемент) тому, кто работает над макетом
+// "Send" in the comment window: one comment (the point and the element) goes to whoever works on the design
 async function sendOne(pin) {
   if (P.busy) return;
   const to = authorOf(pin.file);
-  if (!to) { P.note = "Выберите, кому отправить комментарий"; return paint(); }
+  if (!to) { P.note = tr("pick_to"); return paint(); }
   const text = message({ path: pin.file, round: P.round, views: views(), comments: [pin], changes: [] });
   if (!text) return;
   P.busy = true;
   paint();
   const r = await hub.post("/api/send", { session: to, text });
   P.busy = false;
-  if (r.error) { P.note = "Не ушло: " + r.error; return paint(); }
+  if (r.error) { P.note = tr("not_sent", { err: r.error }); return paint(); }
   P.note = "";
   pin.state = "sent";
   P.round += 1;
@@ -726,22 +828,22 @@ async function sendOne(pin) {
   syncAll();
   paint();
 }
-// правки руками, крутилки и рисунки уходят сами тому, кто выбран внизу («Кому уходят правки»), через AUTO_MS после последней правки;
-// комментарии (пины, заметки) и ошибки макета — по своей кнопке или вместе с текстом из поля. Занят получатель — сообщение встаёт в его очередь
+// manual edits, tweaks and drawings go by themselves to whoever is chosen at the bottom ("Who receives the edits"), AUTO_MS after the last edit;
+// comments (pins, notes) and design errors — with their own button or together with the text from the input. A busy recipient — the message joins its queue
 const autoItems = () => ({ changes: draftChanges().filter(hasEffect), tweaks: draftTweaks(), drawings: draftDrawings() });
 const auto = createAuto({ fire: () => autoSend() });
 async function autoSend() {
   if (P.busy) return auto.retry(1000);
   const sig = auto.sig();
-  await Promise.all(P.frames.map((f) => flushWrite(f.path)));   // сперва в файл: пункты уйдут с пометкой «уже в файле»
-  if (auto.sig() !== sig || home()) return;   // пока писали, владелец двинул ещё — отсчёт пошёл заново
+  await Promise.all(P.frames.map((f) => flushWrite(f.path)));   // first into the file: the items go with the mark "already in the file"
+  if (auto.sig() !== sig || home()) return;   // while we were writing the owner moved on — the countdown starts again
   const a = autoItems();
   const text = batchText({ comments: [], notes: [], errors: [], ...a });
   if (!text || !P.session) return;
   P.busy = true;
   const r = await hub.post("/api/send", { session: P.session, text });
   P.busy = false;
-  if (r.error) { auto.fail(); P.note = "Не ушло: " + r.error; return paint(); }
+  if (r.error) { auto.fail(); P.note = tr("not_sent", { err: r.error }); return paint(); }
   P.note = "";
   for (const x of [...a.changes, ...a.tweaks, ...a.drawings]) { x.state = "sent"; if (x.inFile !== true) x.handed = true; }
   P.tweaks = P.tweaks.filter((t) => t.state !== "draft");
@@ -752,20 +854,20 @@ async function autoSend() {
   paint();
 }
 
-// --- кому уходит разговор: специалист макета ---------------------------------------------------------------------
-// получатель макета — кто писал файл: в живой ленте, затем в истории сессий (лента отдаёт только хвост), затем назвавший; нет никого —
-// выбирает владелец (список в окне комментария), «дизайнера» молча не подставляем
+// --- whom the conversation goes to: the design's specialist ------------------------------------------------------
+// the design's recipient is whoever wrote the file: in the live feed, then in the session history (the feed gives only the tail), then whoever named it; nobody —
+// the owner chooses (the list in the comment window), the "designer" is not silently substituted
 const authorOf = (file) => recipient(file).session;
-// стартовый экран: чат со специалистом выбранного вида (пресет) или выбранным вручную, иначе с дизайнером
+// the start screen: a chat with the specialist of the chosen kind (preset) or chosen by hand, otherwise with the designer
 const home = () => P.home || !P.frames.length;
 function wanted() {
   if (home()) return P.homeWho || (P.preset && P.preset.to) || DEFAULT_SESSION;
-  if (P.pinned && P.pinned.focus === P.focus) return P.session;   // выбрали вручную — держим, пока открыт тот же макет
+  if (P.pinned && P.pinned.focus === P.focus) return P.session;   // chosen by hand — keep it while the same design is open
   P.pinned = null;
-  return whoGets(P.focus && authorOf(P.focus), P.session, P.ok, DEFAULT_SESSION);   // hub-dev и хаб сами не подставляются
+  return whoGets(P.focus && authorOf(P.focus), P.session, P.ok, DEFAULT_SESSION);   // the hub and its developer are not filled in on their own
 }
-// кто писал файл, когда в живой ленте записи нет: листаем историю сессий назад (/api/history), сначала назвавшие файл и дизайнер
-const looked = new Map();   // путь → когда искали (раз в 10 мин)
+// who wrote the file when the live feed has no record: page back through the session history (/api/history), first those who named the file and the designer
+const looked = new Map();   // path → when we looked (once per 10 min)
 async function ensureAuthor(file) {
   if (!file || recipient(file).how === "wrote" || recipient(file).how === "picked") return;
   if (Date.now() - (looked.get(file) || 0) < 600000) return;
@@ -804,16 +906,16 @@ function setSession(name) {
   P.rev = -1;
   if (ui) { ui.input.set({ to: name }); ui.last.chat = ""; ui.last.queue = ""; pullChat(hub.snapshot() || {}); }
 }
-// макеты по лентам сессий хаба: по событиям страницы. В снимке лент нет (страницу открытой сессии она берёт сама) — когда номер правки
-// ленты сессии в снимке вырос, тянем у ядра только изменённые строки (since); хранится только то, что про HTML. Таймера нет
-const tl = new Map();   // сессия → {rev, epoch, items}
+// designs by the hub's session feeds: on page events. The snapshot has no feeds (the page of an open session takes its own) — when the feed revision
+// of a session in the snapshot grows, we pull only the changed rows from the core (since); only what concerns HTML is kept. No timer
+const tl = new Map();   // session → {rev, epoch, items}
 let scanning = false;
 function recompute() {
   const lines = Object.fromEntries([...tl].map(([k, v]) => [k, v.items]));
   P.authors = htmlAuthored(lines, (n) => !P.ok.has(n));
   openFromSession();
   openNewDesign();
-  verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);   // лента изменилась — файл мог пропасть (rm, mv дизайнером)
+  verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);   // the feed changed — the file could be gone (rm, mv by the designer)
 }
 async function scanDesigns(snap) {
   P.ok = new Set((snap.sessions || []).filter((x) => x.kind !== "hub" && x.role !== "executor").map((x) => x.name));
@@ -829,8 +931,8 @@ async function scanDesigns(snap) {
       try {
         const res = await fetch(`/api/timeline?${new URLSearchParams(timelineQuery(n, cached, snap.epoch))}`);
         if (res.ok) { tl.set(n, mergeTimeline(cached, await res.json(), revs[n] ?? 0)); continue; }
-      } catch { /* ниже: не перечитываем, пока лента не изменится снова */ }
-      tl.set(n, { items: [], ...cached, rev: revs[n] ?? 0, epoch: snap.epoch });   // сбой не должен гнать запросы по кругу
+      } catch { /* below: we do not re-read until the feed changes again */ }
+      tl.set(n, { items: [], ...cached, rev: revs[n] ?? 0, epoch: snap.epoch });   // a failure must not drive requests in a circle
     }
   };
   await Promise.all([worker(), worker(), worker()]);
@@ -839,7 +941,7 @@ async function scanDesigns(snap) {
   recompute();
   paint();
 }
-// владелец написал, когда макетов не было: ждём файл, который дизайнер напишет после отправки, и открываем его
+// the owner wrote when there were no designs: wait for the file the designer writes after sending, and open it
 function openNewDesign() {
   const w = P.openNew;
   if (!w) return;
@@ -850,7 +952,7 @@ function openNewDesign() {
   addFrame(f.path, true, true);
 }
 
-// --- лента разговора ---------------------------------------------------------------------------------------------
+// --- the conversation feed ---------------------------------------------------------------------------------------
 async function pullChat(snap) {
   const want = (snap.timeline_rev || {})[P.session] ?? 0;
   if (P.loading || (P.rev === want && P.epoch === snap.epoch)) return;
@@ -864,12 +966,12 @@ async function pullChat(snap) {
       P.rev = want;
       P.epoch = snap.epoch;
     }
-  } catch { /* следующий снимок повторит */ }
+  } catch { /* the next snapshot will retry */ }
   P.loading = false;
   paint();
 }
 
-// --- вид ---------------------------------------------------------------------------------------------------------
+// --- the view ----------------------------------------------------------------------------------------------------
 const LOGO = PALETTE.replace('class="icon"', 'class="hd-logo-svg" width="20" height="20"');
 const ICONS = { logo: LOGO, comment: CI.comment, edit: CI.pencil, draw: CI.free, file: CI.file, note: CI.note };
 function icon(name, text) {
@@ -891,28 +993,28 @@ function build(root) {
   const el = hub.el;
   const wrap = el("div", "hd");
 
-  // левая панель: заголовок, вкладки, разговор или комментарии, карточка ввода
+  // the left panel: title, tabs, conversation or comments, input card
   const left = el("div", "hd-left");
   const top = el("div", "hd-top");
   const logo = el("span", "hd-logo"); logo.innerHTML = ICONS.logo;
   const title = el("span", "hd-title", "Hub Design");
-  const homeBtn = button("hd-home", [logo, title], "Стартовый экран: пресеты и прошлые файлы", goHome);
+  const homeBtn = button("hd-home", [logo, title], tr("home_title"), goHome);
   top.append(homeBtn);
   const tabs = el("div", "hd-tabs");
-  const tabChat = button("hd-tab", "Чат", null, () => { P.tab = "chat"; paint(); });
-  const tabComments = button("hd-tab", "Комментарии", null, () => { P.tab = "comments"; paint(); });
-  const tabPlus = button("hd-plus", [icon("file", "Добавить макет")], "Добавить HTML на холст", () => ui.cv.openAdd());
+  const tabChat = button("hd-tab", tr("tab_chat"), null, () => { P.tab = "chat"; paint(); });
+  const tabComments = button("hd-tab", tr("tab_comments"), null, () => { P.tab = "comments"; paint(); });
+  const tabPlus = button("hd-plus", [icon("file", tr("add_design"))], tr("add_html"), () => ui.cv.openAdd());
   tabs.append(tabChat, tabComments, tabPlus);
   const chat = el("div", "hd-chat");
   const list = el("div", "hd-comments");
   const card = el("div", "hd-card");
-  const need = createNeed({ hub, install }, "chat");   // получателя в хабе нет — не молча в пустоту: та же плашка
+  const need = createNeed({ hub, install }, "chat");   // no recipient in the hub — not silently into the void: the same banner
   const chips = el("div", "hd-chips");
   const input = hub.input({
-    to: P.session, key: ID, placeholder: "Опишите, что нужно изменить…",
-    prefix: (text) => { if (home()) return NEW_DESIGN + text; const b = batchText() || selText(); return b ? b + "\n\n" + text : text; },
+    to: P.session, key: ID, placeholder: tr("placeholder"),
+    prefix: (text) => { if (home()) return newDesignPrefix() + text; const b = batchText() || selText(); return b ? b + "\n\n" + text : text; },
     onSent: () => {
-      if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // на стартовом экране написали — это задача на новый макет
+      if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // on the start screen they wrote — this is a task for a new design
       else if (drafts() > 0) markSent();
     },
   });
@@ -920,7 +1022,7 @@ function build(root) {
   strip.hidden = true;
   const foot = el("div", "hd-foot");
   const who = el("select", "hd-who");
-  who.title = "Кому уходят правки";
+  who.title = tr("who_title");
   who.addEventListener("change", () => {
     if (home()) P.homeWho = who.value; else P.pinned = { focus: P.focus };
     setSession(who.value);
@@ -931,7 +1033,7 @@ function build(root) {
   card.append(need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card);
 
-  // правая часть: холст с плавающими тулбарами, панель стилей и список файлов, пока холст пуст
+  // the right part: the canvas with floating toolbars, the styles panel and the file list while the canvas is empty
   const right = el("div", "hd-right");
   const cv = createCanvas(app);
   const props = el("div", "hd-props");
@@ -942,12 +1044,12 @@ function build(root) {
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });
-  const exitB = button("hd-exit", "Exit Hub Design", "Выйти из Hub Design в чат: " + P.session, () => app.exit());
+  const exitB = button("hd-exit", "Exit Hub Design", tr("exit_title", { name: P.session }), () => app.exit());
   right.append(cv.node, props, dash.node, exitB);
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, right, exitB, title, tabChat, tabComments, chat, list, need, chips, strip, input, who, note, cv, props, tw, pbody, dash, last: {} };
+  return { root, wrap, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, chips, strip, input, who, note, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
 }
 
 function render(root, snap) {
@@ -959,30 +1061,44 @@ function render(root, snap) {
 
 const baseName = (p) => p.split(/[\\/]/).pop();
 
+// the hub language changed: texts of the nodes that live between paints are set again, the cached paints are dropped (the frames learn the language with the theme)
+function relang() {
+  ui.last = { lang: currentLang(), authors: ui.last.authors, who: ui.last.who };
+  ui.homeBtn.title = tr("home_title");
+  ui.tabChat.textContent = tr("tab_chat");
+  ui.tabPlus.replaceChildren(icon("file", tr("add_design")));
+  ui.tabPlus.title = tr("add_html");
+  ui.who.title = tr("who_title");
+  ui.input.set({ placeholder: tr("placeholder") });
+}
+
 function paint() {
   if (!ui) return;
   const snap = ui.snap || hub.snapshot() || {};
   scanDesigns(snap);
   setSession(wanted());
   if (P.focus && P.shown) ensureAuthor(P.focus);
-  const sig = JSON.stringify(theme());
-  if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: JSON.parse(sig) }); }
+  if (ui.last.lang !== currentLang()) relang();
+  const th = theme();
+  const sig = JSON.stringify(th) + "#" + currentLang();
+  if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: th, lang: currentLang() }); }
   ui.title.textContent = P.focus && !home() ? nameOf(P.focus) || "Hub Design" : "Hub Design";
   ui.tabChat.classList.toggle("on", P.tab === "chat");
   ui.tabComments.classList.toggle("on", P.tab === "comments");
   const live = P.pins.filter((p) => p.state !== "done" && String(p.text || "").trim()).length + P.changes.filter((c) => c.state !== "done" && hasEffect(c)).length +
     P.drawings.filter((d) => d.state !== "done").length + P.notes.filter((n) => String(n.text || "").trim()).length;
-  ui.tabComments.textContent = live ? `Комментарии ${live}` : "Комментарии";
+  ui.tabChat.textContent = tr("tab_chat");
+  ui.tabComments.textContent = live ? tr("tab_comments_n", { n: live }) : tr("tab_comments");
   ui.chat.hidden = P.tab !== "chat";
   ui.list.hidden = P.tab !== "comments";
   ui.note.textContent = P.note;
   ui.note.hidden = !P.note;
   ui.cv.paint();
-  ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // на стартовом экране обязательного показывает он сам
+  ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // on the start screen the dashboard shows the required one itself
   ui.dash.node.hidden = !home();
   if (home()) ui.dash.paint();
 
-  // кому: агенты и сессии хаба, дизайнер первым
+  // to whom: the hub's agents and sessions, the designer first
   const names = (snap.sessions || []).filter((s) => s.kind !== "hub" && s.role !== "executor").map((s) => s.name);
   if (!names.includes(P.session)) names.unshift(P.session);
   names.sort((a, b) => (a === DEFAULT_SESSION ? -1 : b === DEFAULT_SESSION ? 1 : 0));
@@ -1000,13 +1116,13 @@ function paint() {
   paintChat();
 }
 
-// заготовка пресета, которую владелец не тронул, не переезжает в чат макета и не липнет к новой задаче
+// a preset stub that the owner did not touch does not move to the design chat and does not stick to a new task
 function dropStub() {
   const ta = ui && ui.input.node.querySelector("textarea");
   if (ta && isStub(ta.value)) { ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); }
 }
 
-// пресет на стартовом экране: чат уходит специалисту вида, в поле — заготовка «новый <вид>: …», курсор в поле
+// a preset on the start screen: the chat goes to the specialist of the kind, the input gets the stub "new <kind>: …", the cursor in the input
 function startPreset(p) {
   P.preset = p;
   P.homeWho = null;
@@ -1022,8 +1138,8 @@ function startPreset(p) {
   if (ta) ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
-// очередь сообщений к получателю — как полоса над полем в чате хаба: «Отправить сейчас» (если занят) и «Убрать»; «Убрать» не сразу:
-// 6 секунд строка «Убрано из очереди · Отменить», настоящая отмена уходит потом (так же в очереди самого хаба)
+// the queue of messages to the recipient — like the strip above the input in the hub chat: "Send now" (if busy) and "Remove"; "Remove" not at once:
+// 6 seconds a row "Removed from the queue · Undo", the real cancel goes later (the same in the hub's own queue)
 const cancels = createCancels({
   post: (url, body) => hub.post(url, body),
   isQueued: (id) => ((hub.snapshot() || {}).messages || {})[id]?.state === "queued",
@@ -1033,7 +1149,7 @@ function paintQueue(snap) {
   const s = (snap.sessions || []).find((x) => x.name === P.session) || {};
   const msgs = snap.messages || {};
   const queued = P.items.filter((it) => it.kind === "in" && (msgs[it.id] || {}).state === "queued");
-  for (const [id, e] of cancels.rows) if ((e.done || e.failed) && !queued.some((it) => it.id === id)) cancels.rows.delete(id);   // ушло из очереди — строка не нужна
+  for (const [id, e] of cancels.rows) if ((e.done || e.failed) && !queued.some((it) => it.id === id)) cancels.rows.delete(id);   // it left the queue — the row is not needed
   const sig = P.session + "#" + cancels.sig() + "#" + queued.map((it) => it.id + (s.state === "busy" ? "b" + (msgs[it.id].injectable ? 1 : 0) : "") + (msgs[it.id].removable === false ? "x" : "")).join();
   if (ui.last.queue === sig) return;
   ui.last.queue = sig;
@@ -1052,27 +1168,27 @@ function paintQueue(snap) {
     row.dataset.k = "queue";
     const gone = cancels.get(it.id);
     if (gone) {
-      row.append(el("span", "k", gone.failed ? "Не убрано" : "Убрано из очереди"), el("span", "t", clip(it.text, 70)));
-      if (gone.failed) row.append(act("Повторить", "quiet", () => cancels.send(it.id)));
-      else if (!gone.done) row.append(act("Отменить", "quiet", () => cancels.undo(it.id)));
+      row.append(el("span", "k", tr(gone.failed ? "q_failed" : "q_removed")), el("span", "t", clip(it.text, 70)));
+      if (gone.failed) row.append(act(tr("q_retry"), "quiet", () => cancels.send(it.id)));
+      else if (!gone.done) row.append(act(tr("q_undo"), "quiet", () => cancels.undo(it.id)));
       box.append(row);
       return;
     }
-    if (i === 0) row.append(el("span", "k", `В очереди · ${queued.length}`));
+    if (i === 0) row.append(el("span", "k", tr("q_n", { n: queued.length })));
     row.append(el("span", "t", clip(it.text, 90)));
-    if (s.state === "busy" && m.injectable) row.append(act("Отправить сейчас", "", () => hub.post("/api/inject", { session: P.session, id: it.id })));
-    if (m.removable !== false) row.append(act("Убрать", "quiet", () => cancels.start(P.session, it)));
+    if (s.state === "busy" && m.injectable) row.append(act(tr("q_now"), "", () => hub.post("/api/inject", { session: P.session, id: it.id })));
+    if (m.removable !== false) row.append(act(tr("q_remove"), "quiet", () => cancels.start(P.session, it)));
     box.append(row);
   });
   ui.strip.replaceChildren(box);
 }
 
-// панель стилей справа: цвет заливки и текста, остальные свойства выбранного элемента
+// the styles panel on the right: fill and text color, the other properties of the selected element
 function paintProps() {
   const open = P.propsOpen && P.frames.length > 0 && !home();
   ui.props.hidden = !open;
   ui.right.classList.toggle("props", open);
-  ui.exitB.title = "Выйти из Hub Design в чат: " + P.session;
+  ui.exitB.title = tr("exit_title", { name: P.session });
   paintTweaks(open);
   const sig = JSON.stringify([open, P.sel]);
   if (!open || ui.last.props === sig || ui.pbody.contains(document.activeElement) && ui.last.propsSel === (P.sel && P.sel.sel)) return;
@@ -1080,11 +1196,11 @@ function paintProps() {
   ui.last.propsSel = P.sel && P.sel.sel;
   const el = hub.el;
   const kids = [];
-  if (!P.sel) kids.push(el("div", "hd-phint", "Выберите элемент на холсте, чтобы поменять цвет и стили."));
+  if (!P.sel) kids.push(el("div", "hd-phint", tr("props_hint")));
   else {
     kids.push(el("div", "hd-pel", `${P.sel.tag}  ${P.sel.label ? "«" + P.sel.label.slice(0, 40) + "»" : ""}`));
     const colors = el("div", "hd-psec");
-    colors.append(el("h4", null, "Цвет"), colorRow("Заливка", "background-color"), colorRow("Текст", "color"));
+    colors.append(el("h4", null, tr("colors")), colorRow(tr("fill"), "background-color"), colorRow(tr("text"), "color"));
     kids.push(colors);
     for (const g of PROPS) {
       if (g.flexOnly && !P.sel.flex) continue;
@@ -1100,17 +1216,17 @@ function paintProps() {
     }
     if (!P.sel.flex && !P.sel.grid && P.sel.kids) {
       const sec = el("div", "hd-psec");
-      sec.append(el("h4", null, "Раскладка"));
+      sec.append(el("h4", null, tr("layout")));
       const r = el("div", "hd-prow");
-      r.append(button("btn small quiet", "Во flex", "display: flex — дети в ряд", () => wrapIn("flex")), button("btn small quiet", "В grid", "display: grid — две колонки", () => wrapIn("grid")));
+      r.append(button("btn small quiet", tr("to_flex"), tr("flex_title"), () => wrapIn("flex")), button("btn small quiet", tr("to_grid"), tr("grid_title"), () => wrapIn("grid")));
       sec.append(r);
       kids.push(sec);
     }
   }
   ui.pbody.replaceChildren(...kids);
 }
-// --- крутилки макета ---------------------------------------------------------------------------------------------
-// ошибки макета: живой список (agent.js шлёт его с загрузки и по мере появления) и то, что из него уже в пачке (P.errs)
+// --- tweaks of the design ----------------------------------------------------------------------------------------
+// design errors: the live list (agent.js sends it from the load and as they appear) and what of it is already in the batch (P.errs)
 const liveErrs = new Map();
 const errsKey = (items) => normErrors(items).map((x) => x.text).join("\n");
 function errState(file) {
@@ -1128,8 +1244,8 @@ function askFix(file) {
   paint();
 }
 
-// agent.js при загрузке макета присылает объявление #hub-tweaks и текущие значения; разбор — lib.normTweaks. Значения лежат в P.tweaks
-// (черновик → отправлено) и после перезагрузки рамки применяются заново
+// on load agent.js sends the design's #hub-tweaks declaration and the current values; parsing — lib.normTweaks. The values live in P.tweaks
+// (draft → sent) and are applied again after a frame reload
 function readTweaks(file, ep, decl) {
   const list = decl ? normTweaks(decl.spec) : [];
   if (!list.length) { specs.delete(file); P.tweaks = P.tweaks.filter((t) => t.file !== file); return paint(); }
@@ -1144,7 +1260,7 @@ const tweakNow = (file, t) => {
   const mine = P.tweaks.find((x) => x.file === file && x.key === t.key && x.state === "draft") || P.tweaks.find((x) => x.file === file && x.key === t.key && x.state === "sent");
   return mine ? mine.to : (specs.get(file).base || {})[t.key];
 };
-// что записать в макет, чтобы крутилка показывала своё текущее значение (после отката черновика — исходное)
+// what to write into the design so that a tweak shows its current value (after a draft rollback — the original)
 function opsFor(file, key) {
   const t = (specs.get(file)?.list || []).find((x) => x.key === key);
   return t ? tweakApply(t, tweakNow(file, t)) : [];
@@ -1168,7 +1284,7 @@ function setTweak(file, t, raw) {
   paint();
   return true;
 }
-// крутилки открытого макета — секциями вверху панели; пока в панели идёт ввод (ползунок), её не пересобираем
+// the open design's tweaks — in sections at the top of the panel; while input is going on in the panel (a slider), it is not rebuilt
 function tweakFile() {
   const has = (f) => f && (specs.get(f)?.list || []).length;
   return has(P.focus) ? P.focus : (P.frames.find((f) => has(f.path)) || {}).path || "";
@@ -1187,7 +1303,7 @@ function paintTweaks(open) {
   const kids = [];
   let sec = null, secName = null;
   for (const t of list) {
-    const name = t.section || "Крутилки";
+    const name = t.section || tr("tweaks");
     if (name !== secName) { sec = el("div", "hd-psec"); sec.append(el("h4", null, name)); kids.push(sec); secName = name; }
     sec.append(tweakRow(file, t, tweakNow(file, t)));
   }
@@ -1241,7 +1357,7 @@ function tweakRow(file, t, cur) {
   return row;
 }
 const setStyle = (prop, value) => { if (P.sel) tellFile(P.sel.file, { t: "style", prop, value }); };
-// «Обернуть во flex / grid»: делает выбранный блок контейнером (display), его дети раскладываются; для grid сразу две колонки
+// "Wrap in flex / grid": makes the selected block a container (display), its children are laid out; for grid — two columns at once
 const wrapIn = (kind) => { if (P.sel) tellFile(P.sel.file, { t: "style", set: kind === "grid" ? { display: "grid", "grid-template-columns": gridForm(2) } : { display: "flex" } }); };
 function colorRow(label, prop) {
   const el = hub.el;
@@ -1255,7 +1371,7 @@ function colorRow(label, prop) {
     sw.append(b);
   }
   const pick = el("input", "hd-sw"); pick.type = "color";
-  pick.title = "Свой цвет";
+  pick.title = tr("own_color");
   pick.value = /^#[0-9a-f]{6}$/i.test(cur) ? cur : "#000000";
   pick.addEventListener("change", () => setStyle(prop, pick.value));
   row.append(sw, pick);
@@ -1297,14 +1413,14 @@ function field(f) {
   return wrap;
 }
 
-// карточка ввода: чипы комментариев (пины, заметки, ошибки макета) и поле; правки руками над полем не показываем — они во вкладке «Комментарии»
+// the input card: comment chips (pins, notes, design errors) and the field; manual edits are not shown above the field — they are in the "Comments" tab
 function paintCard() {
   const n = drafts();
   auto.watch(autoSig(autoItems(), P.session, home()));
   const items = [
     ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
-    ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: "Заметка: " + d.text, ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
-    ...draftErrs().map((e) => ({ text: `Ошибки макета: ${normErrors(e.items).length}`, ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
+    ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: tr("note_chip", { text: d.text }), ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
+    ...draftErrs().map((e) => ({ text: tr("design_errors", { n: normErrors(e.items).length }), ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
   ];
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
@@ -1315,7 +1431,7 @@ function paintCard() {
     const chip = el("span", "hd-chip");
     chip.title = i.text;
     chip.append(icon(i.ic), el("span", "hd-ctext", i.text));
-    chip.append(button("hd-cx", "×", "Убрать", () => { i.del(); save(); paint(); }));
+    chip.append(button("hd-cx", "×", tr("remove"), () => { i.del(); save(); paint(); }));
     return chip;
   }));
 }
@@ -1334,16 +1450,16 @@ function paintComments() {
   const rows = [];
   for (const p of pins) {
     const li = el("div", "hd-citem " + p.state);
-    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", (p.lost ? "⚠ элемент не найден · " : "") + p.text));
-    li.title = p.lost ? "Элемент не найден — макет перевёрстан, точка на прежнем месте" : p.sel;
+    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", (p.lost ? tr("lost_prefix") : "") + p.text));
+    li.title = p.lost ? tr("lost_title") : p.sel;
     rows.push(li);
   }
   for (const c of changes) {
     const li = el("div", "hd-citem " + c.state);
     li.append(el("b", "hd-n edit", "✎"), el("span", "hd-ct", `${c.label || c.sel}: ${describeChange(c)}`));
-    if (c.inFile) li.append(el("span", "hd-infile", "в файле"));
+    if (c.inFile) li.append(el("span", "hd-infile", tr("in_file")));
     li.append(delBtn(() => dropEdit.change(c)));
-    li.title = c.noWrite ? `${c.sel} — в файл не записана: ${c.noWrite}` : c.sel;
+    li.title = c.noWrite ? tr("not_written", { sel: c.sel, why: c.noWrite }) : c.sel;
     rows.push(li);
   }
   for (const d of drawings) {
@@ -1354,13 +1470,13 @@ function paintComments() {
   for (const t of tweaks) {
     const li = el("div", "hd-citem " + t.state);
     li.append(el("b", "hd-n edit", "⚙"), el("span", "hd-ct", describeTweak(t)));
-    if (t.inFile) li.append(el("span", "hd-infile", "в файле"));
+    if (t.inFile) li.append(el("span", "hd-infile", tr("in_file")));
     li.append(delBtn(() => dropEdit.tweak(t)));
     rows.push(li);
   }
   for (const e of errs) {
     const li = el("div", "hd-citem " + e.state);
-    li.append(el("b", "hd-n edit", "⚠"), el("span", "hd-ct", `Ошибки макета: ${normErrors(e.items).length}`));
+    li.append(el("b", "hd-n edit", "⚠"), el("span", "hd-ct", tr("design_errors", { n: normErrors(e.items).length })));
     li.title = normErrors(e.items).map((x) => x.text).join("\n");
     rows.push(li);
   }
@@ -1369,7 +1485,7 @@ function paintComments() {
     li.append(el("b", "hd-n edit", "▤"), el("span", "hd-ct", n.text));
     rows.push(li);
   }
-  ui.list.replaceChildren(...(rows.length ? rows : [el("div", "hd-hint", "Комментариев пока нет. Выберите «Комментарий» на панели холста и нажмите на нужное место.")]));
+  ui.list.replaceChildren(...(rows.length ? rows : [el("div", "hd-hint", tr("no_comments"))]));
 }
 
 function paintChat() {
@@ -1383,7 +1499,7 @@ function paintChat() {
     const row = el("div", "hd-msg " + (l.mine ? "me" : "them") + (l.head ? "" : " cont"));
     if (l.who && l.head) row.append(el("div", "hd-who-name", l.who));
     const body = el("div", "hd-mbody");
-    if (l.image) {   // присланная картинка — уменьшенная копия (?w=), целиком открывается по клику
+    if (l.image) {   // a sent picture — a reduced copy (?w=), opens in full on click
       const a = el("a", "hd-pic");
       a.href = "/api/file?path=" + encodeURIComponent(l.image);
       a.target = "_blank";
@@ -1396,19 +1512,19 @@ function paintChat() {
       body.append(a);
     }
     const text = l.text.length > 1500 ? l.text.slice(0, 1500) + "…" : l.text;
-    // пути к HTML — ссылки: добавить фрейм на холст
+    // paths to HTML are links: add a frame to the canvas
     let rest = text;
     for (const p of htmlPaths(text)) {
       const at = rest.indexOf(p);
       if (at < 0) continue;
       body.append(document.createTextNode(rest.slice(0, at)));
-      body.append(button("hd-link", baseName(p), "Показать на холсте: " + p, () => openChecked(p)));
+      body.append(button("hd-link", baseName(p), tr("show_on_canvas", { path: p }), () => openChecked(p)));
       rest = rest.slice(at + p.length);
     }
     body.append(document.createTextNode(rest));
     row.append(body);
     return row;
   }));
-  if (!lines.length) ui.chat.append(el("div", "hd-hint", `С ${P.session} ещё не говорили.`));
+  if (!lines.length) ui.chat.append(el("div", "hd-hint", tr("no_talk", { name: P.session })));
   if (stick) ui.chat.scrollTop = ui.chat.scrollHeight;
 }

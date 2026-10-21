@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const { fingerprint, locate, matches } = createRequire(import.meta.url)("../anchor.js");
 
-// узкий поддельный DOM: ровно те свойства, которые читает anchor.js
+// a narrow fake DOM: exactly the properties anchor.js reads
 class N {
   constructor(tag, o = {}, kids = []) {
     this.nodeType = 1;
@@ -34,12 +34,12 @@ const rectOf = (n) => n.rect;
 const card = (title, plan, x, o = {}) => new N("div", { cls: "card", rect: { x, y: 300, w: 280, h: 360 } }, [
   new N("h3", { text: title, rect: { x: x + 20, y: 320, w: 240, h: 30 } }),
   new N("p", { text: plan, rect: { x: x + 20, y: 360, w: 240, h: 20 } }),
-  new N("a", { cls: o.cls ?? "btn", text: "Купить", rect: o.rect || { x: x + 20, y: 600, w: 240, h: 44 } }),
+  new N("a", { cls: o.cls ?? "btn", text: "Buy", rect: o.rect || { x: x + 20, y: 600, w: 240, h: 44 } }),
 ]);
 const page = (cards) => new N("body", {}, [new N("section", { id: "pricing", rect: { x: 0, y: 200, w: 1000, h: 500 } }, cards)]);
 const buyOf = (root, i) => root.all().filter((n) => n.tagName === "A")[i];
 
-test("приметы: id, предок с id, тег, текст, соседи, классы, размер, место", () => {
+test("fingerprint: id, ancestor with an id, tag, text, neighbors, classes, size, place", () => {
   const root = page([card("Start", "Free", 40), card("Pro", "9 $", 340)]);
   const el = buyOf(root, 1);
   const fp = fingerprint(el, el.rect);
@@ -47,42 +47,42 @@ test("приметы: id, предок с id, тег, текст, соседи, 
   assert.equal(fp.anc, "pricing");
   assert.deepEqual(fp.path, ["div", "a"]);
   assert.equal(fp.tag, "a");
-  assert.equal(fp.text, "Купить");
-  assert.equal(fp.near, "Pro 9 $ Купить");
+  assert.equal(fp.text, "Buy");
+  assert.equal(fp.near, "Pro 9 $ Buy");
   assert.deepEqual(fp.cls, ["btn"]);
   assert.deepEqual([fp.w, fp.h, fp.x, fp.y], [240, 44, 360, 600]);
 });
 
-test("перевёрстка без id: пин находит свою кнопку по приметам, а не по порядку", () => {
+test("relayout without an id: the pin finds its button by fingerprint, not by order", () => {
   const before = page([card("Start", "Free", 40), card("Pro", "9 $", 340), card("Team", "29 $", 640)]);
   const el = buyOf(before, 1);
   const fp = fingerprint(el, el.rect);
-  // после правки дизайнера: класс кнопки другой, карточки в другом порядке и чуть сдвинуты, добавилась новая карточка
-  const after = page([card("Team", "29 $", 40, { cls: "cta" }), card("Pro", "9 $", 360, { cls: "cta", rect: { x: 380, y: 612, w: 240, h: 44 } }), card("Start", "Free", 680, { cls: "cta" }), card("Enterprise", "по запросу", 1000, { cls: "cta" })]);
+  // after the designer's edit: the button class differs, the cards are in another order and shifted a bit, a new card was added
+  const after = page([card("Team", "29 $", 40, { cls: "cta" }), card("Pro", "9 $", 360, { cls: "cta", rect: { x: 380, y: 612, w: 240, h: 44 } }), card("Start", "Free", 680, { cls: "cta" }), card("Enterprise", "on request", 1000, { cls: "cta" })]);
   const hit = locate(fp, doc(after), rectOf);
-  assert.ok(hit, "элемент найден");
+  assert.ok(hit, "element found");
   assert.equal(hit.el, buyOf(after, 1));
 });
 
-test("id остался — находим сразу, куда бы блок ни переехал", () => {
+test("the id stayed: found at once, wherever the block moved", () => {
   const before = new N("body", {}, [new N("button", { id: "go", text: "Go", rect: { x: 10, y: 10, w: 50, h: 20 } })]);
   const fp = fingerprint(before.children[0], before.children[0].rect);
-  const after = new N("body", {}, [new N("div", {}, [new N("button", { id: "go", text: "Поехали", rect: { x: 900, y: 900, w: 90, h: 30 } })])]);
+  const after = new N("body", {}, [new N("div", {}, [new N("button", { id: "go", text: "Let's go", rect: { x: 900, y: 900, w: 90, h: 30 } })])]);
   assert.equal(locate(fp, doc(after), rectOf).el, after.children[0].children[0]);
 });
 
-test("элемент удалён — не найден, на чужой не садится", () => {
+test("the element is gone: not found, never lands on a foreign one", () => {
   const before = page([card("Start", "Free", 40), card("Pro", "9 $", 340)]);
   const el = buyOf(before, 1);
   const fp = fingerprint(el, el.rect);
   const after = page([card("Start", "Free", 40)]);
   assert.equal(locate(fp, doc(after), rectOf), null);
-  // и совсем другой элемент того же тега в том же месте — тоже не он
-  const other = new N("body", {}, [new N("a", { text: "Блог", attrs: { href: "/blog" }, rect: { x: 360, y: 600, w: 60, h: 18 } })]);
+  // and a totally different element of the same tag in the same place is not it either
+  const other = new N("body", {}, [new N("a", { text: "Blog", attrs: { href: "/blog" }, rect: { x: 360, y: 600, w: 60, h: 18 } })]);
   assert.equal(locate(fp, doc(other), rectOf), null);
 });
 
-test("двойники, которых не различить, — не найден (выбирать наугад нельзя)", () => {
+test("twins that cannot be told apart: not found (no guessing)", () => {
   const a = new N("li", { cls: "item", text: "Same", rect: { x: 0, y: 100, w: 200, h: 20 } });
   const b = new N("li", { cls: "item", text: "Same", rect: { x: 0, y: 100, w: 200, h: 20 } });
   const root = new N("body", {}, [new N("ul", {}, [a, b])]);
@@ -90,19 +90,29 @@ test("двойники, которых не различить, — не най�
   assert.equal(locate(fp, doc(root), rectOf), null);
 });
 
-test("селектор попал в чужой элемент — matches это видит", () => {
+test("the selector hit a foreign element: matches sees it", () => {
   const before = page([card("Start", "Free", 40), card("Pro", "9 $", 340)]);
   const el = buyOf(before, 1);
   const fp = fingerprint(el, el.rect);
   const after = page([card("Start", "Free", 40), card("Pro", "9 $", 340)]);
-  assert.ok(matches(fp, buyOf(after, 1), rectOf), "тот же элемент");
-  assert.ok(!matches(fp, buyOf(after, 0), rectOf), "соседняя кнопка — не он");
+  assert.ok(matches(fp, buyOf(after, 1), rectOf), "the same element");
+  assert.ok(!matches(fp, buyOf(after, 0), rectOf), "the neighbor button is not it");
 });
 
-test("правка текста на холсте не ломает привязку", () => {
+test("a text edit on the canvas does not break the anchor", () => {
   const root = page([card("Start", "Free", 40), card("Pro", "9 $", 340)]);
   const el = buyOf(root, 1);
   const fp = fingerprint(el, el.rect);
-  el.own = "Купить сейчас";
+  el.own = "Buy now";
   assert.equal(locate(fp, doc(root), rectOf).el, el);
+});
+
+test("non-Latin text still anchors (words are matched as Unicode letters)", () => {
+  // deliberately not Latin: the fingerprint must not depend on the script of the design
+  const mk = (x) => new N("body", {}, [new N("a", { cls: "btn", text: "Café 日本", rect: { x, y: 600, w: 240, h: 44 } })]);
+  const before = mk(40);
+  const fp = fingerprint(before.children[0], before.children[0].rect);
+  assert.equal(fp.text, "Café 日本");
+  const after = mk(60);
+  assert.equal(locate(fp, doc(after), rectOf).el, after.children[0]);
 });

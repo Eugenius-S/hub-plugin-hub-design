@@ -1,18 +1,19 @@
-"""Hub Design: правки руками — точечно в исходник .html. Находит элемент по селектору холста (agent.js selector()) в разборе
-файла и меняет только его: style у открывающего тега (сдвиг, размер, стили) и текст внутри. Страницу целиком не пересобирает:
-всё остальное в файле остаётся байт в байт. Не нашёл элемент, их несколько или текст в файле не тот — пункт пропущен
-(«не записано»), его делает дизайнер; на чужой элемент не садится."""
+"""Hub Design: hand edits written point by point into the .html source. Finds the element by the canvas selector (agent.js
+selector()) in the parsed file and changes only it: the style of the opening tag (shift, size, styles) and the text inside.
+The page is not rebuilt as a whole: everything else in the file stays byte for byte. If the element is not found, there are
+several of them or the text in the file differs, the item is skipped ("not written") and the designer does it; it never
+lands on a foreign element."""
 import html
 import re
 from html.parser import HTMLParser
 
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
-# старый открытый элемент закрывается новым: <li><li>, <p><div>
+# an old open element is closed by a new one: <li><li>, <p><div>
 AUTOCLOSE = {"li": {"li"}, "dt": {"dt", "dd"}, "dd": {"dt", "dd"}, "tr": {"tr"}, "td": {"td", "th"}, "th": {"td", "th"}, "option": {"option"},
              "thead": {"tbody", "tfoot"}, "tbody": {"tbody", "tfoot"}}
 P_CLOSERS = {"address", "article", "aside", "blockquote", "div", "dl", "fieldset", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header",
              "hr", "main", "nav", "ol", "p", "pre", "section", "table", "ul"}
-RAW_TEXT = {"script", "style", "textarea", "title"}   # внутри не разметка — текст туда не пишем
+RAW_TEXT = {"script", "style", "textarea", "title"}   # not markup inside: we write no text there
 PROP = re.compile(r"^-{0,2}[A-Za-z][\w-]*$")
 BAD_VALUE = re.compile(r"[;{}<>\\\n\r]|/\*")
 ATTR_NAME = re.compile(r"^[A-Za-z][\w:.-]*$")
@@ -22,8 +23,8 @@ class El:
     def __init__(self, tag, attrs, start, open_end, parent):
         self.tag, self.attrs, self.start, self.open_end, self.parent = tag, attrs, start, open_end, parent
         self.kids = []
-        self.end_start = None    # где начинается закрывающий тег; None — не закрыт (пустой или закрыт «неявно»)
-        self.raw = ""            # открывающий тег как в файле — правится и подменяется целиком
+        self.end_start = None    # where the closing tag starts; None: not closed (void or closed implicitly)
+        self.raw = ""            # the opening tag as in the file: edited and replaced as a whole
 
 
 class Tree(HTMLParser):
@@ -71,7 +72,7 @@ def parse(src):
     return Tree(src)
 
 
-# --- селектор холста ------------------------------------------------------------------------------------------------
+# --- canvas selector ------------------------------------------------------------------------------------------------
 IDENT = r"(?:\\[0-9a-fA-F]{1,6}\s?|\\.|[^.:#\s\\>])+"
 PART = re.compile(r"^(?:#(?P<id>%s)|(?P<tag>[A-Za-z][\w-]*)(?P<cls>(?:\.%s)*)(?::nth-of-type\((?P<n>\d+)\))?)$" % (IDENT, IDENT))
 
@@ -110,10 +111,10 @@ def fits(el, part):
 
 
 def find(tree, sel):
-    """(элемент, "") — единственный подходящий; иначе (None, почему)."""
+    """(element, "") when exactly one fits; otherwise (None, why)."""
     parts = parse_sel(sel)
     if not parts:
-        return None, "селектор не разобран"
+        return None, "selector not parsed"
     hits = []
     for el in tree.all:
         if not fits(el, parts[-1]):
@@ -127,9 +128,9 @@ def find(tree, sel):
         if ok:
             hits.append(el)
     if not hits:
-        return None, "элемента нет в файле (его строит скрипт или макет перевёрстан)"
+        return None, "the element is not in the file (a script builds it or the design was relaid out)"
     if len(hits) > 1:
-        return None, "в файле таких элементов несколько"
+        return None, "several such elements in the file"
     return hits[0], ""
 
 
@@ -138,18 +139,18 @@ def norm(s):
 
 
 def text_of(tree, el):
-    """Текст элемента как в файле: без тегов, сущности раскрыты."""
+    """The element text as in the file: no tags, entities expanded."""
     end = el.end_start if el.end_start is not None else el.open_end
     inner = re.sub(r"<(script|style)\b.*?</\1\s*>|<!--.*?-->|<[^>]*>", "", tree.src[el.open_end:end], flags=re.S | re.I)
     return html.unescape(inner)
 
 
-# --- style и атрибуты в открывающем теге -----------------------------------------------------------------------------
+# --- style and attributes in the opening tag -----------------------------------------------------------------------------
 ATTR = re.compile(r"""\s+([^\s"'<>/=]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s"'=<>`]+))?""")
 
 
 def attr_span(raw, name):
-    """(начало, конец всего атрибута, начало и конец значения, кавычка) первого атрибута name; нет — None."""
+    """(start, end of the whole attribute, start and end of the value, quote) of the first attribute `name`; none: None."""
     head = re.match(r"<[^\s/>]+", raw)
     pos = head.end() if head else 0
     for m in ATTR.finditer(raw, pos):
@@ -196,7 +197,7 @@ def esc(value, quote):
 
 
 def set_style(raw, decls, drop=()):
-    """decls — [(свойство, значение)] дописываются в конец style (старые с тем же именем убираются); drop — свойства убрать."""
+    """decls: [(property, value)] appended to the end of style (old ones with the same name are removed); drop: properties to remove."""
     names = {p.lower() for p, _ in decls} | {p.lower() for p in drop}
     span = attr_span(raw, "style")
     if span and span[2] is not None:
@@ -221,7 +222,7 @@ def set_style(raw, decls, drop=()):
 
 
 def set_attr(raw, name, value):
-    """value None — снять атрибут; "" — булев (name без значения)."""
+    """value None: remove the attribute; "": boolean (name without a value)."""
     span = attr_span(raw, name.lower())
     if value is None:
         return raw[:span[0]] + raw[span[1]:] if span else raw
@@ -232,14 +233,14 @@ def set_attr(raw, name, value):
     return raw[:head] + new + raw[head:]
 
 
-# --- что писать -----------------------------------------------------------------------------------------------------
+# --- what to write -----------------------------------------------------------------------------------------------------
 def num(v):
     v = round(float(v), 2)
     return str(int(v)) if v == int(v) else str(v)
 
 
 def decls_of(c):
-    """Как agent.js paintState: сдвиг — translate, размер — border-box + width/height, затем стили; None — значение не годится."""
+    """Like agent.js paintState: shift is translate, size is border-box + width/height, then styles; None: the value is not acceptable."""
     out = []
     dx, dy = float(c.get("dx") or 0), float(c.get("dy") or 0)
     if dx or dy:
@@ -257,14 +258,14 @@ def decls_of(c):
 
 
 def retext(tree, el, c):
-    """Новый текст вместо старого: только у листа без вложенных тегов, и только если в файле стоит тот самый текст."""
+    """New text instead of the old: only for a leaf without nested tags, and only if the file holds that very text."""
     if el.tag in RAW_TEXT or el.end_start is None:
-        return None, "текст внутри не простой"
+        return None, "the text inside is not plain"
     inner = tree.src[el.open_end:el.end_start]
     if "<" in re.sub(r"<br\s*/?>", "", inner, flags=re.I):
-        return None, "внутри вложенные теги"
+        return None, "nested tags inside"
     if norm(html.unescape(re.sub(r"<br\s*/?>", "", inner, flags=re.I))) != norm(c.get("t0")):
-        return None, "текст в файле не тот, что на холсте"
+        return None, "the text in the file differs from the canvas"
     lead = re.match(r"\s*", inner).group(0)
     tail = re.search(r"\s*$", inner).group(0) if inner.strip() else ""
     return (el.open_end, el.end_start, lead + html.escape(str(c.get("t")), quote=False) + tail), ""
@@ -272,10 +273,10 @@ def retext(tree, el, c):
 
 def verify(tree, el, c):
     if c.get("tag") and el.tag != c["tag"]:
-        return "тег в файле другой"
+        return "the tag in the file is different"
     a, b = norm(c.get("label")), norm(text_of(tree, el))
     if a and b and a[:30] != b[:30]:
-        return "элемент в файле с другим текстом"
+        return "the element in the file has different text"
     return ""
 
 
@@ -289,17 +290,17 @@ def op_ok(o):
 
 
 def apply(src, changes, ops=()):
-    """(новый текст, [селекторы записанных], [{sel, why}], итог по крутилкам: "done"/"skipped"/"none", почему).
-    changes — [{sel, label, tag, dx, dy, w, h, t0, t, css}], ops — [{kind: var|attr, name, value}] для <html>."""
+    """(new text, [selectors written], [{sel, why}], result for the tweaks: "done"/"skipped"/"none", why).
+    changes: [{sel, label, tag, dx, dy, w, h, t0, t, css}], ops: [{kind: var|attr, name, value}] for <html>."""
     tree = parse(src)
     done, skipped, edits, used = [], [], [], set()
     for c in changes:
         sel = c.get("sel")
         el, why = find(tree, sel)
-        why = why or ("тот же элемент уже правят" if id(el) in used else "") or (verify(tree, el, c) if el else "")
+        why = why or ("the same element is already being edited" if id(el) in used else "") or (verify(tree, el, c) if el else "")
         decls = None if why else decls_of(c)
         if not why and decls is None:
-            why = "значение стиля не годится"
+            why = "the style value is not acceptable"
         text = None
         if not why and c.get("t") is not None and c.get("t") != c.get("t0"):
             text, why = retext(tree, el, c)
@@ -317,9 +318,9 @@ def apply(src, changes, ops=()):
         root = next((e for e in tree.all if e.tag == "html"), None)
         bad = [o for o in ops if not op_ok(o)]
         if root is None:
-            state, why = "skipped", "в файле нет <html>"
+            state, why = "skipped", "no <html> in the file"
         elif bad:
-            state, why = "skipped", "значение крутилки не годится"
+            state, why = "skipped", "the tweak value is not acceptable"
         else:
             sets = [(o["name"], str(o["value"])) for o in ops if o["kind"] == "var" and o.get("value") is not None]
             drop = [o["name"] for o in ops if o["kind"] == "var" and o.get("value") is None]
@@ -336,5 +337,5 @@ def apply(src, changes, ops=()):
     for a, b, new in sorted(edits, key=lambda e: -e[0]):
         out = out[:a] + new + out[b:]
     if out != src and len(parse(out).all) != len(tree.all):
-        return src, [], [{"sel": c.get("sel"), "why": "проверка после записи не прошла"} for c in changes], "skipped", "проверка после записи не прошла"
+        return src, [], [{"sel": c.get("sel"), "why": "the check after writing failed"} for c in changes], "skipped", "the check after writing failed"
     return out, done, skipped, state, why

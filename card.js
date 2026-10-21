@@ -1,17 +1,16 @@
-// Карточки дизайна и видео в ленте чата (0.9.0, владелец 21.10: «агенты в направлении все присылали дизайн, видео — как вход в
-// Claude Design, прямо в чате такую штуку»). Макет (.html) или видео (mp4/mov/webm/gif), присланный файлом (hub send-file) или названный
-// полным путём в тексте реплики, в ленте становится карточкой: плитка с превью, имя, «Hub Design · агент», «поделиться» и «Скрыть».
-// Клик по карточке открывает файл в Hub Design. Лента пересобирается снимками ядра, поэтому узлы карточек и всё асинхронное
-// (название, снимок, кадр видео — в том числе неудачи) держатся в памяти страницы: перерисовка берёт готовое, без мигания и запросов.
+// Cards of designs and videos in the chat feed. A design (.html) or a video (mp4/mov/webm/gif) that a session sent as a file (hub send-file) or
+// named by a full path in its reply becomes a card in the feed: a tile with a preview, a name, "Hub Design · agent", "share" and "Hide".
+// A click on a card opens the file in Hub Design. The feed is rebuilt from core snapshots, so the card nodes and everything asynchronous
+// (title, shot, video frame - failures too) are kept in the page memory: a repaint takes the ready result, with no flicker and no requests.
 import { CARD_MAX, cardKind, cardName, cardText, fileUrl, hideToggle, isAbsPath, pathFromHref } from "./lib.js";
 
 const HIDE_KEY = "hub-design:card-hidden";
 const META_TTL = 60000, FAIL_TTL = 120000;
-const meta = new Map();       // путь → {state, title, mtime, at} | {failed, at}
-const waiting = new Map();    // путь → Promise ответа процесса
-const thumbs = new Map();     // адрес снимка → "ok" | время неудачи
-const frames = new Map();     // видео → dataURL кадра | "none"
-const nodes = new Map();      // «ключ реплики|путь» → узел карточки
+const meta = new Map();       // path -> {state, title, mtime, at} | {failed, at}
+const waiting = new Map();    // path -> Promise of the process answer
+const thumbs = new Map();     // shot address -> "ok" | time of the failure
+const frames = new Map();     // video -> dataURL of the frame | "none"
+const nodes = new Map();      // "reply key|path" -> the card node
 const MAX_NODES = 300;
 
 const SVG = (body) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -26,12 +25,12 @@ let cfg = null;   // {origin, local, open, lang, session, abs}
 
 const readHidden = () => { try { const l = JSON.parse(localStorage.getItem(HIDE_KEY) || "[]"); return Array.isArray(l) ? l : []; } catch { return []; } };
 const isHidden = (path) => readHidden().includes(path);
-const setHidden = (path, on) => { try { localStorage.setItem(HIDE_KEY, JSON.stringify(hideToggle(readHidden(), path, on))); } catch { /* хранилище закрыто — свернётся до перезагрузки */ } };
+const setHidden = (path, on) => { try { localStorage.setItem(HIDE_KEY, JSON.stringify(hideToggle(readHidden(), path, on))); } catch { /* storage is closed - it folds until a reload */ } };
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const q = (path) => encodeURIComponent(cfg.abs(path));
 
-// что процесс плагина знает о файле: на месте ли, <title> макета, время правки. Ответ живёт минуту, неудача — две (процесс могут перезапустить)
+// what the plugin process knows about a file: whether it is there, the design <title>, the edit time. An answer lives a minute, a failure two (the process may be restarted)
 function info(path) {
   const m = meta.get(path);
   if (m && Date.now() - m.at < (m.failed ? FAIL_TTL : META_TTL)) return Promise.resolve(m);
@@ -44,7 +43,7 @@ function info(path) {
   return waiting.get(path);
 }
 
-// кадр видео: <video> с CORS-ответом процесса плагина рисуется на canvas. Один за раз; не вышло (кодек, права) — значок
+// a video frame: a <video> with a CORS answer of the plugin process is drawn on a canvas. One at a time; it failed (codec, rights) - an icon
 let grabbing = Promise.resolve();
 function grab(path) {
   const run = () => new Promise((done) => {
@@ -53,7 +52,7 @@ function grab(path) {
     v.muted = true;
     v.preload = "auto";
     v.playsInline = true;
-    const end = (url) => { clearTimeout(timer); v.removeAttribute("src"); try { v.load(); } catch { /* уже пусто */ } done(url); };
+    const end = (url) => { clearTimeout(timer); v.removeAttribute("src"); try { v.load(); } catch { /* already empty */ } done(url); };
     const timer = setTimeout(() => end(null), 10000);
     v.addEventListener("error", () => end(null));
     v.addEventListener("loadedmetadata", () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); });
@@ -81,7 +80,7 @@ function showPicture(card, src) {
   img.src = src;
 }
 
-// превью — когда карточка попала в поле зрения: макет — снимок (Chrome процесса плагина, кэш на диске), видео — кадр, gif — он сам
+// the preview - when the card comes into view: a design is a shot (the plugin process Chrome, cached on disk), a video is a frame, a gif is itself
 function preview(card) {
   const path = card.dataset.hdPath, kind = card.dataset.kind, m = meta.get(path);
   if (!m || m.state !== "ok" || card.dataset.pv === String(m.mtime)) return;
@@ -120,7 +119,7 @@ function hideLabel(card) {
 }
 
 async function copy(text) {
-  try { await navigator.clipboard.writeText(text); return true; } catch { /* нет доступа к буферу — запасной путь ниже */ }
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* no access to the clipboard - the fallback is below */ }
   const ta = el("textarea");
   ta.value = text;
   ta.style.cssText = "position:fixed;opacity:0";
@@ -181,7 +180,7 @@ function remember(key, card) {
   if (nodes.size > MAX_NODES) nodes.delete(nodes.keys().next().value);
 }
 
-// что в реплике: файл от send-file (плеер видео, файл-ссылка) заменяется карточкой на своём месте, путь в тексте — карточка в конце реплики
+// what is in a reply: a file from send-file (a video player, a file link) is replaced by a card in place, a path in the text - a card at the end of the reply
 function found(row) {
   const out = [];
   if (row.classList.contains("sent-file")) {
@@ -230,15 +229,15 @@ function want(n) {
   if (up) rows.push(up);
   if (n.querySelectorAll) rows.push(...n.querySelectorAll(".feed .row"));
   for (const r of rows) pending.add(r);
-  if (pending.size && !queued) { queued = true; requestAnimationFrame(flush); }   // до отрисовки кадра: без мигания голой ссылки
+  if (pending.size && !queued) { queued = true; requestAnimationFrame(flush); }   // before the frame is drawn: no flicker of a bare link
 }
 
-// opts: origin() → адрес процесса плагина, local() → хаб открыт на этом компьютере, open(path) → открыть файл в Hub Design,
-// lang() → язык страницы, session() → чья лента открыта, abs(path) → путь с раскрытым «~»
+// opts: origin() -> the plugin process address, local() -> the hub is open on this computer, open(path) -> open a file in Hub Design,
+// lang() -> the page language, session() -> whose feed is open, abs(path) -> a path with "~" expanded
 export function mountCards(opts) {
   if (cfg) return;
   cfg = opts;
-  if (!cfg.local()) return;   // чужой компьютер (tailnet): файла у процесса нет, лента остаётся как есть
+  if (!cfg.local()) return;   // another computer (tailnet): the process has no file, the feed stays as it is
   new MutationObserver((list) => { for (const m of list) for (const n of m.addedNodes) want(n); }).observe(document.body, { childList: true, subtree: true });
   want(document.body);
 }
