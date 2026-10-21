@@ -1,75 +1,77 @@
-# Hub Design: плагин Agents Hub
+# Hub Design: an Agents Hub plugin
 
-Дизайн-холст в хабе, как в Claude Design: макеты сессии на бесконечном поле, тулбар, зум, цвет, пины-комментарии. Двигаете, красите и комментируете руками — всё уходит дизайнеру одной пачкой, файл правит он сам.
+A design canvas inside the hub, like Claude Design: a session's designs on an infinite field, a toolbar, zoom, color, comment pins. You move, paint and comment by hand, everything goes to the designer as one batch, and the designer edits the file.
 
-## Как это работает
+The interface is in English by default and in Russian when the hub language (`hub.lang`) is Russian; any other language falls back to English. The language is read when a text is drawn, so a switch takes effect without a reload.
 
-Вид `#/x/hub-design`. Раскладка как в Claude Design, цвета, шрифты и светлая/тёмная тема — как у хаба.
+## How it works
 
-1. **Холст** — бесконечное поле. HTML-макеты сессии лежат на нём рамками (фреймами): сверху подпись, справа настройки, скачать и PLAY (открыть в новой вкладке). Слева — чат со специалистом (по умолчанию `designer`; открыт макет — его автор). Окно макета — экранной высоты (1440×900), длинная страница прокручивается внутри рамки и вкладка «Комментарии» с пачкой черновиков.
-   Справа сверху — ✕: закрыть Hub Design и вернуться туда, откуда пришли.
-   **Стартовый экран** (как у Claude Design) открывается при входе в вид и по клику на логотип слева сверху: заголовок, вкладки «Все / Мои / Чужие» («Мои» — макеты, открытые на холсте), поиск, вид «список/плитки», сортировка, поле «Открыть по пути». Ряд пресетов — презентация, дизайн, дизайн в коде, дизайн-система, анимация: клик ведёт чат к нужному специалисту (анимация — `animator`, остальное — `designer`) и кладёт в поле заготовку «новая …: ». Ниже — прошлые макеты карточками с живым превью, именем, автором и «изменён N назад»: клик открывает макет на холсте. Если сразу написать в чат на стартовом экране — создаётся новый файл по указаниям, он откроется на холсте, когда появится.
-2. **Тулбар** слева сверху: страница, Выбор, Рука, Текст, Фрейм, Стикер, Комментарий, Карандаш (линия, стрелка), Фигуры (прямоугольник, овал). Справа сверху: PLAY, боковая панель, масштаб с меню («Вписать всё», 50, 100, 200%).
-3. **Зум и панорама.** Колесо или щипок — зум к курсору, пробел и перетаскивание или Рука — панорама. Вид холста помнится в браузере.
-4. **Выбор.** Клик по элементу внутри макета — рамка, перетаскивание, угол меняет размер, двойной клик правит текст; ↑ выбирает родителя, ↺ возвращает как было. Справа панель: заливка и цвет текста палитрой, шрифт, размеры, отступы, рамка, скругление.
-5. **Комментарий** — клик по месту ставит пин с текстом, к нему привязан элемент: не один селектор, а приметы (id, ближайший предок с id, тег, текст, атрибуты, классы, соседний текст, размер и место). Макет перевёрстали, у элемента сменился селектор — пин находит его по приметам, едет вместе с ним и обновляет селектор; не нашёл или кандидатов два с близким счётом — пин остаётся на месте с пометкой «элемент не найден» (штриховой кружок и ⚠ в списке) и не садится на чужой элемент. В сообщении дизайнеру приметы идут словами. В окне: «Отправить» (уходит автору макета сразу), «Закрыть» (остаётся черновиком), «Удалить». **Стикер** и **Фрейм** — заметки и новые рамки на холсте. **Карандаш и фигуры** — обвести или показать стрелкой.
-6. **Отправка** — кнопки «Отправить дизайнеру» нет. Правки руками, крутилки и рисунки уходят сами одним сообщением через 8 с после последней правки (пока двигаете — ждёт) тому, кто выбран внизу в «Кому уходят правки» (по умолчанию дизайнер или автор макета). Получатель в ходе — сообщение встаёт в его очередь. Комментарий уходит своей кнопкой в окне пина; текст из поля ввода забирает с собой всё, что накопилось. В сообщении: у пина селектор, приметы и координаты, у правки «было → стало», у рисунка тип и место. Над полем ввода правок руками нет: они видны только во вкладке «Комментарии» (с пометкой «в файле»). Отменить правку — × в её строке там или ↺ у выделенного элемента на холсте (и после отправки: записанная в файл правка откатывается к копии). Пункт, который не удалось записать в файл, уходит дизайнеру словами, и дальше Hub Design его в файл не пишет. Получатель один на пачку — выбранный внизу (если не выбирали руками, им становится автор макета в фокусе).
-7. Сессия поправила файл — рамка перезагрузится, пины прошлого раунда погаснут.
+The view is `#/x/hub-design`. The layout follows Claude Design; colors, fonts and the light/dark theme come from the hub.
 
-### Правки руками — сразу в файл
+1. **Canvas** — an infinite field. A session's HTML designs lie on it as frames: a caption on top, settings, download and PLAY (open in a new tab) on the right. On the left is a chat with a specialist (`designer` by default; with a design open, its author). The design window is screen height (1440×900); a long page scrolls inside the frame; the "Comments" tab holds the batch of drafts.
+   Top right is the close button: it closes Hub Design and returns you to where you came from.
+   **The start screen** (as in Claude Design) opens on entering the view and on a click on the logo at the top left: a title, tabs "All / Mine / Others" ("Mine" are the designs opened on the canvas), search, a "list/tiles" switch, sorting, an "Open a design by path" field. A row of presets — presentation, design, design in code, design system, animation: a click leads the chat to the right specialist (animation — `animator`, the rest — `designer`) and puts a stub "new …: " into the input. Below are past designs as cards with a live preview, a name, an author and "edited N ago": a click opens the design on the canvas. If you write in the chat right away on the start screen, a new file is made from your instructions and opens on the canvas when it appears.
+2. **Toolbar** at the top left: page, Select, Hand, Text, Frame, Note, Comment, Pencil (line, arrow), Shapes (rectangle, oval). Top right: PLAY, the side panel, zoom with a menu ("Fit all", 50, 100, 200%).
+3. **Zoom and pan.** The wheel or a pinch zooms to the cursor; space and drag, or the Hand, pans. The canvas view is remembered in the browser.
+4. **Select.** A click on an element inside a design gives a frame and dragging; a corner resizes, a double click edits the text; the up arrow selects the parent, the undo arrow returns it to how it was. The panel on the right: fill and text color from a palette, font, sizes, padding, border, radius.
+5. **Comment** — a click on a place puts a pin with text, and an element is attached to it: not just one selector but landmarks (id, nearest ancestor with an id, tag, text, attributes, classes, neighboring text, size and position). If the design is re-laid out and the element's selector changes, the pin finds it by its landmarks, moves with it and updates the selector; if it is not found, or there are two candidates with close scores, the pin stays where it was marked "element not found" (a dashed circle and a warning sign in the list) and does not land on a foreign element. In the message to the designer the landmarks go in words. In the window: "Send" (goes straight to the design's author), "Close" (stays a draft), "Delete". **Note** and **Frame** are notes and new frames on the canvas. **Pencil and shapes** — circle something or point with an arrow.
+6. **Sending** — there is no "Send to the designer" button. Hand edits, tweaks and drawings go by themselves, as one message, 8 s after the last edit (while you are still moving, it waits) to whoever is chosen at the bottom in "Who receives the edits" (the designer or the design's author by default). If the recipient is busy, the message joins their queue. A comment goes with its own button in the pin window; the text from the input takes everything that has accumulated with it. In the message: for a pin the selector, landmarks and coordinates, for an edit "was → now", for a drawing the type and place. There is no list of hand edits above the input: they are visible only in the "Comments" tab (marked "in the file"). To undo an edit use the × in its row there, or the undo arrow on the selected element on the canvas (also after sending: an edit written to the file is rolled back to the copy). An item that could not be written to the file goes to the designer in words, and Hub Design does not write it to the file after that. There is one recipient per batch — the one chosen at the bottom (if you did not choose by hand, it is the author of the design in focus).
+7. When a session edits the file, the frame reloads and the pins of the previous round go dim.
 
-Сдвиг, размер, текст и крутилки Hub Design записывает в `.html` сам, через `server.py`: так «руками» остаётся правкой, а не просьбой.
+### Hand edits go straight into the file
 
-- **Запись точечная.** У найденного элемента — inline-стиль (`translate`, `width`, `height`, стили панели) или его текст; крутилки — `var`/`attr` на `<html>`. Остальной файл не трогается. Элемент не нашёлся однозначно (повторы, шаблонные куски, скрипты) — не пишем, пункт уходит дизайнеру обычным пунктом.
-- **Копия.** Перед первой записью рядом ложится `<имя>.r<N>.html` — файл как был (N — номер раунда). Откатили правку руками — файл возвращается к копии на диске.
-- **Автор в ходе — не пишем.** Пока специалист, правящий макет, занят, запись ждёт и повторяется каждые 5 с; ход кончился — запишется. Файл успел поправить кто-то другой — запись не затирает его: рамка перечитывается, пункт остаётся черновиком.
-- **Что видно.** В «Комментариях» у записанной правки — метка «в файле». В сообщении дизайнеру такие пункты помечены «— уже в файле», плюс путь копии: вид верный, его надо сохранить, копию не трогать.
-- Запись идёт только в HTML из рабочих папок сессий и проектов, только с запросом со страницы хаба, не больше 2 МиБ.
+Move, resize, text and tweaks are written by Hub Design into the `.html` itself, through `server.py`: this way "by hand" stays an edit, not a request.
+
+- **The write is pinpoint.** On the element it found it sets an inline style (`translate`, `width`, `height`, the panel's styles) or its text; tweaks are a `var`/`attr` on `<html>`. The rest of the file is not touched. If the element is not found unambiguously (repeats, template pieces, scripts), nothing is written and the item goes to the designer as an ordinary item.
+- **A copy.** Before the first write a `<name>.r<N>.html` is put next to the file: the file as it was (N is the round number). If you undo a hand edit, the file returns to the copy on disk.
+- **The author is mid-turn — no writing.** While the specialist editing the design is busy, the write waits and retries every 5 s; when the turn ends, it is written. If somebody else managed to edit the file, the write does not overwrite it: the frame is re-read and the item stays a draft.
+- **What you see.** In "Comments" a written edit carries the "in the file" mark. In the message to the designer such items are marked "already in the file", plus the path of the copy: the look is right, keep it, and do not touch the copy.
+- Writing goes only into HTML from the working folders of sessions and projects, only for a request from the hub page, at most 2 MiB.
 
 ### PDF
 
-Кнопка «Скачать PDF» в шапке рамки печатает макет экранного размера (рамка 1440×900 → страница 1440×900) своим Chrome без полей: `server.py` запускает headless Chrome из `hub.json` → `testchrome.path` с `--print-to-pdf`. Chrome не настроен — печатает сама страница из скрытой рамки, и браузер предлагает «Сохранить как PDF».
+The "Download PDF" button in the frame header prints the design at screen size (a 1440×900 frame gives a 1440×900 page) with its own Chrome and no margins: `server.py` starts the headless Chrome from `hub.json` → `testchrome.path` with `--print-to-pdf`. If Chrome is not configured, the page prints itself from a hidden frame and the browser offers "Save as PDF".
 
-### Крутилки, ошибки, сетки
+### Tweaks, errors, grids
 
-- **Крутилки.** Макет, который сам объявляет `#hub-tweaks` (text, color, int, float, range, boolean, enum), получает справа панель с этими значениями. Правки живые; в пачку идёт «было → стало» по каждой крутилке.
-- **Выделенный элемент** уходит в сообщение строкой «Выделено: файл `селектор` тег «подпись»».
-- **Ошибки макета.** Ошибки скриптов и необработанные отказы промисов видны меткой на рамке; кнопка «Попросить исправить» кладёт их в пачку.
-- **Сетка.** Для контейнера с `grid-template-columns: repeat(N, minmax(0, 1fr))` в панели свойств — «Колонки: N»; «Во flex» и «В grid» оборачивают выбранное.
-- **Сетки поверх рамки** (меню рамки → «Сетки поверх рамки…»): до шести, колонки, строки или клетки, зазор, поле, цвет. Только на холсте, в макет и в PLAY не попадают; в пачке идут строкой вида рамки.
+- **Tweaks.** A design that declares `#hub-tweaks` itself (text, color, int, float, range, boolean, enum) gets a panel on the right with these values. Edits are live; the batch carries "was → now" for each tweak.
+- **The selected element** goes into the message as a line "Selected: file `selector` tag “label”".
+- **Design errors.** Script errors and unhandled promise rejections show as a mark on the frame; the "Ask to fix" button puts them into the batch.
+- **Grid.** For a container with `grid-template-columns: repeat(N, minmax(0, 1fr))` the properties panel shows "Columns: N"; "To flex" and "To grid" wrap the selection.
+- **Grids over the frame** (frame menu → "Grids over the frame…"): up to six, columns, rows or cells, gap, margin, color. Only on the canvas — they do not reach the design or PLAY; in the batch they go as a line of the frame view.
 
-### Специалисты
+### Specialists
 
-С Hub Design ставится специалист designer из каталога specialists (кнопка на стартовом экране). Нужные плагину специалисты — designer (обязателен) и animator (для пресета «Анимация», желателен); список — `NEEDED` в `lib.js`. Нет designer в хабе — на стартовом экране плашка «Для Hub Design нужен дизайнер» с кнопкой «Поставить»: она шлёт хабу от вашего имени «Поставь специалиста для Hub Design: specialists install designer» (ставит хаб), после нажатия — «Попросила хаб, ждём», и плашка пропадает сама, когда сессия появилась. Нет animator — тихая строка «нет специалиста animator» у пресета «Анимация». Пишете в чат специалисту, которого в хабе нет, — та же плашка над полем ввода.
+Hub Design installs the designer specialist from the specialists catalog (a button on the start screen). The specialists the plugin needs are designer (required) and animator (for the "Animation" preset, desirable); the list is `NEEDED` in `lib.js`. If there is no designer in the hub, the start screen shows a banner "Hub Design needs the designer" with an "Install" button: it sends the hub, in your name, "Install the specialist for Hub Design: specialists install designer" (the hub installs it); after the click it reads "Asked the hub, waiting", and the banner disappears by itself when the session appears. If there is no animator, a quiet line "no specialist animator" appears by the "Animation" preset. If you write in the chat of a specialist who is not in the hub, the same banner shows above the input.
 
-### Кнопка-палитра в поле ввода
+### The palette button in the input
 
-В поле ввода любой сессии, перед микрофоном, появляется кнопка-палитра. Клик забирает набранный текст и последний HTML из разговора, открывает Hub Design, получатель — автор макета (ищется и в давней истории), а нет автора — список специалистов на выбор, и кладёт текст в поле ввода дизайна; макет сразу открывается на холсте. Слот `composer.tools` — дополнение этого хаба к Plugin API, без номера версии: на хабе без него кнопки нет, остальное работает.
+In any session's input, before the microphone, a palette button appears. A click takes the typed text and the last HTML from the conversation, opens Hub Design (the recipient is the design's author, looked up in the long history too; with no author, a list of specialists to choose from) and puts the text into the design's input; the design opens on the canvas at once. The `composer.tools` slot is this hub's addition to the Plugin API, with no version number: on a hub without it there is no button, the rest works.
 
-### Рекомендуется hide-sidebar
+### hide-sidebar is recommended
 
-С плагином [hide-sidebar](https://github.com/Eugenius-S/hub-plugin-hide-sidebar) холст получает всю ширину: Hub Design при входе в вид прячет левый список сессий, при уходе возвращает (событие `hub-sidebar`). Без него всё работает, холст просто уже.
+With the [hide-sidebar](https://github.com/Eugenius-S/hub-plugin-hide-sidebar) plugin the canvas gets the full width: on entering the view Hub Design hides the session list on the left and on leaving brings it back (the `hub-sidebar` event). Everything works without it, the canvas is just narrower.
 
-Черновики живут в браузере до отправки: перезагрузка страницы их не теряет. Очередь занятого получателя видна над полем ввода: «Отправить сейчас» и «Убрать», как в чате хаба. Данные плагина прежних версий (design-canvas) подхватываются один раз.
+Drafts live in the browser until sent: a page reload does not lose them. The queue of a busy recipient is shown above the input: "Send now" and "Remove", as in the hub chat. Data of the plugin's earlier versions (design-canvas) is picked up once.
 
-## Поставить
+## Install
 
-«Настройки» → «Плагины» → вставить ссылку на этот репозиторий → «Проверить и поставить». Нужны Python 3 и браузер на том же компьютере, что и хаб: предпросмотр идёт с `localhost`.
+"Settings" → "Plugins" → paste the link to this repository → "Check and install". You need Python 3 and a browser on the same computer as the hub: the preview is served from `localhost`.
 
-## Как устроено
+## How it is built
 
-Процесс плагина (`server.py`) слушает `127.0.0.1` на порту страницы хаба + 11 (8787 → 8798, другой — `HUB_DESIGN_PORT`) и отдаёт файлы веба из рабочих папок сессий и проектов хаба, без скрытых. В HTML он подкладывает `agent.js`: тот рисует рамки, пины и рисунки поверх дизайна и говорит со страницей хаба через `postMessage`. Свой адрес нужен, чтобы скрипты дизайна не работали с правами страницы хаба; встраивать себя он даёт только ей, запросы с чужих сайтов отклоняет.
+The plugin process (`server.py`) listens on `127.0.0.1` at the hub page's port + 11 (8787 → 8798; a different one via `HUB_DESIGN_PORT`) and serves web files from the hub's session and project working folders, without hidden ones. Into HTML it injects `agent.js`: it draws frames, pins and drawings over the design and talks to the hub page through `postMessage`. It needs its own address so the design's scripts do not run with the hub page's rights; it allows only the hub page to embed it and rejects requests from foreign sites.
 
-## Ограничения
+## Limitations
 
-- Только с того же компьютера: по сети (tailnet, телефон) предпросмотра нет.
-- В сообщении — селектор и координаты, без снимка элемента; рисунок — описанием.
-- Экспорта в Figma нет; «Скачать» отдаёт HTML-файл рамки, PDF — отдельная кнопка.
-- После перезагрузки рамки ↺ откатывает правку к тому, что уже записано в файл, а не к исходному — исходный вид лежит в копии `<имя>.r<N>.html`.
-- Холст проверен в браузере на macOS; на Windows и Linux не проверялся.
+- Same computer only: there is no preview over the network (tailnet, phone).
+- The message carries a selector and coordinates, without a snapshot of the element; a drawing goes as a description.
+- There is no export to Figma; "Download" gives the frame's HTML file, PDF is a separate button.
+- After a frame reload the undo arrow rolls an edit back to what is already written in the file, not to the original; the original look is in the copy `<name>.r<N>.html`.
+- The canvas was checked in a browser on macOS; it was not checked on Windows and Linux.
 
-## Тесты
+## Tests
 
-`PYTHONPATH=<код хаба> python3 -W ignore -m unittest discover -s tests` — сервер, запись в файл (`handwrite.py`), PDF, манифест; `node --test tests/*.test.mjs` — логика, приметы элемента. Без браузера.
+`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests` — the server, writing to the file (`handwrite.py`), PDF, the manifest; `node --test tests/*.test.mjs` — the logic, element landmarks, the en/ru tables. No browser needed.
 
-Иконка — [3D Fluency](https://icons8.com/icons/3d-fluency) от Icons8.
+Icon — [3D Fluency](https://icons8.com/icons/3d-fluency) by Icons8.
