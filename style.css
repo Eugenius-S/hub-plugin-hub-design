@@ -95,7 +95,6 @@
   background-color:var(--muted);background-image:radial-gradient(circle,color-mix(in oklab,var(--foreground) 14%,transparent) 1px,transparent 1.2px);background-size:22px 22px}
 .hdc[data-grab=grab] .hdc-stage{cursor:grab}
 .hdc[data-grab=grabbing] .hdc-stage,.hdc[data-grab=grabbing] .hdc-label{cursor:grabbing}
-.hdc[data-tool=note] .hdc-stage{cursor:crosshair}
 .hdc-world{position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0}
 .hdc-frame{position:absolute;background:#fff;box-shadow:var(--shadow-lift);border-radius:2px}
 .hdc-frame.focus{box-shadow:0 0 0 calc(2px * var(--inv,1)) var(--primary),var(--shadow-lift)}
@@ -194,7 +193,20 @@ html.hs-hidden .hd-top{padding-left:56px}
 
 /* design tweaks: sections at the top of the properties panel */
 .hd-tw{border-bottom:1px solid var(--border);margin-bottom:var(--space-3)}
-.hd-tweak{display:flex;align-items:center;gap:6px;margin-bottom:var(--space-2);min-height:24px}
+.hd-tw .hd-psec{margin-bottom:var(--space-4)}
+.hd-tw .hd-psec h4{margin-bottom:var(--space-3)}
+.hd-tweak{display:flex;align-items:center;gap:var(--space-2);margin-bottom:var(--space-3);min-height:34px}
+.hd-tweak .hd-seg,.hd-tweak .hd-field{min-height:30px}
+.hd-tweak .hd-segb{padding:6px 8px}
+.hd-tweak .hd-swatches{gap:8px}
+.hd-tweak .hd-swatch{width:24px;height:24px}
+.hd-swatch.own{position:relative;overflow:hidden;cursor:pointer;background:conic-gradient(#ff3b30,#ffcc00,#34c759,#00c7be,#0a84ff,#bf5af2,#ff3b30)}
+.hd-swatch.own input{position:absolute;inset:-6px;width:calc(100% + 12px);height:calc(100% + 12px);opacity:0;cursor:pointer;border:0;padding:0}
+.hd-bi{display:grid;grid-template-columns:1fr auto;align-items:center;gap:var(--space-2) var(--space-3);margin-bottom:var(--space-4)}
+.hd-bi .hd-flabel{max-width:none}
+.hd-bi .hd-seg,.hd-bi input[type=range]{grid-column:1 / -1}
+.hd-bi input[type=range]{margin:0;width:100%}
+.hd-tout.wide{min-width:52px}
 .hd-tweak .hd-flabel{min-width:56px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hd-tweak input[type=range]{flex:1;min-width:0;accent-color:var(--hd-acc)}
 .hd-tweak input[type=checkbox]{accent-color:var(--hd-acc)}
@@ -205,3 +217,5 @@ html.hs-hidden .hd-top{padding-left:56px}
 .hd-segb+.hd-segb{border-left:1px solid var(--border)}
 .hd .hd-segb.on{background:var(--hd-acc);color:var(--hd-on)}
 .hd-infile{flex:none;align-self:center;font-size:11px;line-height:1;padding:3px 6px;border-radius:999px;background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}
+.hd-n.rgn{border-radius:4px}
+.hd-citem .hd-dim{flex:none;color:var(--muted-foreground);font-size:var(--text-xs)}

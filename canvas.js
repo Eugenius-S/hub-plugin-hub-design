@@ -24,7 +24,7 @@ export const STR = {
     ed_who: "Who gets the comment", ed_pick: "Choose a recipient",
     how_wrote: "Wrote this design", how_picked: "Picked by you", how_sent: "Sent this design (the author was not found)", how_named: "Named this file (the author was not found)", how_none: "Who made the design is unknown",
     ed_head: "Comment", ed_ph: "What to change here?", ed_close: "Close", ed_delete: "Delete", ed_send: "Send",
-    tool_select: "Select (V)", tool_hand: "Hand (H)", tool_text: "Text (T)", tool_frame: "Add a frame (F)", tool_note: "Note (N)", tool_comment: "Comment (C)",
+    tool_select: "Select (V)", tool_hand: "Hand (H)", tool_text: "Text (T)", tool_frame: "Add a frame (F)", tool_comment: "Comment (C)",
     tool_pencil: "Pencil (P)", tool_shape: "Shapes (R)", tool_more: "More: pencil and shapes",
     play_top: "Show the selected frame full screen", panel: "Style panel", zoom: "Zoom", close_design: "Close the design — to the start screen",
   },
@@ -45,7 +45,7 @@ export const STR = {
     ed_who: "Кому уйдёт комментарий", ed_pick: "Выберите получателя",
     how_wrote: "Писал этот макет", how_picked: "Выбран вами", how_sent: "Прислал этот макет (писавшего не нашли)", how_named: "Называл этот файл (писавшего не нашли)", how_none: "Кто делал макет, неизвестно",
     ed_head: "Комментарий", ed_ph: "Что поменять здесь?", ed_close: "Закрыть", ed_delete: "Удалить", ed_send: "Отправить",
-    tool_select: "Выбрать (V)", tool_hand: "Рука (H)", tool_text: "Текст (T)", tool_frame: "Добавить фрейм (F)", tool_note: "Заметка (N)", tool_comment: "Комментарий (C)",
+    tool_select: "Выбрать (V)", tool_hand: "Рука (H)", tool_text: "Текст (T)", tool_frame: "Добавить фрейм (F)", tool_comment: "Комментарий (C)",
     tool_pencil: "Карандаш (P)", tool_shape: "Фигуры (R)", tool_more: "Ещё: карандаш и фигуры",
     play_top: "Показать выбранный фрейм во весь экран", panel: "Панель стилей", zoom: "Масштаб", close_design: "Закрыть макет — на стартовый экран",
   },
@@ -54,7 +54,7 @@ const t = makeT(STR);
 
 const FRAME_SIZES = SIZES.filter((s) => s.w);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 1, 2];
-const TOOL_KEYS = { v: "select", h: "hand", t: "text", n: "note", c: "comment", p: "pencil", r: "shape" };
+const TOOL_KEYS = { v: "select", h: "hand", t: "text", c: "comment", p: "pencil", r: "shape" };
 const BAR_GAP = 12;
 const SHAPES = { pencil: [["free", "free"], ["arrow", "arrow"]], shape: [["rect", "rect"], ["oval", "oval"]] };   // [id, icon]; the name is t("shape_<id>")
 
@@ -152,7 +152,7 @@ export function createCanvas(app) {
   }
 
   // --- gestures on the scene ---------------------------------------------------------------------------------------
-  const capture = () => P.tool === "hand" || P.tool === "note" || space || !!gesture;
+  const capture = () => P.tool === "hand" || space || !!gesture;
   function chrome() {
     root.dataset.tool = P.tool;
     root.dataset.capture = capture() ? "1" : "";
@@ -167,12 +167,6 @@ export function createCanvas(app) {
       stage.setPointerCapture(e.pointerId);
       gesture = { kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
       return chrome();
-    }
-    if (P.tool === "note" && e.button === 0) {
-      const w = toWorld(toScene(e));
-      app.addNote(w.x - 90, w.y - 12);
-      app.setTool("select");
-      return;
     }
     if (e.target === stage || e.target === world || e.target === empty) { app.focusFrame(""); app.deselect(); }
   });
@@ -365,11 +359,6 @@ export function createCanvas(app) {
       n.goneMsg.textContent = goneText(state, f.path);
       if (n.shown) { n.iframe.src = "about:blank"; n.ep.ready = false; n.shown = false; }
     } else if (!n.shown) reloadFrame(f.path);
-  }
-
-  function focusNote(id) {
-    const d = notes.get(id) || (P.notes.find((q) => q.id === id) && makeNote(P.notes.find((q) => q.id === id)));
-    if (d) setTimeout(() => d.ta.focus({ preventScroll: true }), 0);
   }
 
   // --- notes -----------------------------------------------------------------------------------------------------------
@@ -592,7 +581,7 @@ export function createCanvas(app) {
   };
   const tools = {
     select: toolBtn("select", "select"), hand: toolBtn("hand", "hand"), text: toolBtn("text", "text"),
-    frame: toolBtn("frame", "frame"), note: toolBtn("note", "note"),
+    frame: toolBtn("frame", "frame"),
     comment: toolBtn("comment", "comment"),
   };
   const group = (tool) => {
@@ -621,7 +610,7 @@ export function createCanvas(app) {
     openPop(ovf, kids);
   }), "tool_more");
   ovf.hidden = true;
-  bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.note, tools.comment, pencil.wrap, shapes.wrap, ovf);
+  bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.comment, pencil.wrap, shapes.wrap, ovf);
   function fitBar() {
     bar.classList.remove("compact");
     ovf.hidden = true;
@@ -671,7 +660,7 @@ export function createCanvas(app) {
   apply();
 
   return {
-    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, paintErrs, openEditor, refreshEditor, closeEditor, focusOn, focusNote, openAdd, scaleTo: pushScale, closeMenu,
+    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, paintErrs, openEditor, refreshEditor, closeEditor, focusOn, openAdd, scaleTo: pushScale, closeMenu,
     frame: (path) => fr.get(path), size,
   };
 }

@@ -5,7 +5,7 @@
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
-  describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
+  describeTweak, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -50,11 +50,14 @@ const STR = {
     flex_title: "display: flex — children in a row",
     grid_title: "display: grid — two columns",
     tweaks: "Tweaks",
+    bi_title: "Margins and type",
+    bi_pad: "Margins", bi_fs: "Font size", bi_ls: "Tracking", bi_lh: "Leading",
     own_color: "Custom color",
     note_chip: "Note: {text}",
     design_errors: "Design errors: {n}",
     remove: "Remove",
     lost_prefix: "⚠ element not found · ",
+    area_title: "Area x {x}, y {y}, {w}\u00d7{h} px",
     lost_title: "Element not found — the design was re-laid out, the point stays where it was",
     in_file: "in the file",
     not_written: "{sel} — not written to the file: {why}",
@@ -98,11 +101,14 @@ const STR = {
     flex_title: "display: flex — дети в ряд",
     grid_title: "display: grid — две колонки",
     tweaks: "Крутилки",
+    bi_title: "Поля и шрифты",
+    bi_pad: "Поля", bi_fs: "Шрифт", bi_ls: "Между буквами", bi_lh: "Между строк",
     own_color: "Свой цвет",
     note_chip: "Заметка: {text}",
     design_errors: "Ошибки макета: {n}",
     remove: "Убрать",
     lost_prefix: "⚠ элемент не найден · ",
+    area_title: "Область x {x}, y {y}, {w}\u00d7{h} px",
     lost_title: "Элемент не найден — макет перевёрстан, точка на прежнем месте",
     in_file: "в файле",
     not_written: "{sel} — в файл не записана: {why}",
@@ -568,7 +574,7 @@ function theme() {
 function syncEp(ep, edit) {
   const path = ep.path;
   tellEp(ep, { t: "mode", mode: toolMode(P.tool), tool: P.tool, shape: P.shapes[P.tool] });
-  tellEp(ep, { t: "pins", pins: P.pins.filter((p) => p.file === path).map(({ id, n, sel, fp, lost, x, y, fx, fy, text, state }) => ({ id, n, sel, fp, lost, x, y, fx, fy, text, state })),
+  tellEp(ep, { t: "pins", pins: P.pins.filter((p) => p.file === path).map(({ id, n, sel, fp, lost, x, y, fx, fy, text, state, area }) => ({ id, n, sel, fp, lost, x, y, fx, fy, text, state, area })),
     drawings: P.drawings.filter((d) => d.file === path).map(({ id, path: pts, kind, state, from, to, box }) => ({ id, path: pts, kind, state, from, to, box })), edit });
 }
 const syncAll = (edit) => { for (const ep of eps.values()) syncEp(ep, edit && edit.file === ep.path ? edit.id : undefined); };
@@ -611,7 +617,8 @@ function handle(file, m, ep = epOf(file)) {
     P.seq += 1;
     const n = P.pins.filter((p) => p.state !== "done").reduce((a, p) => Math.max(a, p.n), 0) + 1;
     const pin = { id: "p" + P.seq, file, n, round: P.round, state: "draft", text: "",
-      sel: m.sel, fp: m.fp || null, label: m.label, x: m.x, y: m.y, fx: m.fx, fy: m.fy, ex: m.ex, ey: m.ey, w: m.w, h: m.h };
+      sel: m.sel, fp: m.fp || null, label: m.label, x: m.x, y: m.y, fx: m.fx, fy: m.fy, ex: m.ex, ey: m.ey, w: m.w, h: m.h,
+      ...(m.area ? { area: m.area, els: m.els || [], more: m.more || 0 } : {}) };
     P.pins.push(pin);
     P.focus = file;
     syncAll({ file, id: pin.id });
@@ -694,15 +701,6 @@ function undo(redo) {
   const file = P.lastEdit || P.focus;
   if (file) tellFile(file, { t: redo ? "redo" : "undo" });
 }
-function addNote(x, y) {
-  P.seq += 1;
-  const n = { id: "n" + P.seq, x: Math.round(x), y: Math.round(y), text: "", state: "draft" };
-  P.notes.push(n);
-  save();
-  paint();
-  ui.cv.focusNote(n.id);
-}
-
 // which of the needed specialists are not in the hub (by the snapshot: appeared — it disappears itself); asked — "waiting"
 const lackNow = () => lacking((ui?.snap || hub.snapshot() || {}).sessions || [], P.asked);
 // "Install": a message to the hub from the owner — only the hub or the owner installs; wait until the session appears in the snapshot
@@ -764,7 +762,7 @@ const app = {
   pdf: (path) => savePdf(path),
   play: (path) => { if (path) window.open(fileUrl(origin(), path), "_blank", "noopener"); },
   focusFrame: (path) => { if (P.focus !== path) { P.focus = path; paint(); } },
-  addFrame: openChecked, fileState, verify, goHome, removeFrame, sizeFrame, setTool, deselect, undo, addNote,
+  addFrame: openChecked, fileState, verify, goHome, removeFrame, sizeFrame, setTool, deselect, undo,
   removeNote: (id) => { P.notes = P.notes.filter((n) => n.id !== id); save(); paint(); },
   noteChanged: () => { hold(); paintCard(); paintComments(); },
   recent: () => recentHtml(P.items),
@@ -784,7 +782,12 @@ const app = {
 // remove a manual edit, a tweak or a drawing (× in the "Comments" tab): the view in the frame returns, what was written to the file rolls back to the copy
 const dropEdit = {
   change: (c) => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); scheduleWrite(c.file); },
-  tweak: (t) => { P.tweaks = P.tweaks.filter((q) => q !== t); tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) }); scheduleWrite(t.file); },
+  tweak: (t) => {
+    P.tweaks = P.tweaks.filter((q) => q !== t);
+    if (isBuiltin(t)) return tellFile(t.file, { t: "builtin", vals: builtinVals(t.file) });
+    tellFile(t.file, { t: "tweaks", ops: opsFor(t.file, t.key) });
+    scheduleWrite(t.file);
+  },
   drawing: (d) => { P.drawings = P.drawings.filter((q) => q !== d); syncAll(); },
 };
 const delBtn = (fn) => button("hd-cx", "×", tr("del_edit"), () => { fn(); save(); paint(); });
@@ -838,7 +841,7 @@ async function autoSend() {
   await Promise.all(P.frames.map((f) => flushWrite(f.path)));   // first into the file: the items go with the mark "already in the file"
   if (auto.sig() !== sig || home()) return;   // while we were writing the owner moved on — the countdown starts again
   const a = autoItems();
-  const text = batchText({ comments: [], notes: [], errors: [], ...a });
+  const text = batchText({ comments: [], notes: [], errors: [], auto: true, ...a });
   if (!text || !P.session) return;
   P.busy = true;
   const r = await hub.post("/api/send", { session: P.session, text });
@@ -1247,10 +1250,11 @@ function askFix(file) {
 // on load agent.js sends the design's #hub-tweaks declaration and the current values; parsing — lib.normTweaks. The values live in P.tweaks
 // (draft → sent) and are applied again after a frame reload
 function readTweaks(file, ep, decl) {
-  const list = decl ? normTweaks(decl.spec) : [];
-  if (!list.length) { specs.delete(file); P.tweaks = P.tweaks.filter((t) => t.file !== file); return paint(); }
+  const list = decl ? withProbe(normTweaks(decl.spec), decl.probe) : [];
+  if (BUILTINS.some((b) => builtinNow(file, b.key))) tellEp(ep, { t: "builtin", vals: builtinVals(file) });
+  if (!list.length) { specs.delete(file); P.tweaks = P.tweaks.filter((t) => t.file !== file || isBuiltin(t)); return paint(); }
   specs.set(file, { list, base: Object.fromEntries(list.map((t) => [t.key, tweakBase(t, (decl.cur || {})[t.key])])) });
-  P.tweaks = P.tweaks.filter((t) => t.file !== file || list.some((x) => x.key === t.key));
+  P.tweaks = P.tweaks.filter((t) => t.file !== file || isBuiltin(t) || list.some((x) => x.key === t.key));
   const ops = list.filter((t) => P.tweaks.some((x) => x.file === file && x.key === t.key && x.state !== "done")).flatMap((t) => opsFor(file, t.key));
   if (ops.length) tellEp(ep, { t: "tweaks", ops });
   if (!ep.tweaked) { ep.tweaked = true; if (P.propsUser) P.propsOpen = true; }
@@ -1284,21 +1288,43 @@ function setTweak(file, t, raw) {
   paint();
   return true;
 }
-// the open design's tweaks — in sections at the top of the panel; while input is going on in the panel (a slider), it is not rebuilt
+// built-in tweaks: a shift from the design (0 = as is) kept as ordinary batch records with the key hd:<id>; they only go to the author in words
+const builtinNow = (file, key) => {
+  const mine = P.tweaks.find((x) => x.file === file && x.key === key && x.state === "draft") || P.tweaks.find((x) => x.file === file && x.key === key && x.state === "sent");
+  return mine ? mine.to : 0;
+};
+const builtinVals = (file) => Object.fromEntries(BUILTINS.map((b) => [b.id, builtinNow(file, b.key)]));
+function setBuiltin(file, b, raw) {
+  const value = builtinValue(b, raw);
+  if (value == null) return false;
+  let e = P.tweaks.find((x) => x.file === file && x.key === b.key && x.state === "draft");
+  if (!e) {
+    const sent = P.tweaks.find((x) => x.file === file && x.key === b.key && x.state === "sent");
+    e = { file, key: b.key, label: tr(b.str), editor: "builtin", unit: "", from: sent ? sent.to : 0, to: value, state: "draft" };
+    P.tweaks.push(e);
+  }
+  e.to = value;
+  if (!tweakEffect(e)) P.tweaks = P.tweaks.filter((x) => x !== e);
+  tellFile(file, { t: "builtin", vals: builtinVals(file) });
+  save();
+  paint();
+  return true;
+}
+// the open design's tweaks - in sections at the top of the panel; while input is going on in the panel (a slider), it is not rebuilt
 function tweakFile() {
   const has = (f) => f && (specs.get(f)?.list || []).length;
-  return has(P.focus) ? P.focus : (P.frames.find((f) => has(f.path)) || {}).path || "";
+  return has(P.focus) ? P.focus : (P.frames.find((f) => has(f.path)) || {}).path || (P.frames.some((f) => f.path === P.focus) ? P.focus : (P.frames[0] || {}).path) || "";
 }
 function paintTweaks(open) {
   const file = open ? tweakFile() : "";
-  const list = file ? specs.get(file).list : [];
+  const list = file && specs.get(file) ? specs.get(file).list : [];
   const skeleton = JSON.stringify([file, list.map((t) => t.key)]);
-  const sig = JSON.stringify([skeleton, list.map((t) => tweakNow(file, t))]);
+  const sig = JSON.stringify([skeleton, list.map((t) => tweakNow(file, t)), file && BUILTINS.map((b) => builtinNow(file, b.key))]);
   if (ui.last.tw === sig) return;
   if (ui.tw.contains(document.activeElement) && ui.last.twShape === skeleton) { ui.last.tw = sig; return; }
   ui.last.tw = sig;
   ui.last.twShape = skeleton;
-  ui.tw.hidden = !list.length;
+  ui.tw.hidden = !file;
   const el = hub.el;
   const kids = [];
   let sec = null, secName = null;
@@ -1307,7 +1333,29 @@ function paintTweaks(open) {
     if (name !== secName) { sec = el("div", "hd-psec"); sec.append(el("h4", null, name)); kids.push(sec); secName = name; }
     sec.append(tweakRow(file, t, tweakNow(file, t)));
   }
+  if (file) {
+    sec = el("div", "hd-psec");
+    sec.append(el("h4", null, tr("bi_title")));
+    for (const b of BUILTINS) sec.append(builtinRow(file, b));
+    kids.push(sec);
+  }
   ui.tw.replaceChildren(...kids);
+}
+// a built-in tweak: the name, three presets (less / as is / more) and a slider for fine moves; the value is on the right
+function builtinRow(file, b) {
+  const el = hub.el;
+  const cur = builtinNow(file, b.key);
+  const row = el("div", "hd-tweak hd-bi");
+  const label = el("span", "hd-flabel", tr(b.str));
+  const out = el("span", "hd-tout wide", builtinShow(b.id, cur));
+  const seg = el("div", "hd-seg");
+  const r = el("input"); r.type = "range"; Object.assign(r, { min: b.min, max: b.max, step: b.step, value: cur });
+  const chips = b.presets.map((v) => button("hd-segb" + (v === cur ? " on" : ""), builtinShow(b.id, v), null, () => { if (setBuiltin(file, b, v)) show(v); }));
+  seg.append(...chips);
+  const show = (v) => { out.textContent = builtinShow(b.id, v); r.value = v; chips.forEach((c, i) => c.classList.toggle("on", b.presets[i] === Number(v))); };
+  r.addEventListener("input", () => { if (setBuiltin(file, b, r.value)) show(builtinNow(file, b.key)); });
+  row.append(label, out, seg, r);
+  return row;
 }
 function tweakRow(file, t, cur) {
   const el = hub.el;
@@ -1315,14 +1363,30 @@ function tweakRow(file, t, cur) {
   const label = el("span", "hd-flabel", t.label);
   label.title = t.key;
   const set = (v) => setTweak(file, t, v);
-  if (t.editor === "color") {
+  const swatches = (colorOf) => {
     const sw = el("div", "hd-swatches");
+    const mark = () => { for (const x of sw.children) x.classList.toggle("on", x.dataset.v === String(cur)); };
     for (const c of t.options) {
-      const b = button("hd-swatch" + (c === cur ? " on" : ""), "", c, () => { if (set(c)) for (const x of sw.children) x.classList.toggle("on", x.title === c); });
-      b.style.background = c;
+      const b = button("hd-swatch" + (c === cur ? " on" : ""), "", c, () => { if (set(c)) { cur = c; mark(); own.classList.remove("on"); } });
+      b.dataset.v = c;
+      b.style.background = colorOf(c);
       sw.append(b);
     }
-    row.append(label, sw);
+    // the last swatch is the owner's own color: the native picker; the chosen color lives as the tweak value
+    const own = el("label", "hd-swatch own" + (t.options.includes(cur) ? "" : " on"));
+    own.title = tr("own_color");
+    const pick = el("input"); pick.type = "color";
+    pick.value = toHex(t.options.includes(cur) ? colorOf(cur) : cur) || "#808080";
+    if (!t.options.includes(cur)) own.style.background = cur;
+    pick.addEventListener("input", () => { if (set(pick.value)) { cur = pick.value; own.style.background = pick.value; own.classList.add("on"); for (const x of sw.children) if (x !== own) x.classList.remove("on"); } });
+    own.append(pick);
+    if (ownColor(t)) sw.append(own);
+    return sw;
+  };
+  if (t.editor === "color") {
+    row.append(label, swatches((c) => c));
+  } else if (t.editor === "enum" && t.swatch) {
+    row.append(label, swatches((c) => t.swatch[c]));
   } else if (t.editor === "enum") {
     if (t.options.length <= 3) {
       const seg = el("div", "hd-seg");
@@ -1450,8 +1514,9 @@ function paintComments() {
   const rows = [];
   for (const p of pins) {
     const li = el("div", "hd-citem " + p.state);
-    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", (p.lost ? tr("lost_prefix") : "") + p.text));
-    li.title = p.lost ? tr("lost_title") : p.sel;
+    li.append(el("b", "hd-n" + (p.area ? " rgn" : ""), String(p.n)), el("span", "hd-ct", (p.lost ? tr("lost_prefix") : "") + p.text));
+    if (p.area) li.append(el("span", "hd-dim", `${Math.round(p.area.w)}×${Math.round(p.area.h)}`));
+    li.title = p.lost ? tr("lost_title") : p.area ? tr("area_title", { x: Math.round(p.x), y: Math.round(p.y), w: Math.round(p.area.w), h: Math.round(p.area.h) }) : p.sel;
     rows.push(li);
   }
   for (const c of changes) {

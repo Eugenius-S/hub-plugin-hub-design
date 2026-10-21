@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -405,7 +405,8 @@ test("tweaks: the value by type, a color and an option only from options", () =>
     a: { editor: "color", options: ["#fff", "#000"], var: "--a" }, b: { editor: "enum", options: ["x", "y"], attr: "data-b" },
     c: { editor: "int", min: 0, max: 10, var: "--c" }, d: { editor: "float", min: 0, max: 2, step: 0.25, var: "--d" }, e: { editor: "boolean", attr: "data-e" } });
   assert.equal(tweakValue(color, "#fff"), "#fff");
-  assert.equal(tweakValue(color, "#123456"), null);
+  assert.equal(tweakValue(color, "#123456"), "#123456");   // an own color from the picker
+  assert.equal(tweakValue(color, "red; x"), null);
   assert.equal(tweakValue(enm, "z"), null);
   assert.equal(tweakValue(int, "7.6"), 8);
   assert.equal(tweakValue(int, "99"), 10);
@@ -731,4 +732,63 @@ test("whoGets: edits go to the author; no author - to the designer, not the sess
   assert.equal(whoGets("animator", "hub-dev", ok), "animator");
   assert.equal(whoGets("", "hub-dev", ok), "designer");
   assert.equal(whoGets("", "hub-dev", new Set(["hub-dev"])), "hub-dev");   // no designer in the hub - whoever there is
+});
+
+test("color enum: the design shows what each option looks like - the swatches and an own color through the variable", () => {
+  const [bg] = normTweaks({ bg: { editor: "enum", options: ["ink", "red", "blue"], attr: "data-bg", var: "--bg" } });
+  assert.equal(bg.editor, "enum");
+  assert.equal(ownColor(bg), false);
+  const [on] = withProbe([bg], { bg: { colors: { ink: "rgb(10, 10, 10)", red: "rgb(232, 36, 63)", blue: "rgb(0, 0, 255)" }, via: "--bg" } });
+  assert.equal(on.swatch.red, "rgb(232, 36, 63)");
+  assert.equal(on.via, "--bg");
+  assert.equal(ownColor(on), true);
+  assert.equal(tweakValue(on, "#123456"), "#123456");
+  assert.deepEqual(tweakApply(on, "#123456"), [{ kind: "var", name: "--bg", value: "#123456" }]);
+  assert.deepEqual(tweakApply(on, "red"), [{ kind: "attr", name: "data-bg", value: "red" }, { kind: "var", name: "--bg", value: null }]);
+  // not all options have a color / the same color everywhere / no variable - stays a plain list
+  assert.equal(withProbe([bg], { bg: { colors: { ink: "rgb(1, 1, 1)", red: "rgb(1, 1, 1)", blue: "rgb(1, 1, 1)" }, via: "--bg" } })[0].swatch, undefined);
+  assert.equal(withProbe([bg], { bg: { colors: { ink: "rgb(1, 1, 1)", red: "rgb(2, 2, 2)" } } })[0].swatch, undefined);
+  assert.equal(ownColor(withProbe([bg], { bg: { colors: { ink: "rgb(1, 1, 1)", red: "rgb(2, 2, 2)", blue: "rgb(3, 3, 3)" } } })[0]), false);
+  assert.ok(isColor("#fff") && isColor("rgb(1, 2, 3)") && !isColor("ink"));
+});
+
+test("built-in tweaks: a shift from the design, clamped to the step, shown as words", () => {
+  assert.deepEqual(BUILTINS.map((b) => b.id), ["pad", "fs", "ls", "lh"]);
+  const pad = BUILTINS[0], fs = BUILTINS[1];
+  assert.equal(builtinValue(pad, "13"), 12);
+  assert.equal(builtinValue(pad, "999"), pad.max);
+  assert.equal(builtinValue(pad, ""), null);
+  assert.equal(builtinShow("pad", 12), "+12 px");
+  assert.equal(builtinShow("fs", 10), "×1.10");
+  assert.equal(builtinShow("ls", 5), "+0.05em");
+  assert.ok(BUILTINS.every((b) => b.presets.includes(0) && b.min < 0 && b.max > 0));
+  const t = { key: "hd:pad", editor: "builtin", from: 0, to: 12, file: "/a.html", state: "draft" };
+  assert.ok(isBuiltin(t));
+  const text = message({ path: "/a.html", round: 1, view: { w: 100, h: 100 }, comments: [], changes: [], tweaks: [t] });
+  assert.match(text, /Поля \+12 px/);
+});
+
+test("message: the auto-sent moves carry the line 'no report needed'; a manual send does not", () => {
+  const t = { key: "hd:fs", editor: "builtin", from: 0, to: 10, file: "/a.html", state: "draft" };
+  const base = { path: "/a.html", round: 1, view: { w: 100, h: 100 }, comments: [], changes: [], tweaks: [t] };
+  assert.match(message({ ...base, auto: true }), /отчёт не нужен: итог хода одной строкой «—»\.$/);
+  assert.doesNotMatch(message(base), /отчёт не нужен/);
+  assert.equal(message({ ...base, tweaks: [], auto: true }), "");   // nothing to send - no lone line
+});
+
+test("chat: the author's reply '—' (any dash) is not shown", () => {
+  const items = [{ kind: "out", k: 1, text: "—" }, { kind: "out", k: 2, text: " – " }, { kind: "out", k: 3, text: "—." }, { kind: "out", k: 4, text: "Готово" }, { kind: "out", k: 5, text: "- шаг" }];
+  assert.deepEqual(chatLines(items, 40, "designer").map((l) => l.text), ["Готово", "- шаг"]);
+});
+
+test("message: a comment on an area - x, y, w, h in design px and the elements inside it", () => {
+  const c = { file: "/a.html", text: "Сделай крупнее", sel: ".hero", fp: { id: "hero" }, label: "Заголовок", x: 100, y: 200, w: 800, h: 400, ex: 80, ey: 150,
+    area: { w: 300, h: 120, fw: 0.375, fh: 0.3 }, els: [{ sel: ".h1", label: "Привет" }, { sel: ".btn", label: "" }], more: 3 };
+  const text = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [c], changes: [] });
+  assert.match(text, /1\. Коммент к области x 100, y 200, 300×120 px \(внутри `\.hero` «Заголовок»; в ней: `\.h1` «Привет», `\.btn`, \+3\): Сделай крупнее/);
+  const empty = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [{ ...c, els: [], more: 0 }], changes: [] });
+  assert.match(empty, /в ней: только фон/);
+  // a point comment is as before
+  const point = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [{ ...c, area: undefined }], changes: [] });
+  assert.match(point, /Коммент к `\.hero`.*точка x 100, y 200/);
 });

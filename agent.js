@@ -8,7 +8,7 @@
   const ORIGINS = (window.__canvas && window.__canvas.origins) || [];
   let hubOrigin = null;
   let mode = "view";      // view | comment | edit | draw | text
-  let tool = "select";    // canvas tool: select | hand | text | note | comment | pencil | shape
+  let tool = "select";    // canvas tool: select | hand | text | comment | pencil | shape
   let shape = "free";     // what "draw" draws: free | arrow | rect | oval
   let external = false;   // inside the canvas: the wheel, keys and the comment editor go to the hub page
   let inv = 1;            // 1 / canvas scale: boxes and pins keep one size on screen
@@ -80,6 +80,10 @@
       box-shadow:0 1px 5px rgba(0,0,0,.3);border:2px solid var(--bg)}
     .pin.sent{background:var(--mu)}
     .pin.lost{background:var(--bg);color:var(--a);border:2px dashed var(--a)}
+    .rgn{position:absolute;border:calc(2px * var(--s)) solid var(--a);border-radius:4px;background:color-mix(in srgb,var(--a) 10%,transparent);pointer-events:none}
+    .rgn.sent{border-color:var(--mu);background:color-mix(in srgb,var(--mu) 8%,transparent)}
+    .rgn.lost,.rgn.live{border-style:dashed}
+    .rgn.done{display:none}
     .nopin .pin{pointer-events:none}
     .pin.done{display:none}
     .ed{position:absolute;width:300px;background:var(--bg);color:var(--fg);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.22),0 0 0 1px var(--bd);padding:12px;pointer-events:auto}
@@ -94,11 +98,12 @@
     svg.draw{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
     svg.draw *{fill:none;stroke:var(--a);stroke-width:calc(3px * var(--s));stroke-linecap:round;stroke-linejoin:round}
     svg.draw .sent{stroke:var(--mu)}
-  </style><svg class="draw"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up">↑</button><button class="rev">↺</button></div><div class="grip"></div></div><div class="pins"></div>`;
+  </style><svg class="draw"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up">↑</button><button class="rev">↺</button></div><div class="grip"></div></div><div class="rgns"></div><div class="pins"></div>`;
   const hoverBox = root.querySelector(".hover");
   const selBox = root.querySelector(".sel");
   const frameBox = root.querySelector(".frame");
   const pinsBox = root.querySelector(".pins");
+  const rgnsBox = root.querySelector(".rgns");
   const svg = root.querySelector("svg.draw");
   // texts of the overlay: the static ones and the open comment editor; called after the template, the editor and a language change
   const LABELS = [[".up", "title", "parent"], [".rev", "title", "revert"], [".grip", "title", "resize"], [".ed h4", "textContent", "comment"],
@@ -220,6 +225,15 @@
     }
     return { x: p.x, y: p.y };
   }
+  // the area of a region comment in page px: it follows its element (fractions of its box), without one — the saved numbers
+  function areaRect(p) {
+    const a = p.area;
+    if (!a) return null;
+    const { el } = resolve(p);
+    const r = el ? pageRect(el) : null;
+    if (r && (r.w || r.h) && a.fw != null) return { x: r.x + p.fx * r.w, y: r.y + p.fy * r.h, w: a.fw * r.w, h: a.fh * r.h };
+    return { x: p.x, y: p.y, w: a.w, h: a.h };
+  }
   function drawPins() {
     const have = new Map([...pinsBox.children].map((n) => [n.dataset.id, n]));
     for (const p of pins) {
@@ -239,6 +253,15 @@
       n.title = (p.lost ? t("lost") : "") + (p.text || "");
     }
     for (const n of have.values()) n.remove();
+    const haveR = new Map([...rgnsBox.children].map((n) => [n.dataset.id, n]));
+    for (const p of pins) {
+      if (!p.area) continue;
+      let n = haveR.get(p.id);
+      haveR.delete(p.id);
+      if (!n) { n = document.createElement("div"); n.dataset.id = p.id; rgnsBox.append(n); }
+      n.className = "rgn " + (p.state || "draft") + (p.lost ? " lost" : "");
+    }
+    for (const n of haveR.values()) n.remove();
     const ed = root.querySelector(".ed");
     if (ed && !pins.some((p) => p.id === ed.dataset.id && p.state === "draft")) { ed.remove(); framed = null; }
     place();
@@ -270,12 +293,17 @@
       n.style.left = x + "px";
       n.style.top = y + "px";
     }
+    for (const n of rgnsBox.children) {
+      const p = pins.find((q) => q.id === n.dataset.id);
+      const r = p && areaRect(p);
+      if (r) Object.assign(n.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+    }
     const ed = root.querySelector(".ed");
     if (ed) {
       const p = pins.find((q) => q.id === ed.dataset.id);
       if (p) {
         const el = resolve(p).el;
-        const r = el ? pageRect(el) : { x: p.x, y: p.y, w: 0, h: 0 };
+        const r = areaRect(p) || (el ? pageRect(el) : { x: p.x, y: p.y, w: 0, h: 0 });
         const left = Math.min(r.x, scrollX + innerWidth - 312);
         ed.style.left = Math.max(scrollX + 4, left) + "px";
         ed.style.top = r.y + r.h + 8 + "px";
@@ -298,7 +326,7 @@
     framed = find(p.sel);
     if (external) {   // the hub page draws the comment window: inside the frame at canvas scale it would be tiny
       const at = pinXY(p);
-      send({ t: "editor", id, x: at.x - scrollX, y: at.y - scrollY });
+      send({ t: "editor", id, x: at.x - scrollX, y: at.y + (areaRect(p) || { h: 0 }).h - scrollY });
       return;
     }
     const ed = document.createElement("div");
@@ -543,7 +571,57 @@
 
   // --- document events: in the comment, edit and draw modes clicks do not reach the design --------------------------
   const stop = (e) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+  // a comment on an area: the press-and-drag in the comment mode draws a rectangle (a plain click stays a pin). A shorter drag is a click
+  const MARQ_MIN = 8;
+  let marq = null, swallow = 0;
+  for (const type of ["pointercancel", "blur"]) addEventListener(type, () => { if (marq) { if (marq.node) marq.node.remove(); marq = null; } });
+  const marqRect = (m, e) => {
+    const x = e.clientX + scrollX, y = e.clientY + scrollY;
+    return { x: Math.round(Math.min(m.x0, x)), y: Math.round(Math.min(m.y0, y)), w: Math.round(Math.abs(x - m.x0)), h: Math.round(Math.abs(y - m.y0)) };
+  };
+  // the elements that sit in the area: the innermost ones that mostly lie inside it or fill a noticeable part of it (at most 8, the biggest overlap first)
+  const SKIP = /^(script|style|link|meta|br|head|title|noscript|template)$/i;
+  function inside(anchor, a) {
+    const out = [], share = new Map();
+    for (const el of anchor.querySelectorAll("*")) {
+      if (share.size > 400) break;
+      if (ours(el) || SKIP.test(el.tagName) || (el.closest("svg") && el.tagName.toLowerCase() !== "svg")) continue;
+      const r = pageRect(el);
+      if (!(r.w > 1 && r.h > 1)) continue;
+      const ix = Math.min(a.x + a.w, r.x + r.w) - Math.max(a.x, r.x), iy = Math.min(a.y + a.h, r.y + r.h) - Math.max(a.y, r.y);
+      if (ix <= 0 || iy <= 0) continue;
+      const part = (ix * iy) / (a.w * a.h);
+      if (ix * iy < 0.6 * r.w * r.h && part < 0.15) continue;
+      out.push(el); share.set(el, part);
+    }
+    return out.filter((el) => !out.some((o) => o !== el && el.contains(o))).sort((p, q) => share.get(q) - share.get(p));
+  }
+  function regionPick(a) {
+    const mid = at(a.x + a.w / 2 - scrollX, a.y + a.h / 2 - scrollY);
+    let anchor = mid && mid.nodeType === 1 && !ours(mid) ? mid : document.body;
+    while (anchor !== document.body && anchor.parentElement) {
+      const r = pageRect(anchor);
+      if (r.x <= a.x + 1 && r.y <= a.y + 1 && r.x + r.w >= a.x + a.w - 1 && r.y + r.h >= a.y + a.h - 1) break;
+      anchor = anchor.parentElement;
+    }
+    const r = pageRect(anchor);
+    const list = inside(anchor, a);
+    const body = anchor === document.body || anchor === document.documentElement;
+    send({ t: "pick", sel: selector(anchor), fp: !body && A ? A.fingerprint(anchor, r) : null, label: label(anchor), tag: anchor.tagName.toLowerCase(),
+      x: a.x, y: a.y, ex: r.x, ey: r.y, w: r.w, h: r.h, fx: r.w ? (a.x - r.x) / r.w : 0, fy: r.h ? (a.y - r.y) / r.h : 0,
+      area: { w: a.w, h: a.h, fw: r.w ? a.w / r.w : null, fh: r.h ? a.h / r.h : null },
+      els: list.slice(0, 8).map((el) => ({ sel: selector(el), label: label(el).slice(0, 60), tag: el.tagName.toLowerCase() })), more: Math.max(0, list.length - 8) });
+  }
   addEventListener("pointermove", (e) => {
+    if (marq) {
+      if (!marq.moved && Math.abs(e.clientX - marq.cx) + Math.abs(e.clientY - marq.cy) < MARQ_MIN) return stop(e);
+      marq.moved = true;
+      showHover(null);
+      if (!marq.node) { marq.node = document.createElement("div"); marq.node.className = "rgn live"; rgnsBox.append(marq.node); }
+      const a = marqRect(marq, e);
+      Object.assign(marq.node.style, { left: a.x + "px", top: a.y + "px", width: a.w + "px", height: a.h + "px" });
+      return stop(e);
+    }
     if (stroke) {
       const cur = [e.clientX + scrollX, e.clientY + scrollY];
       if (stroke.kind === "free") {
@@ -572,6 +650,7 @@
     if (mode === "view" || e.button !== 0 || ours(e.target)) return;
     if (e.target.isContentEditable) return;
     stop(e);
+    if (mode === "comment") { marq = { cx: e.clientX, cy: e.clientY, x0: e.clientX + scrollX, y0: e.clientY + scrollY, moved: false, node: null }; return; }
     if (mode === "draw") {
       const node = document.createElementNS(NS, shape === "rect" ? "rect" : shape === "oval" ? "ellipse" : "path");
       svg.append(node);
@@ -589,6 +668,15 @@
     }
   }, true);
   addEventListener("pointerup", (e) => {
+    if (marq) {
+      const m = marq;
+      marq = null;
+      if (m.node) m.node.remove();
+      if (!m.moved) return;   // a click: the "click" event below makes the pin
+      swallow = Date.now();
+      stop(e);
+      return regionPick(marqRect(m, e));
+    }
     if (stroke) { finishStroke(); return stop(e); }
     if (!drag) return;
     const d = drag;
@@ -604,6 +692,7 @@
     if (e.target.isContentEditable) return;
     stop(e);
     if (mode !== "comment") return;
+    if (Date.now() - swallow < 400) return;   // the click that ends a drag has already made a region
     const el = e.target;
     if (!pickable(el)) return;
     const r = pageRect(el);
@@ -675,7 +764,57 @@
       const v = typeof d.var === "string" && d.var.startsWith("--") ? cs.getPropertyValue(d.var).trim() : "";
       cur[k] = v || (typeof d.attr === "string" && root.hasAttribute(d.attr) ? root.getAttribute(d.attr) : "");
     }
-    return { spec, cur };
+    return { spec, cur, probe: probeColors(spec) };
+  }
+  // an enum like bg: ink/blue/cream whose names say "color": what each option looks like (the page background with the attribute set) and which CSS
+  // variable carries it (the page paints its own color into that variable). Done with transitions off and the attribute put back.
+  const COLORISH = /(^|[^a-z])(bg|background|colou?r|fill|tint|accent|theme|palette)|\u0444\u043e\u043d|\u0446\u0432\u0435\u0442/i;
+  const clearColor = (c) => !c || c === "transparent" || /^rgba\(0, 0, 0, 0\)$/.test(c);
+  function probeColors(spec) {
+    const root = document.documentElement, out = {};
+    const keys = Object.entries(spec).filter(([k, d]) => d && d.editor !== "color" && Array.isArray(d.options) && d.options.length > 1 && d.options.length <= 12 && typeof d.attr === "string"
+      && /^[a-z][\w:-]*$/i.test(d.attr) && COLORISH.test(k + " " + (d.label || "")));
+    if (!keys.length) return out;
+    const off = document.createElement("style");
+    off.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}";
+    root.append(off);
+    const names = new Set();
+    try { for (const sh of document.styleSheets) for (const r of sh.cssRules || []) for (const m of String(r.cssText).matchAll(/--[\w-]{1,60}(?=\s*:)/g)) names.add(m[0]); } catch {}
+    const box = document.createElement("div");
+    box.style.cssText = "position:absolute;width:0;height:0;visibility:hidden";
+    (document.body || root).append(box);
+    // the page paints its background on the body, the root or (often) on the biggest wrapper inside: that one is found once and read for every option
+    let host = null;
+    const findHost = () => {
+      for (const n of [document.body, root]) if (n && !clearColor(getComputedStyle(n).backgroundColor)) return n;
+      let best = null, area = 0;
+      for (const n of [...(document.body ? document.body.querySelectorAll("*") : [])].slice(0, 600)) {
+        const r = n.getBoundingClientRect(), a = r.width * r.height;
+        if (a > area && !clearColor(getComputedStyle(n).backgroundColor)) { best = n; area = a; }
+      }
+      return best;
+    };
+    const surface = () => {
+      if (!host) host = findHost();
+      return host ? getComputedStyle(host).backgroundColor : "";
+    };
+    const resolved = (v) => { box.style.backgroundColor = ""; box.style.backgroundColor = `var(${v})`; return getComputedStyle(box).backgroundColor; };
+    try {
+      for (const [k, d] of keys) {
+        const was = root.getAttribute(d.attr);
+        const colors = {}, per = {};
+        for (const o of d.options) {
+          root.setAttribute(d.attr, String(o));
+          colors[o] = surface();
+          per[o] = new Map([...names].map((v) => [v, resolved(v)]));
+        }
+        const cands = [...names].filter((v) => d.options.every((o) => colors[o] && per[o].get(v) === colors[o]));
+        const via = cands.find((v) => /bg|background/i.test(v)) || cands[0] || "";
+        if (was == null) root.removeAttribute(d.attr); else root.setAttribute(d.attr, was);
+        out[k] = { colors, via };
+      }
+    } finally { box.remove(); off.remove(); }
+    return out;
   }
   function applyTweaks(ops) {
     const root = document.documentElement;
@@ -683,6 +822,59 @@
       if (o.kind === "var" && /^--[\w-]+$/.test(o.name)) { if (o.value == null) root.style.removeProperty(o.name); else root.style.setProperty(o.name, o.value); }
       else if (o.kind === "attr" && /^[a-z][\w:-]*$/i.test(o.name) && !/^(on|style$)/i.test(o.name)) { if (o.value == null) root.removeAttribute(o.name); else root.setAttribute(o.name, o.value); }
     }
+    if (selected) place();
+  }
+
+  // --- built-in tweaks (any design): margins, font size, letter and line spacing, as a shift from what the design has --------------------
+  // One <style> with a rule per marked element; the originals are measured with it off, so the numbers never pile up. Nothing is written to the design.
+  const BI = "data-hd-b";
+  let biSheet = null;
+  const PAD_TAGS = "main,section,header,footer,article,aside,nav";
+  const px = (n) => Math.round(n * 100) / 100 + "px";
+  function applyBuiltin(v) {
+    v = v || {};
+    const pad = Number(v.pad) || 0, fs = 1 + (Number(v.fs) || 0) / 100, ls = (Number(v.ls) || 0) / 100, lh = (Number(v.lh) || 0) / 100;
+    for (const n of document.querySelectorAll(`[${BI}]`)) n.removeAttribute(BI);
+    if (biSheet) biSheet.textContent = "";
+    if (!pad && fs === 1 && !ls && !lh) { if (biSheet) { biSheet.remove(); biSheet = null; } if (selected) place(); return; }
+    const body = document.body;
+    if (!body) return;
+    const decls = new Map();
+    const put = (el, d) => decls.set(el, (decls.get(el) || "") + d);
+    if (pad) {
+      const els = [...new Set([body, ...body.children, ...body.querySelectorAll(PAD_TAGS)])].filter((e) => !ours(e) && !/^(SCRIPT|STYLE|SVG|NOSCRIPT)$/i.test(e.tagName)).slice(0, 80);
+      let any = false;
+      for (const el of els) {
+        const cs = getComputedStyle(el);
+        const side = (n) => { const x = parseFloat(cs["padding" + n]) || 0; return x > 0 ? (any = true, px(Math.max(0, x + pad))) : null; };
+        const d = [["Top", side("Top")], ["Right", side("Right")], ["Bottom", side("Bottom")], ["Left", side("Left")]].filter(([, x]) => x).map(([n, x]) => `padding-${n.toLowerCase()}:${x}!important;`).join("");
+        if (d) put(el, d);
+      }
+      if (!any && pad > 0) put(body, `padding:${px(pad)}!important;`);
+    }
+    if (fs !== 1 || ls || lh) {
+      const texts = [];
+      const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n && texts.length < 500; n = walker.nextNode()) {
+        const el = n.parentElement;
+        if (!n.nodeValue.trim() || !el || ours(el) || /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/i.test(el.tagName) || el.closest("svg") || texts.includes(el)) continue;
+        texts.push(el);
+      }
+      const meas = texts.map((el) => { const cs = getComputedStyle(el); const lhv = parseFloat(cs.lineHeight); return { el, fs: parseFloat(cs.fontSize) || 16, ls: parseFloat(cs.letterSpacing) || 0, lh: Number.isFinite(lhv) ? lhv : null }; });
+      for (const m of meas) {
+        const size = m.fs * fs;
+        let d = "";
+        if (fs !== 1) d += `font-size:${px(size)}!important;`;
+        if (fs !== 1 || ls) d += `letter-spacing:${px(m.ls * fs + ls * size)}!important;`;
+        if (m.lh !== null || lh) d += fs !== 1 || lh ? `line-height:${px(((m.lh ?? m.fs * 1.2) / m.fs + lh) * size)}!important;` : "";
+        if (d) put(m.el, d);
+      }
+    }
+    let k = 0;
+    const css = [];
+    for (const [el, d] of decls) { el.setAttribute(BI, String(++k)); css.push(`[${BI}="${k}"]{${d}}`); }
+    if (!biSheet) { biSheet = document.createElement("style"); document.documentElement.append(biSheet); }
+    biSheet.textContent = css.join("\n");
     if (selected) place();
   }
 
@@ -761,6 +953,8 @@
       scrollTo(m.x || 0, m.y || 0);
     } else if (m.t === "tweaks") {
       applyTweaks(m.ops);
+    } else if (m.t === "builtin") {
+      applyBuiltin(m.vals);
     }
   });
 

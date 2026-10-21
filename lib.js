@@ -26,16 +26,23 @@ export const STR = {
     d_mark: "marked area {area}{near}",
     tw_on: "on", tw_off: "off",
     tw_line: "Tweak `{key}`: {a} \u2192 {b}",
+    bi_pad: "Margins {v}: add this to the padding of the page root and sections (every side that already has padding)",
+    bi_fs: "Font sizes {v}: multiply the font-size of all texts",
+    bi_ls: "Letter spacing {v}: add to the letter-spacing of all texts",
+    bi_lh: "Line spacing {v}: add to the line-height of all texts (in font sizes)",
     a_lost: "; element not found \u2014 the design was relaid out, the point stayed where it was",
     a_tag: "tag {tag}", a_text: "text {s}", a_attr: "attributes {s}", a_inside: "inside #{anc}", a_cls: "classes {list}", a_near: "next to {s}",
     a_noid: "; no id, hints: {bits}",
     m_head: "Edits to the design `{f}` (Hub Design, round {round}; window {w}\u00d7{h} px, coordinates from the top-left corner of the page).",
     m_grid: "Grid over the frame (a layout guide, on the canvas only; it is not in the design): {g}.",
     m_point: "point",
+    m_region: "Comment on the area x {x}, y {y}, {w}\u00d7{h} px (inside {el}{note}; in it: {els}): {text}",
+    m_region_none: "nothing but the background",
     m_comment: "Comment on {el}, point x {x}, y {y} (element {w}\u00d7{h} at x {ex}, y {ey}{note}): {text}",
     m_hand: "Edited by hand `{sel}`{label}: {what}{inFile}.",
     m_infile: " \u2014 already in the file",
     m_drawing: "Freehand drawing: {d}{text}.",
+    m_auto: "These are my own moves in the Hub Design panel, sent automatically \u2014 no report needed: end the turn with a single line \u201c\u2014\u201d.",
     m_tweaks: "Tweaks are values from the Hub Design panel (#hub-tweaks): make the new ones the defaults and move them into the code.",
     m_hand_note: "I made the hand edits right in the preview \u2014 move them into the code so that it looks the same (not a transform on top, but in the layout).",
     m_file_note: "Hub Design wrote the items marked \u201calready in the file\u201d into the design itself, point by point: an inline style or the text of the element itself, tweaks on <html>{copy}. The look on screen is right \u2014 keep it; you may replace the inline with ordinary layout if the look does not change.",
@@ -77,6 +84,10 @@ export const STR = {
     d_box: "выделена рамкой область {area}{near}",
     d_mark: "отмечена область {area}{near}",
     tw_on: "вкл", tw_off: "выкл",
+    bi_pad: "Поля {v}: добавь это к padding корня страницы и секций (к каждой стороне, где padding уже есть)",
+    bi_fs: "Размер шрифтов {v}: умножь font-size всех текстов",
+    bi_ls: "Межбуквенный {v}: добавь к letter-spacing всех текстов",
+    bi_lh: "Межстрочный {v}: добавь к line-height всех текстов (в размерах шрифта)",
     tw_line: "Крутилка `{key}`: {a} \u2192 {b}",
     a_lost: "; элемент не найден \u2014 макет перевёрстан, точка осталась на прежнем месте",
     a_tag: "тег {tag}", a_text: "текст {s}", a_attr: "атрибуты {s}", a_inside: "внутри #{anc}", a_cls: "классы {list}", a_near: "рядом {s}",
@@ -84,10 +95,13 @@ export const STR = {
     m_head: "Правки к дизайну `{f}` (Hub Design, раунд {round}; окно {w}\u00d7{h} px, координаты \u2014 от верхнего левого угла страницы).",
     m_grid: "Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): {g}.",
     m_point: "точка",
+    m_region: "Коммент к области x {x}, y {y}, {w}\u00d7{h} px (внутри {el}{note}; в ней: {els}): {text}",
+    m_region_none: "только фон",
     m_comment: "Коммент к {el}, точка x {x}, y {y} (элемент {w}\u00d7{h} в x {ex}, y {ey}{note}): {text}",
     m_hand: "Поправил руками `{sel}`{label}: {what}{inFile}.",
     m_infile: " \u2014 уже в файле",
     m_drawing: "Рисунок от руки: {d}{text}.",
+    m_auto: "Это мои собственные действия в панели Hub Design, ушли сами \u2014 отчёт не нужен: итог хода одной строкой \u00ab\u2014\u00bb.",
     m_tweaks: "Крутилки \u2014 это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.",
     m_hand_note: "Правки руками я сделал прямо в предпросмотре \u2014 перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).",
     m_file_note: "Пункты \u00abуже в файле\u00bb Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки \u2014 на <html>{copy}. Вид на экране верный \u2014 сохрани его; заменить inline обычной вёрсткой можно, если вид не изменится.",
@@ -244,7 +258,7 @@ export function whoOf(it, session = "") {
 // conversation rows for the chat: the owner's and the session's replies, sent files; tool steps and service rows - no; "—" (a result without words) - no
 export function chatLines(items, limit = 60, session = "") {
   return (items || [])
-    .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && String(it.text).trim() !== "—" || it.kind === "file")
+    .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && !/^[\u2014\u2013-]\.?$/.test(String(it.text).trim()) || it.kind === "file")
     .slice(-limit)
     .map((it, i, all) => ({ head: i === 0 || whoOf(all[i - 1], session) !== whoOf(it, session), k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === tr("you"),
       text: it.kind === "file" ? (it.image ? String(it.caption || "") : `${it.caption ? it.caption + "\n" : ""}${it.path}`) : String(it.text),
@@ -362,6 +376,22 @@ export const TWEAK_MAX = 24;
 const BAD_ATTR = /^(on|style$|src|href|action|formaction|srcdoc|xlink)/i;
 const small = (s, n) => String(s ?? "").trim().slice(0, n);
 const numOr = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+// is the string a CSS color (not a keyword like inherit): hex, functions, a few names; the page also asks the browser (CSS.supports)
+const COLOR_NAMES = new Set(["black", "white", "red", "green", "blue", "yellow", "orange", "purple", "pink", "gray", "grey", "brown", "cyan", "magenta", "teal", "navy", "lime", "maroon", "olive", "silver", "gold", "coral", "salmon", "tomato", "crimson", "indigo", "violet", "beige", "ivory", "khaki", "lavender", "tan", "turquoise", "aqua", "fuchsia"]);
+export function isColor(v) {
+  const s = String(v ?? "").trim();
+  if (/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(s)) return true;
+  if (/^(rgb|hsl|hwb|lab|lch|oklab|oklch|color)a?\([^()]*\)$/i.test(s)) return true;
+  return COLOR_NAMES.has(s.toLowerCase());
+}
+// the browser's "rgb(12, 34, 56)" or "#abc" -> "#0c2238" for <input type=color>; not a color - ""
+export function toHex(v) {
+  const s = String(v ?? "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(s)) return "#" + [...s.slice(1)].map((c) => c + c).join("").toLowerCase();
+  const m = s.match(/^rgba?\(\s*(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)[ ,]+(\d+(?:\.\d+)?)/i);
+  return m ? "#" + [m[1], m[2], m[3]].map((n) => Math.min(255, Math.round(Number(n))).toString(16).padStart(2, "0")).join("") : "";
+}
 // parsing a declaration: junk is dropped silently - a tweak without var/attr, with a foreign attribute or without options is not drawn
 export function normTweaks(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
@@ -373,7 +403,8 @@ export function normTweaks(raw) {
     const attr = /^[a-z][\w:-]{0,40}$/i.test(d.attr || "") && !BAD_ATTR.test(d.attr) ? d.attr : "";
     if (!cssVar && !attr) continue;
     const options = Array.isArray(d.options) ? d.options.filter((o) => ["string", "number"].includes(typeof o)).slice(0, 24).map((o) => small(o, 80)) : [];
-    const editor = TWEAK_EDITORS.includes(d.editor) ? d.editor : options.length ? "enum" : "text";
+    let editor = TWEAK_EDITORS.includes(d.editor) ? d.editor : options.length ? "enum" : "text";
+    if (editor === "enum" && options.length > 1 && options.every(isColor)) editor = "color";   // the values are colors - draw them as swatches
     const t = { key, label: small(d.label, 40) || key, editor, section: small(d.section, 40), var: cssVar, attr };
     if (editor === "enum" || editor === "color") {
       if (editor === "color" && !options.length && d.default) options.push(small(d.default, 80));
@@ -393,6 +424,22 @@ export function normTweaks(raw) {
   return out;
 }
 
+// a tweak with its own color: a color, or a named option list whose colors the design showed (t.swatch) and whose color variable is known (t.via)
+export const ownColor = (t) => t.editor === "color" || !!(t.swatch && t.via);
+// the design reported what each option of a color-like enum looks like: {key: {colors: {option: css}, via: "--bg"}}; junk is dropped
+export function withProbe(list, probe) {
+  if (!probe || typeof probe !== "object") return list;
+  return list.map((t) => {
+    const p = t.editor === "enum" && probe[t.key];
+    if (!p || typeof p.colors !== "object" || !p.colors) return t;
+    const swatch = {};
+    for (const o of t.options) { const c = String(p.colors[o] ?? "").trim(); if (c && !/^(rgba\(0, 0, 0, 0\)|transparent)$/i.test(c)) swatch[o] = c; }
+    if (Object.keys(swatch).length !== t.options.length || new Set(Object.values(swatch)).size < 2) return t;
+    const via = /^--[\w-]{1,60}$/.test(p.via || "") ? p.via : "";
+    return { ...t, swatch, via };
+  });
+}
+
 // what the owner entered -> the tweak value by its type; null - does not fit (a color and an option only from options)
 export function tweakValue(t, raw) {
   if (t.editor === "boolean") return raw === true || raw === "true" || raw === "1" || raw === "on";
@@ -405,7 +452,7 @@ export function tweakValue(t, raw) {
     return Number((Math.round(c / t.step) * t.step).toFixed(dec));
   }
   const s = String(raw ?? "");
-  if (t.editor === "color" || t.editor === "enum") return t.options.includes(s) ? s : null;
+  if (t.editor === "color" || t.editor === "enum") return t.options.includes(s) ? s : ownColor(t) && /^#[0-9a-f]{6}$/i.test(s) ? s.toLowerCase() : null;
   return s.slice(0, 200);
 }
 
@@ -422,6 +469,13 @@ export function tweakBase(t, cur) {
 // the tweak value -> what is written to the design: a variable on :root and/or an attribute on <html>; value null - remove
 export function tweakApply(t, value) {
   const ops = [];
+  if (t.editor === "enum" && t.swatch && t.via) {   // an option sets the attribute and removes our color; an own color is written to the variable the options set
+    const own = !t.options.includes(value);
+    if (t.attr && !own) ops.push({ kind: "attr", name: t.attr, value: String(value) });
+    if (t.var && t.var !== t.via && !own) ops.push({ kind: "var", name: t.var, value: `${value}${t.unit || ""}` });
+    ops.push({ kind: "var", name: t.via, value: own ? String(value) : null });
+    return ops;
+  }
   if (t.var) ops.push({ kind: "var", name: t.var, value: t.editor === "boolean" ? (value ? "1" : "0") : `${value}${t.unit || ""}` });
   if (t.attr) ops.push({ kind: "attr", name: t.attr, value: t.editor === "boolean" ? (value ? "" : null) : String(value) });
   return ops;
@@ -429,8 +483,32 @@ export function tweakApply(t, value) {
 
 const tweakShow = (c, v) => (c.editor === "boolean" ? tr(v ? "tw_on" : "tw_off") : typeof v === "number" && c.unit ? `${v}${c.unit}` : String(v));
 // a tweak change (a batch record: key, label, editor, unit, from, to) in words
-export const describeTweak = (c) => tr("tw_line", { key: c.key, a: tweakShow(c, c.from), b: tweakShow(c, c.to) });
+export const describeTweak = (c) => c.editor === "builtin" ? describeBuiltin(c) : tr("tw_line", { key: c.key, a: tweakShow(c, c.from), b: tweakShow(c, c.to) });
 export const tweakEffect = (c) => c.from !== c.to;
+
+// built-in tweaks of any design (no #hub-tweaks needed): margins, font size, letter spacing, line spacing. The value is a shift from the design (0 = as is);
+// the frame applies them live (agent.js), the author gets them as words
+export const BUILTINS = [
+  { key: "hd:pad", id: "pad", str: "bi_pad", min: -48, max: 160, step: 4, presets: [-16, 0, 16] },
+  { key: "hd:fs", id: "fs", str: "bi_fs", min: -30, max: 60, step: 1, presets: [-10, 0, 10] },
+  { key: "hd:ls", id: "ls", str: "bi_ls", min: -5, max: 30, step: 1, presets: [-2, 0, 4] },
+  { key: "hd:lh", id: "lh", str: "bi_lh", min: -30, max: 60, step: 5, presets: [-10, 0, 15] },
+];
+export const isBuiltin = (t) => !!t && t.editor === "builtin";
+const sgn = (n, d, u) => `${n > 0 ? "+" : n < 0 ? "\u2212" : ""}${Math.abs(n).toFixed(d)}${u}`;
+export function builtinShow(id, v) {
+  const n = Number(v) || 0;
+  if (id === "pad") return sgn(n, 0, " px");
+  if (id === "fs") return `\u00d7${(1 + n / 100).toFixed(2)}`;
+  if (id === "ls") return sgn(n / 100, 2, "em");
+  return sgn(n / 100, 2, "");
+}
+export const builtinValue = (b, raw) => {
+  const n = Number(String(raw).replace(",", "."));
+  if (raw === "" || raw == null || !Number.isFinite(n)) return null;
+  return Math.round(Math.min(b.max, Math.max(b.min, n)) / b.step) * b.step;
+};
+const describeBuiltin = (c) => tr("bi_" + String(c.key).slice(3), { v: builtinShow(String(c.key).slice(3), c.to) });
 
 // how to tell the element a pin holds on to when it has no id in the markup; a pin that lost its element says so
 export function anchorNote(c) {
@@ -491,7 +569,7 @@ export function createAuto({ fire, ms = AUTO_MS, set = setTimeout, clear = clear
 // the full path of the copy next to the file
 export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/, copy) : "");
 
-export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {} }) {
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {}, auto = false }) {
   const files = [];
   const add = (f) => { if (!files.includes(f)) files.push(f); };
   const of = (x) => x.file || path;
@@ -506,6 +584,11 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       if (!String(c.text || "").trim()) continue;
       n += 1;
       const el = c.sel ? `\`${c.sel}\`${c.label ? ` ${tr("quote", { s: cut(c.label) })}` : ""}` : tr("m_point");
+      if (c.area) {
+        const els = (c.els || []).map((e) => `\`${e.sel}\`${e.label ? ` ${tr("quote", { s: cut(e.label, 40) })}` : ""}`).join(", ") + (c.more ? `, +${c.more}` : "");
+        lines.push(`${n}. ` + tr("m_region", { el, x: px(c.x), y: px(c.y), w: px(c.area.w), h: px(c.area.h), note: anchorNote(c), els: els || tr("m_region_none"), text: String(c.text).trim() }));
+        continue;
+      }
       lines.push(`${n}. ` + tr("m_comment", { el, x: px(c.x), y: px(c.y), w: px(c.w), h: px(c.h), ex: px(c.ex), ey: px(c.ey), note: anchorNote(c), text: String(c.text).trim() }));
     }
     const mine = changes.filter((x) => of(x) === f);
@@ -543,6 +626,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   if (said.length) {
     blocks.push((blocks.length ? "" : tr("m_notes", { round })) + said.map((x, i) => `${blocks.length ? tr("m_note") : i + 1 + "."} ${cut(x.text, 500)}`).join("\n"));
   }
+  if (auto && blocks.length) blocks.push(tr("m_auto"));
   return blocks.join("\n\n");
 }
 
