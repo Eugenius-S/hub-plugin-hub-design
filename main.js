@@ -1,10 +1,10 @@
 // Hub Design: холст с HTML-дизайнами и разговор с дизайнером слева. На холсте (canvas.js) фреймы-артборды: выбор — рамка и
 // перетаскивание элементов внутри фрейма, стили и цвет — в панели, «Комментарий» — клик ставит пин с текстом, карандаш и
-// фигуры — отметить место, заметка — стикер на холсте. Всё копится пачкой и уходит дизайнеру одним сообщением (кнопкой
-// или вместе с вашим текстом); файл правит он сам. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
+// фигуры — отметить место, заметка — стикер на холсте. Правки руками уходят сами через 8 с после последней — тому,
+// кто выбран внизу (по умолчанию дизайнер); комментарии — своей кнопкой или вместе с вашим текстом. Поменял файл — фрейм перезагружается, пины прошлого раунда гаснут.
 // Дизайн показывает процесс плагина (server.py) со своего адреса, пины и рамки рисует agent.js внутри каждого фрейма.
 import { ASK_TTL, NEW_DESIGN, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, fileUrl, nameOf,
-  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight,
+  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, normTweaks, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -165,7 +165,7 @@ const draftTweaks = () => P.tweaks.filter((t) => t.state === "draft" && tweakEff
 const draftErrs = () => P.errs.filter((e) => e.state === "draft" && normErrors(e.items).length);
 const drafts = () => draftCount(draftPins(), draftChanges(), draftDrawings(), draftNotes(), draftTweaks(), draftErrs());
 const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h: f.h, grids: f.gridsOff ? [] : f.grids }]));
-// выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок «Отправить дизайнеру» не включает
+// выделенный элемент идёт в сообщение чата и вместе с пачкой; одно выделение без правок автоотправку не заводит
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
   changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), ...extra }));
@@ -303,21 +303,6 @@ function sizeFrame(path, w) {
   ui?.cv.reloadFrame(path);
 }
 function reloadAll() { if (ui) for (const f of P.frames) ui.cv.reloadFrame(f.path); }
-function clearDrafts() {
-  P.pins = P.pins.filter((p) => p.state !== "draft");
-  P.changes = P.changes.filter((c) => c.state !== "draft");
-  P.drawings = P.drawings.filter((d) => d.state !== "draft");
-  P.notes = P.notes.filter((n) => n.state !== "draft");
-  P.tweaks = P.tweaks.filter((t) => t.state !== "draft");
-  P.errs = P.errs.filter((e) => e.state !== "draft");
-  if (ui.tw.contains(document.activeElement)) document.activeElement.blur();
-  P.sel = null;
-  renumber();
-  save();
-  paint();
-  Promise.all(P.frames.map((f) => flushWrite(f.path))).then(() => { reloadAll(); paint(); });   // сперва файл — к виду до правок, потом рамки
-}
-
 // дизайнер поменял файл: прошлый раунд отработан — его пины гаснут, его сдвиги уже в коде; наша копия и записи больше не нужны
 function fileChanged(file) {
   const w = writers.get(file);
@@ -353,7 +338,7 @@ const authorBusy = (file) => {
   return !!s && s.state === "busy";
 };
 const tweakOps = (file) => (specs.get(file)?.list || [])
-  .filter((t) => P.tweaks.some((x) => x.file === file && x.key === t.key && x.state !== "done")).flatMap((t) => opsFor(file, t.key));
+  .filter((t) => P.tweaks.some((x) => x.file === file && x.key === t.key && x.state !== "done" && !x.handed)).flatMap((t) => opsFor(file, t.key));
 function scheduleWrite(file, ms = 500) {
   const w = writerOf(file);
   clearTimeout(w.timer);
@@ -511,7 +496,7 @@ function handle(file, m, ep = epOf(file)) {
     P.lastEdit = file;
     scheduleWrite(file);
   } else if (m.t === "revert") {
-    P.changes = P.changes.filter((q) => !(q.file === file && q.sel === m.sel && q.state === "draft"));
+    P.changes = P.changes.filter((q) => !(q.file === file && q.sel === m.sel && (q.state === "draft" || q.state === "sent" && q.inFile)));   // ушедшая правка, уже записанная в файл, — тоже: файл вернётся к копии
     scheduleWrite(file);
   } else if (m.t === "selected") {
     if (m.sel) {
@@ -682,16 +667,30 @@ async function sendOne(pin) {
   syncAll();
   paint();
 }
-async function sendBatch() {
-  const text = batchText();
-  if (!text || P.busy) return;
+// правки руками, крутилки и рисунки уходят сами тому, кто выбран внизу («Кому уходят правки»), через AUTO_MS после последней правки;
+// комментарии (пины, заметки) и ошибки макета — по своей кнопке или вместе с текстом из поля. Занят получатель — сообщение встаёт в его очередь
+const autoItems = () => ({ changes: draftChanges().filter(hasEffect), tweaks: draftTweaks(), drawings: draftDrawings() });
+const auto = createAuto({ fire: () => autoSend() });
+async function autoSend() {
+  if (P.busy) return auto.retry(1000);
+  const sig = auto.sig();
+  await Promise.all(P.frames.map((f) => flushWrite(f.path)));   // сперва в файл: пункты уйдут с пометкой «уже в файле»
+  if (auto.sig() !== sig || home()) return;   // пока писали, владелец двинул ещё — отсчёт пошёл заново
+  const a = autoItems();
+  const text = batchText({ comments: [], notes: [], errors: [], ...a });
+  if (!text || !P.session) return;
   P.busy = true;
-  paint();
   const r = await hub.post("/api/send", { session: P.session, text });
   P.busy = false;
-  if (r.error) { P.note = "Не ушло: " + r.error; return paint(); }
+  if (r.error) { auto.fail(); P.note = "Не ушло: " + r.error; return paint(); }
   P.note = "";
-  markSent();
+  for (const x of [...a.changes, ...a.tweaks, ...a.drawings]) { x.state = "sent"; if (x.inFile !== true) x.handed = true; }
+  P.tweaks = P.tweaks.filter((t) => t.state !== "draft");
+  P.round += 1;
+  renumber();
+  save();
+  syncAll();
+  paint();
 }
 
 // --- кому уходит разговор: специалист макета ---------------------------------------------------------------------
@@ -848,7 +847,6 @@ function build(root) {
   const chat = el("div", "hd-chat");
   const list = el("div", "hd-comments");
   const card = el("div", "hd-card");
-  const banner = el("div", "hd-banner");
   const need = createNeed({ hub, install }, "chat");   // получателя в хабе нет — не молча в пустоту: та же плашка
   const chips = el("div", "hd-chips");
   const input = hub.input({
@@ -871,7 +869,7 @@ function build(root) {
   });
   const note = el("div", "hd-note");
   foot.append(icon("gear"), who);
-  card.append(banner, need.node, chips, strip, input.node, foot, note);
+  card.append(need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card);
 
   // правая часть: холст с плавающими тулбарами, панель стилей и список файлов, пока холст пуст
@@ -890,7 +888,7 @@ function build(root) {
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, right, exitB, title, tabChat, tabComments, chat, list, banner, need, chips, strip, input, who, note, cv, props, tw, pbody, dash, last: {} };
+  return { root, wrap, right, exitB, title, tabChat, tabComments, chat, list, need, chips, strip, input, who, note, cv, props, tw, pbody, dash, last: {} };
 }
 
 function render(root, snap) {
@@ -1240,9 +1238,10 @@ function field(f) {
   return wrap;
 }
 
-// карточка ввода: плашка «Отправьте правки», чипы пачки, поле
+// карточка ввода: чипы пачки, поле
 function paintCard() {
   const n = drafts();
+  auto.watch(autoSig(autoItems(), P.session, home()));
   const items = [
     ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
     ...P.changes.filter((c) => c.state === "draft" && hasEffect(c)).map((c) => ({ text: `${c.label || c.sel}: ${describeChange(c)}`, ic: "edit", del: () => { tellFile(c.file, { t: "revert", sel: c.sel }); P.changes = P.changes.filter((q) => q !== c); } })),
@@ -1255,11 +1254,6 @@ function paintCard() {
   if (ui.last.card === sig) return;
   ui.last.card = sig;
   const el = hub.el;
-  ui.banner.hidden = !n;
-  const go = button("hd-go", P.busy ? "Отправляю…" : "Отправить дизайнеру", null, sendBatch);
-  go.disabled = P.busy;
-  const drop = button("hd-drop", "Сбросить", "Убрать всё, что накопилось", clearDrafts);
-  ui.banner.replaceChildren(el("span", null, "Отправьте правки, когда будете готовы"), drop, go);
   ui.chips.hidden = !items.length;
   ui.chips.replaceChildren(...items.map((i) => {
     const chip = el("span", "hd-chip");

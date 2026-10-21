@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -589,4 +589,72 @@ test("message: записанные в файл пункты помечены, �
   const t = message({ ...base, changes: [], tweaks: [tw], copies: { [f]: "page.r2.html" } });
   assert.match(t, /Крутилка `accent`: .* — уже в файле\./);
   assert.ok(!t.includes("сделай новые значениями по умолчанию"));
+});
+
+// автоотправка правок руками: 8 с после последнего движения, получатель — выбранный внизу, без плашки над полем
+const fakeTimers = () => {
+  let now = 0, id = 0;
+  const q = new Map();
+  return {
+    set: (fn, ms) => { q.set(++id, [now + ms, fn]); return id; },
+    clear: (i) => q.delete(i),
+    tick(ms) { now += ms; for (const [i, [at, fn]] of [...q]) if (at <= now) { q.delete(i); fn(); } },
+    pending: () => q.size,
+  };
+};
+const itemsOf = (n) => ({ changes: Array.from({ length: n }, (_, i) => ({ sel: "a" + i })), tweaks: [], drawings: [] });
+
+test("autoSig: слать нечего, нет получателя или стартовый экран — пустой слепок; получатель входит в слепок", () => {
+  assert.equal(autoSig(itemsOf(0), "designer", false), "");
+  assert.equal(autoSig(itemsOf(1), "", false), "");
+  assert.equal(autoSig(itemsOf(1), "designer", true), "");
+  assert.notEqual(autoSig(itemsOf(1), "designer", false), "");
+  assert.notEqual(autoSig(itemsOf(1), "designer", false), autoSig(itemsOf(1), "animator", false));
+  assert.equal(autoSig({ changes: [], tweaks: [{ key: "k" }], drawings: [] }, "designer", false) !== "", true);
+});
+
+test("createAuto: отправка через AUTO_MS после последней правки, каждое движение отсчитывает заново", () => {
+  assert.equal(AUTO_MS, 8000);
+  const t = fakeTimers();
+  let fired = 0;
+  const auto = createAuto({ fire: () => { fired++; }, set: t.set, clear: t.clear });
+  auto.watch(autoSig(itemsOf(1), "designer", false));
+  t.tick(7000);
+  assert.equal(fired, 0);
+  auto.watch(autoSig(itemsOf(2), "designer", false));   // владелец двинул ещё
+  t.tick(7000);
+  assert.equal(fired, 0);
+  t.tick(1000);
+  assert.equal(fired, 1);
+  auto.watch(autoSig(itemsOf(2), "designer", false));   // слепок тот же — второй отсчёт не заводим
+  assert.equal(t.pending(), 0);
+});
+
+test("createAuto: правки ушли или откатили — отсчёт снят; не ушло — само второй раз не шлём, новая правка — шлём", () => {
+  const t = fakeTimers();
+  let fired = 0;
+  const auto = createAuto({ fire: () => { fired++; }, set: t.set, clear: t.clear });
+  auto.watch(autoSig(itemsOf(1), "designer", false));
+  auto.watch("");   // отправлено (слепок обнулился)
+  t.tick(20000);
+  assert.equal(fired, 0);
+  auto.watch(autoSig(itemsOf(1), "designer", false));
+  auto.fail();
+  auto.watch("");
+  auto.watch(autoSig(itemsOf(1), "designer", false));   // тот же слепок после сбоя
+  t.tick(20000);
+  assert.equal(fired, 0);
+  auto.watch(autoSig(itemsOf(3), "designer", false));
+  t.tick(8000);
+  assert.equal(fired, 1);
+  auto.retry(1000);   // получатель занят отправкой — повтор через секунду
+  t.tick(1000);
+  assert.equal(fired, 2);
+});
+
+test("writable: правка, ушедшая дизайнеру словами (handed), в файл не пишется", async () => {
+  const { writable } = await import("../lib.js");
+  const f = "/a/page.html";
+  const mk = (sel, extra = {}) => ({ file: f, sel, dx: 5, dy: 0, state: "sent", ...extra });
+  assert.deepEqual(writable([mk("a"), mk("b", { handed: true })], f).map((c) => c.sel), ["a"]);
 });

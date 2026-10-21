@@ -528,3 +528,29 @@ class Write(unittest.TestCase):
         self.assertEqual(r.status, 204)
         self.assertEqual(r.getheader("Access-Control-Allow-Origin"), self.ORIGIN)
         self.assertIn("POST", r.getheader("Access-Control-Allow-Methods"))
+
+
+class AutoSend(unittest.TestCase):
+    """Автоотправка (0.8.1): плашки «Отправить дизайнеру» над полем нет, получатель — выбранный внизу, комментарии не трогаем."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def src(self, name):
+        with open(os.path.join(self.here, name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_no_banner_and_no_reset(self):
+        main, css = self.src("main.js"), self.src("style.css")
+        for word in ("hd-banner", "hd-go", "hd-drop", "Отправьте правки", "Сбросить"):
+            self.assertNotIn(word, main + css, word)
+
+    def test_goes_to_the_picked_session(self):
+        main = self.src("main.js")
+        body = main[main.index("async function autoSend()"):]
+        body = body[:body.index("\n}\n")]
+        self.assertIn('hub.post("/api/send", { session: P.session, text })', body)   # P.session — то, что выбрано в «Кому уходят правки»
+        self.assertIn("comments: [], notes: [], errors: []", body)   # комментарии уходят своей кнопкой, не автоотправкой
+        self.assertIn("flushWrite", body)   # сперва запись в файл — пункты уходят с «уже в файле»
+
+    def test_watches_every_paint(self):
+        main = self.src("main.js")
+        self.assertIn("auto.watch(autoSig(autoItems(), P.session, home()))", main)

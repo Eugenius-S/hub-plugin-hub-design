@@ -337,8 +337,9 @@ export function anchorNote(c) {
 // Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
 // --- правки руками прямо в файл (server.py /__canvas/write): что отправить и что отметить «уже в файле» -------------------------------
 // черновики и отправленные, ещё не принятые дизайнером: файл всегда собирается заново от копии — одним полным набором
-export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && hasEffect(c))
+export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && hasEffect(c))
   .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // один элемент — одна запись, последняя
+// handed — ушла дизайнеру словами, а не записью в файл: дальше её правит он, Hub Design в файл не пишет
 // ответ сервера → пометки на правках: inFile — записана в файл, noWrite — почему пропущена (осталась дизайнеру)
 export function markWritten(changes, tweaks, file, res) {
   const done = new Set((res && res.done) || []);
@@ -353,6 +354,26 @@ export function markWritten(changes, tweaks, file, res) {
 export function markUnwritten(changes, tweaks, file) {
   for (const c of changes) if (c.file === file) { c.inFile = false; delete c.noWrite; }
   for (const t of tweaks) if (t.file === file) t.inFile = false;
+}
+// автоотправка правок руками: пачка уходит выбранному получателю через AUTO_MS тишины после последнего движения.
+// sig — слепок того, что ушло бы сейчас ("" — слать нечего); любое изменение слепка заводит отсчёт заново
+export const AUTO_MS = 8000;
+export const autoSig = (items, session, home) => (home || !session || !(items.changes.length + items.tweaks.length + items.drawings.length) ? "" : JSON.stringify([session, items]));
+export function createAuto({ fire, ms = AUTO_MS, set = setTimeout, clear = clearTimeout }) {
+  let sig = "", timer = 0, failed = "";
+  const arm = (wait) => { clear(timer); timer = set(() => { timer = 0; fire(); }, wait); };
+  return {
+    watch(next) {
+      if (next === sig) return;
+      sig = next;
+      clear(timer);
+      timer = 0;
+      if (next && next !== failed) arm(ms);
+    },
+    sig: () => sig,
+    fail() { failed = sig; },   // не ушло: то же самое само второй раз не шлём — только после новой правки
+    retry(wait) { if (sig && sig !== failed) arm(wait); },   // получатель занят отправкой — чуть позже
+  };
 }
 // полный путь копии рядом с файлом
 export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/, copy) : "");
