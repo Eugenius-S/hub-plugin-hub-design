@@ -4,7 +4,7 @@
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
-  goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
+  goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { mountCards } from "./card.js";
@@ -133,7 +133,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false,
+  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false,
 };
 
 globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
@@ -242,7 +242,19 @@ function save() {
     round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found, opened: P.opened }));
   hold();
 }
+// designs found earlier (feeds and history): the feed tail forgets them, the dashboard must not
+function loadKnown() {
+  let k = null;
+  try { k = JSON.parse(getKey("known") || "null"); } catch { k = null; }
+  P.known = Array.isArray(k && k.list) ? k.list.filter((a) => a && a.path && a.session) : [];
+  P.histSeq = (k && k.seq) || {};
+  P.histAt = (k && k.at) || 0;
+}
+function saveKnown() {
+  try { localStorage.setItem(STORE + "known", JSON.stringify({ list: P.known, seq: P.histSeq, at: P.histAt })); } catch { /* storage is full: they will be found again */ }
+}
 function load() {
+  loadKnown();
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
@@ -956,14 +968,19 @@ const tl = new Map();   // session → {rev, epoch, items}
 let scanning = false;
 function recompute() {
   const lines = Object.fromEntries([...tl].map(([k, v]) => [k, v.items]));
-  P.authors = htmlAuthored(lines, (n) => !P.ok.has(n));
+  const live = htmlAuthored(lines, (n) => !P.ok.has(n));
+  const known = mergeAuthors(P.known, live).slice(0, KNOWN_MAX);
+  if (JSON.stringify(known) !== JSON.stringify(P.known)) { P.known = known; saveKnown(); }
+  P.authors = mergeAuthors(live, known.filter((a) => P.ok.has(a.session)));
   openFromSession();
   openNewDesign();
   verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);   // the feed changed — the file could be gone (rm, mv by the designer)
 }
 async function scanDesigns(snap) {
   P.ok = new Set((snap.sessions || []).filter((x) => x.kind !== "hub" && x.role !== "executor").map((x) => x.name));
-  if (scanning || !P.shown) return;
+  if (!P.shown) return;
+  backfill();   // does not wait for the feed pass: a slow feed must not keep the history from being read
+  if (scanning) return;
   const revs = snap.timeline_rev || {};
   const due = dueSessions([...P.ok], revs, snap.epoch, tl);
   if (!due.length) { if (ui.last.authors !== P.authors.length + "#" + P.ok.size) { ui.last.authors = P.authors.length + "#" + P.ok.size; recompute(); } return; }
@@ -982,6 +999,42 @@ async function scanDesigns(snap) {
   await Promise.all([worker(), worker(), worker()]);
   for (const n of [...tl.keys()]) if (!P.ok.has(n)) tl.delete(n);
   scanning = false;
+  recompute();
+  paint();
+}
+// designs deeper than the feed tail: page back through /api/history of every session, only what is new since the last pass (the seq we reached).
+// In the background, a few requests at a time; at most once in 6 hours per page load
+const HIST_EVERY = 6 * 3600 * 1000, HIST_PAGES = 60;
+let backfilling = false;
+async function backfill(force = false) {
+  if (backfilling || !P.ok.size || (!force && Date.now() - P.histAt < HIST_EVERY)) return;
+  backfilling = true;
+  const found = [];
+  const queue = [...P.ok];
+  const seen = { ...P.histSeq };
+  const worker = async () => {
+    for (let n = queue.shift(); n; n = queue.shift()) {
+      const since = P.histSeq[n] || 0;
+      let before = 1e12, top = since, ok = true;
+      for (let i = 0; i < HIST_PAGES; i++) {
+        let r = null;
+        try { r = await (await fetch(`/api/history?${new URLSearchParams({ session: n, before: String(before), n: "500" })}`)).json(); } catch { ok = false; break; }
+        if (!r || !Array.isArray(r.items)) { ok = false; break; }
+        const fresh = r.items.filter((it) => (it.seq || 0) > since);
+        found.push(...htmlAuthored({ [n]: fresh }));
+        top = Math.max(top, ...r.items.map((it) => it.seq || 0));
+        if (!r.more || !r.items.length || fresh.length < r.items.length) break;
+        before = r.items[0].seq;
+      }
+      if (ok) seen[n] = top;   // a failed session is read again from where it was
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  backfilling = false;
+  P.histSeq = seen;
+  P.histAt = Date.now();
+  P.known = mergeAuthors(P.known, found).slice(0, KNOWN_MAX);
+  saveKnown();
   recompute();
   paint();
 }

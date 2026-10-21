@@ -214,6 +214,23 @@ export function htmlAuthored(timelines, skip = () => false) {
   return [...best.values()].sort((a, b) => b.last - a.last);
 }
 
+// designs found earlier and now: one entry per path, the same rule as above (the higher rank wins, then the fresher). Lists of {path, session, ts, rank, last};
+// the page keeps what it found: the feed tail (~150 rows) forgets a design as soon as the session works on something else
+export function mergeAuthors(...lists) {
+  const best = new Map();
+  for (const a of lists.flat()) {
+    if (!a || !a.path) continue;
+    const cur = best.get(a.path);
+    const rank = a.rank ?? (a.wrote ? 2 : a.sent ? 1 : 0);
+    const fresh = { path: a.path, session: a.session, ts: a.ts || 0, rank, wrote: rank === 2, sent: rank === 1, last: a.last || a.ts || 0 };
+    if (!cur) { best.set(a.path, fresh); continue; }
+    cur.last = Math.max(cur.last, fresh.last);
+    if (rank > cur.rank || rank === cur.rank && fresh.ts >= cur.ts) Object.assign(cur, { ...fresh, last: cur.last });
+  }
+  return [...best.values()].sort((a, b) => b.last - a.last);
+}
+export const KNOWN_MAX = 400;
+
 // whether the session wrote the file (Write/Edit) in these timeline or history rows: ts of the last write, otherwise 0
 export function wroteAt(items, file) {
   let at = 0;

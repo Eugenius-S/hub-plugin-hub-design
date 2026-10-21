@@ -796,3 +796,20 @@ test("message: a comment on an area - x, y, w, h in design px and the elements i
   const point = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [{ ...c, area: undefined }], changes: [] });
   assert.match(point, /Коммент к `\.hero`.*точка x 100, y 200/);
 });
+
+test("mergeAuthors: a design the feed tail forgot stays; the higher rank and the fresher write win", async () => {
+  const { mergeAuthors, htmlAuthored } = await import("../lib.js");
+  const history = htmlAuthored({ designer: [
+    { kind: "tool", name: "Write", ts: 100, input: { file_path: "/p/old.html" } },
+    { kind: "tool", name: "Write", ts: 200, input: { file_path: "/p/new.html" } },
+  ] });
+  const tail = htmlAuthored({ designer: [{ kind: "out", ts: 300, text: "see /p/new.html" }] });   // the feed now only names the path
+  const all = mergeAuthors(history, tail);
+  assert.deepEqual(all.map((a) => a.path), ["/p/new.html", "/p/old.html"]);
+  const n = all.find((a) => a.path === "/p/new.html");
+  assert.equal(n.wrote, true);        // a mention does not take the author away
+  assert.equal(n.last, 300);          // but it is the freshest sign of life
+  assert.equal(mergeAuthors([], []).length, 0);
+  // what the page stored and read back merges the same way
+  assert.deepEqual(mergeAuthors(JSON.parse(JSON.stringify(all)), []).map((a) => a.path), all.map((a) => a.path));
+});
