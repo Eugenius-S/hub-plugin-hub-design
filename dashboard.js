@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, isGone, nameOf, scrollsRight } from "./lib.js";
+import { ago, bannerText, folderOf, groupFiles, isGone, nameOf, scrollsRight } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 
@@ -25,6 +25,10 @@ export const STR = {
     empty_found: "Nothing found.",
     empty_none: "No designs yet. Pick a kind above or write on the left what you need — a specialist will make a new file.",
     no_specialist: "no specialist {name}",
+    crumb_all: "All folders",
+    folder_none: "No direction",
+    folder_count: "Designs: {n}",
+    empty_folder: "No designs in this folder yet. Write on the left what you need — the designer will save it here.",
   },
   ru: {
     preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Дизайн в коде", preset_system: "Дизайн-система", preset_motion: "Анимация",
@@ -45,6 +49,10 @@ export const STR = {
     empty_found: "Ничего не нашлось.",
     empty_none: "Макетов пока нет. Выберите вид выше или напишите слева, что нужно, — специалист сделает новый файл.",
     no_specialist: "нет специалиста {name}",
+    crumb_all: "Все папки",
+    folder_none: "Без направления",
+    folder_count: "Макетов: {n}",
+    empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно, — дизайнер сохранит его сюда.",
   },
 };
 export const t = makeT(STR);
@@ -111,10 +119,23 @@ export function createNeed(app, cls = "") {
   return { node, paint };
 }
 
-// createDashboard(app): app = { hub, files(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name) }
+// the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
+// dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
+export const PREVIEWS = 4;
+export const folderTitle = (key, dirs = []) => (key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+// what the dashboard shows: "folders" (tiles), "files" (the cards of one folder or all the designs). Tiles - only when there are direction folders and nothing is searched
+export function view(rows, dirs, { folder = null, q = "" } = {}) {
+  if (folder !== null) return { mode: "files", rows: rows.filter((f) => folderOf(f.path, dirs) === folder) };
+  const groups = groupFiles(rows, dirs);
+  if (String(q || "").trim() || !groups.some((g) => g.key)) return { mode: "files", rows };
+  return { mode: "folders", groups };
+}
+export const newest = (rows, n = PREVIEWS) => [...rows].sort((a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0)).slice(0, n);
+
+// createDashboard(app): app = { hub, files(), dirs(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name) }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
-  const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false };
+  const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false, folder: null };   // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd)
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
@@ -174,16 +195,24 @@ export function createDashboard(app) {
   new ResizeObserver(fade).observe(presets);
 
   const need = createNeed(app);
+  const crumb = el("div", "hdd-crumb");
+  crumb.hidden = true;
+  const back = el("button", "hdd-back");
+  back.type = "button";
+  back.addEventListener("click", () => { S.folder = null; paint(); });
+  const cname = el("span", "hdd-cname");
+  crumb.append(back, cname);
+  const folders = el("div", "hdd-folders");
   const files = el("div", "hdd-files");
   const empty = el("div", "hdd-empty");
-  page.append(head, need.node, bar, pathIn, presets, files, empty);
+  page.append(head, need.node, bar, pathIn, presets, crumb, folders, files, empty);
   root.append(page);
   // keys typed in the search and path fields do not reach the canvas hotkeys
   root.addEventListener("keydown", (e) => e.stopPropagation());
 
   // a preview is the real document in a scaled-down iframe; only what is in view is loaded (and no more than LIVE_MAX at once)
   const LIVE_MAX = 16;
-  const cards = new Map();   // path -> {node, shot, frame, meta, name, live}
+  const cards = new Map();   // path -> {path, node, shot, frame, meta, name, live}; the previews of folder tiles are "t:<path>"
   const fit = (c) => {
     const w = c.shot.clientWidth, h = c.shot.clientHeight;
     if (!w || !h) return;
@@ -203,6 +232,27 @@ export function createDashboard(app) {
       c.shot.dataset.live = "1";
     }
   }
+  // a live preview: the real document in a scaled-down iframe
+  function shotOf(path, cls) {
+    const shot = el("span", cls);
+    const frame = el("iframe", "hdd-frame");
+    frame.setAttribute("tabindex", "-1");
+    frame.setAttribute("aria-hidden", "true");
+    frame.setAttribute("title", nameOf(path));
+    shot.append(frame);
+    return { shot, frame };
+  }
+  function thumb(path) {
+    const key = "t:" + path;
+    let c = cards.get(key);
+    if (c) return c;
+    const { shot, frame } = shotOf(path, "hdd-shot hdd-tshot");
+    c = { path, node: shot, shot, frame, visible: false };
+    cards.set(key, c);
+    sizes.observe(shot);
+    seen.observe(shot);
+    return c;
+  }
   function card(f) {
     let c = cards.get(f.path);
     if (c) return c;
@@ -210,12 +260,7 @@ export function createDashboard(app) {
     node.type = "button";
     node.dataset.path = f.path;
     node.title = f.path;
-    const shot = el("span", "hdd-shot");
-    const frame = el("iframe", "hdd-frame");
-    frame.setAttribute("tabindex", "-1");
-    frame.setAttribute("aria-hidden", "true");
-    frame.setAttribute("title", nameOf(f.path));
-    shot.append(frame);
+    const { shot, frame } = shotOf(f.path, "hdd-shot");
     const tile = el("span", "hdd-tile");
     tile.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Zm-5 9a1.4 1.4 0 1 1 0-2.8A1.4 1.4 0 0 1 7 12Zm3-4a1.4 1.4 0 1 1 0-2.8A1.4 1.4 0 0 1 10 8Zm5 0a1.4 1.4 0 1 1 0-2.8A1.4 1.4 0 0 1 15 8Z"/></svg>';
     const name = el("span", "hdd-name", nameOf(f.path));
@@ -234,23 +279,87 @@ export function createDashboard(app) {
     seen.observe(node);
     return c;
   }
+  // a folder tile: up to PREVIEWS of the newest designs (2x2) and the name of the direction
+  const tiles = new Map();   // folder key -> {node, cells, name, count}
+  const FOLDER = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.6c.6 0 1.2.3 1.6.8l.9 1.2h6.9A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg>';
+  function tile(key) {
+    let tl = tiles.get(key);
+    if (tl) return tl;
+    const node = el("button", "hdd-folder");
+    node.type = "button";
+    node.dataset.folder = key;
+    const shots = el("span", "hdd-fshots");
+    const cells = Array.from({ length: PREVIEWS }, () => { const c = el("span", "hdd-fcell"); shots.append(c); return c; });
+    const icon = el("span", "hdd-ficon");
+    icon.innerHTML = FOLDER;
+    const name = el("span", "hdd-fname");
+    const count = el("span", "hdd-fcount");
+    const text = el("span", "hdd-ftext");
+    text.append(name, count);
+    const body = el("span", "hdd-fbody");
+    body.append(icon, text);
+    node.append(shots, body);
+    node.addEventListener("click", () => { S.folder = key; paint(); });
+    tl = { node, cells, name, count };
+    tiles.set(key, tl);
+    return tl;
+  }
   function paintFiles() {
     const all = app.files();
+    const dirs = app.dirs ? app.dirs() : [];
     // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
     const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() }).filter((f) => !isGone(app.fileState(f.path)));
-    const nodes = rows.map((f) => {
+    // a folder that has nothing in it any more (and is not a known direction) is closed
+    if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderOf(f.path, dirs) === S.folder)) S.folder = null;
+    const v = view(rows, dirs, { folder: S.folder, q: S.q });
+    const inFolder = S.folder !== null;
+    crumb.hidden = !inFolder;
+    if (inFolder) { cname.textContent = folderTitle(S.folder, dirs); cname.title = S.folder; }
+    // flat cards (a folder, a search or no direction folders at all)
+    const list = v.mode === "files" ? v.rows : [];
+    const named = !inFolder && dirs.length > 0;   // a search across folders tells where each design lies
+    const nodes = list.map((f) => {
       const c = card(f);
-      c.text.textContent = [f.session, editedText(f)].filter(Boolean).join(" · ");
+      const where = named ? folderTitle(folderOf(f.path, dirs), dirs) : "";
+      c.text.textContent = [f.session, named && folderOf(f.path, dirs) ? where : "", editedText(f)].filter(Boolean).join(" · ");
       return c.node;
     });
     // move only the ones that shifted: moving an iframe in the DOM reloads it
     nodes.forEach((n, i) => { if (files.children[i] !== n) files.insertBefore(n, files.children[i] || null); });
     while (files.children.length > nodes.length) files.lastChild.remove();
-    for (const [path, c] of cards) if (!all.some((f) => f.path === path)) { sizes.unobserve(c.shot); seen.unobserve(c.node); cards.delete(path); }
-    empty.hidden = nodes.length > 0;
+    // tiles
+    const groups = v.mode === "folders" ? v.groups : [];
+    const live = new Set();
+    const tnodes = groups.map((g) => {
+      const tl = tile(g.key);
+      tl.name.textContent = folderTitle(g.key, dirs);
+      tl.node.title = g.key || t("folder_none");
+      tl.count.textContent = t("folder_count", { n: g.files.length });
+      newest(g.files).forEach((f, i) => {
+        const c = thumb(f.path);
+        live.add("t:" + f.path);
+        if (tl.cells[i].firstChild !== c.shot) tl.cells[i].replaceChildren(c.shot);
+      });
+      for (let i = Math.min(g.files.length, PREVIEWS); i < PREVIEWS; i++) tl.cells[i].replaceChildren();
+      return tl.node;
+    });
+    tnodes.forEach((n, i) => { if (folders.children[i] !== n) folders.insertBefore(n, folders.children[i] || null); });
+    while (folders.children.length > tnodes.length) folders.lastChild.remove();
+    for (const key of [...tiles.keys()]) if (!groups.some((g) => g.key === key)) tiles.delete(key);
+    const shownNow = new Set(list.map((f) => f.path));
+    for (const [key, c] of cards) {
+      const thumbOnly = key.startsWith("t:");
+      if (thumbOnly ? !live.has(key) : !all.some((f) => f.path === key)) { sizes.unobserve(c.shot); seen.unobserve(c.node); cards.delete(key); continue; }
+      // what is not on the screen now gives its live frame back: only visible previews take the LIVE_MAX places
+      if (!thumbOnly && !shownNow.has(key) && c.frame.src) { c.frame.removeAttribute("src"); delete c.shot.dataset.live; c.visible = false; }
+    }
+    folders.hidden = !tnodes.length;
+    files.hidden = v.mode !== "files";
+    empty.hidden = nodes.length > 0 || tnodes.length > 0;
     // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"
-    empty.textContent = S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none");
+    empty.textContent = inFolder && !S.q.trim() && S.tab === "all" ? t("empty_folder") : S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none");
     for (const c of cards.values()) { load(c); fit(c); }
+    folders.classList.toggle("list", S.list);
   }
   function paint() {
     // static texts are set here, not at creation: the hub language is read at use time
@@ -264,6 +373,7 @@ export function createDashboard(app) {
     bSort.setAttribute("aria-label", bSort.title);
     for (const [p, label] of labels) label.textContent = p.title.replace("-", "\u2011").replace(/ (\u0432|in) /, " $1\u00a0");   // wrap only between words: not at the hyphen, not after the preposition (0432 in Russian)
     for (const [id, b] of tabBtns) { b.textContent = t("tab_" + id); b.classList.toggle("on", S.tab === id); }
+    back.textContent = "\u2190 " + t("crumb_all");
     search.hidden = !S.search;
     bSearch.classList.toggle("on", S.search);
     bView.classList.toggle("on", S.list);
@@ -285,5 +395,5 @@ export function createDashboard(app) {
     fade();
   }
   paint();
-  return { node: root, paint, state: S };
+  return { node: root, paint, state: S, setFolder: (key) => { S.folder = key; paint(); } };
 }

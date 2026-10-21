@@ -5,7 +5,7 @@
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
-  describeTweak, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
+  describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -133,7 +133,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0,
+  authors: [], opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false,
 };
 
 globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
@@ -157,6 +157,12 @@ export default function register(h) {
     const was = e.oldURL ? new URL(e.oldURL).hash : prev;
     prev = location.hash;
     if (was && !was.startsWith("#/x/" + ID)) P.back = was;
+    // came from a session window: its direction is where the new designs go (from any other page - nowhere in particular)
+    if (location.hash.startsWith("#/x/" + ID) && !was.startsWith("#/x/" + ID)) {
+      P.origin = decodeURIComponent((was.match(/^#\/s\/([^/?]+)/) || [])[1] || "");
+      P.originNew = true;
+      adoptOrigin();
+    }
   });
   hub.addView({
     id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", full: true,
@@ -202,6 +208,9 @@ function applyHandoff() {
   if (!h || !ui) return;
   P.handoff = null;
   P.tab = "chat";
+  P.origin = h.session;
+  P.originNew = true;
+  adoptOrigin();
   P.openFrom = h.session;   // open this session's last design on the canvas if it has one (while it is not in the list — wait for the feeds)
   const ta = ui.input.node.querySelector("textarea");
   if (ta && h.text) {
@@ -287,8 +296,27 @@ const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 // the recipient is not remembered between openings: the open design drives it (wanted); a handoff from a chat overrides
 function fromAddress() {
   applyHandoff();
+  adoptOrigin();
   applyOpen();
 }
+// --- where a new design is saved: the folder of the direction the owner came from, or of the folder open on the dashboard ----------
+const dirsNow = () => directionDirs((hub.snapshot() || {}).sessions, (hub.snapshot() || {}).directions);
+// the dashboard opens in the folder of the direction we came from (none - on all folders)
+function adoptOrigin() {
+  if (!P.originNew || !ui) return;
+  P.originNew = false;
+  const dir = saveDirOf(P.origin, (hub.snapshot() || {}).sessions, (hub.snapshot() || {}).directions);
+  ui.dash.setFolder(dir ? dirKey(dir) : null);
+}
+// the cwd whose design/ takes the new design: the open dashboard folder, else the direction we came from; "" - the designer's own place
+function saveFolder() {
+  const f = ui ? ui.dash.state.folder : null;
+  if (f === "") return "";
+  if (f) return (dirsNow().find((d) => d.key === f) || {}).cwd || "";
+  const snap = hub.snapshot() || {};
+  return saveDirOf(P.origin, snap.sessions, snap.directions);
+}
+const withSave = (text) => { const l = saveLine(saveFolder()); return l ? text + "\n\n" + l : text; };
 
 // a file from a card in the feed: open the view and put the file on the canvas (the view is not drawn yet - wait for render)
 function openFile(path) {
@@ -869,7 +897,7 @@ async function basedOn(path) {
   if (!to) { P.note = tr("pick_to"); return paint(); }
   P.busy = true;
   paint();
-  const r = await hub.post("/api/send", { session: to, text: basedOnText(path) });
+  const r = await hub.post("/api/send", { session: to, text: withSave(basedOnText(path)) });
   P.busy = false;
   P.note = r.error ? tr("not_sent", { err: r.error }) : "";
   paint();
@@ -1028,7 +1056,7 @@ function build(root) {
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: tr("placeholder"),
-    prefix: (text) => { if (home()) return newDesignPrefix() + text; const b = batchText() || selText(); return b ? b + "\n\n" + text : text; },
+    prefix: (text) => { if (home()) return withSave(newDesignPrefix() + text); const b = batchText() || selText(); return b ? b + "\n\n" + text : text; },
     onSent: () => {
       if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // on the start screen they wrote — this is a task for a new design
       else if (drafts() > 0) markSent();
@@ -1056,7 +1084,7 @@ function build(root) {
   const tw = el("div", "hd-tw"), pbody = el("div", "hd-pbody");
   props.append(tw, pbody);
   const dash = createDashboard({
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });

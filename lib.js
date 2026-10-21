@@ -58,6 +58,7 @@ export const STR = {
     ago_now: "just now", ago_min: "{n} min ago", ago_h: "{n} h ago", ago_d: "{n} d ago",
     new_design: "New design (Hub Design): ",
     based_on: "Make a design based on {f}",
+    save_to: "Save it in the direction folder: {dir}/<design-name>/ (index.html, assets next to it), not in your own working folder.",
     gone_denied: "The file is outside the hub's project and session folders, the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
     t_designer: "designer", t_animator: "animator",
@@ -118,6 +119,7 @@ export const STR = {
     ago_now: "только что", ago_min: "{n} мин назад", ago_h: "{n} ч назад", ago_d: "{n} дн назад",
     new_design: "Новый макет (Hub Design): ",
     based_on: "Сделай макет на основе {f}",
+    save_to: "Сохрани в папку направления: {dir}/<имя-макета>/ (index.html, ресурсы рядом), не в свою рабочую папку.",
     gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
     gone_missing: "Файл не найден: {path}",
     t_designer: "дизайнер", t_animator: "аниматор",
@@ -755,6 +757,56 @@ export function dashboardFiles(authors, frames, cwds, { who = () => "", time = (
     out.push({ path, session: who(path) || "", ts: t, last: t, wrote: false });
   }
   return out;
+}
+
+// --- folders of directions: designs live where they were asked for -----------------------------------------------------------
+// A direction is a worker session (the hub's own role "worker") or a name from snapshot.directions; its folder is its cwd. Directions of one project share a cwd -
+// that is one folder (the label is then the folder name), a lone direction names its folder.
+export const dirKey = (p) => String(p || "").replace(/\\/g, "/").replace(/\/+$/, "");
+const lastPart = (p) => dirKey(p).split("/").filter(Boolean).pop() || "";
+export function directionDirs(sessions = [], directions = []) {
+  const by = new Map();
+  for (const s of sessions || []) {
+    if (!s || !s.cwd || s.kind === "hub") continue;
+    if (!((directions || []).includes(s.name) || s.role === "worker")) continue;
+    const key = dirKey(s.cwd);
+    if (!by.has(key)) by.set(key, { key, cwd: s.cwd, names: [] });
+    by.get(key).names.push(s.name);
+  }
+  return [...by.values()].map((d) => ({ ...d, label: d.names.length === 1 ? d.names[0] : lastPart(d.key) || d.names[0] }));
+}
+// the folder a design file sits in: the deepest direction folder that contains it ("" - no direction)
+export function folderOf(path, dirs = []) {
+  const p = dirKey(path);
+  const win = /^[A-Za-z]:/.test(p);
+  const norm = (x) => (win ? x.toLowerCase() : x);
+  let best = "";
+  for (const d of dirs) if ((norm(p).startsWith(norm(d.key) + "/")) && d.key.length > best.length) best = d.key;
+  return best;
+}
+// files by folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last
+export function groupFiles(files = [], dirs = []) {
+  const by = new Map();
+  for (const f of files) {
+    const key = folderOf(f.path, dirs);
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(f);
+  }
+  const last = (rows) => Math.max(0, ...rows.map((f) => Number(f.last || f.ts) || 0));
+  return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, last: last(rows) }))
+    .sort((a, b) => (a.key === "") - (b.key === "") || b.last - a.last);
+}
+// the cwd of the direction a session is (nothing for the hub, specialists, executors, an unknown name): new designs go into <cwd>/design
+export function saveDirOf(name, sessions = [], directions = []) {
+  if (!name) return "";
+  const d = directionDirs(sessions, directions).find((x) => x.names.includes(name));
+  return d ? d.cwd : "";
+}
+// the line for the designer: where to put the new design
+export function saveLine(cwd) {
+  if (!cwd) return "";
+  const sep = /\\/.test(cwd) && !cwd.includes("/") ? "\\" : "/";
+  return tr("save_to", { dir: String(cwd).replace(/[\\/]+$/, "") + sep + "design" });
 }
 
 // who gets the edits of the open design: its author; no author (the path was only mentioned) - the designer if the hub has one, not the session we came from

@@ -54,7 +54,7 @@ class Scripts(unittest.TestCase):
         self.assertIn("home: true", main)                                   # on page load: the dashboard, not the canvas
         self.assertIn("const home = () => P.home || !P.frames.length;", main)
         self.assertIn('hub.addStyle("dashboard.css")', main)
-        self.assertIn("if (home()) return newDesignPrefix() + text;", main)  # wrote on the dashboard: a new design from the instructions
+        self.assertIn("if (home()) return withSave(newDesignPrefix() + text);", main)  # wrote on the dashboard: a new design from the instructions
         self.assertIn("if (home()) P.openNew", main)                        # and it opens on the canvas once the file appears
         self.assertIn("P.home = false;", main)                              # a click on a file or a new design closes the dashboard
         self.assertIn("function startPreset(p)", main)                      # preset: the view's specialist and a stub in the input
