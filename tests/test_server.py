@@ -77,6 +77,7 @@ class Server(unittest.TestCase):
         self.assertEqual(r.status, 200)
         text = body.decode()
         self.assertIn('<script src="/__canvas/agent.js"></script></body>', text)
+        self.assertLess(text.index("/__canvas/anchor.js"), text.index("/__canvas/agent.js"))   # приметы пина — до агента
         self.assertIn('"http://localhost:8787"', text)
         self.assertIn("frame-ancestors 'self' http://localhost:", r.getheader("Content-Security-Policy"))
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
@@ -96,6 +97,11 @@ class Server(unittest.TestCase):
         r, body = self.get("/__canvas/agent.js")
         self.assertEqual(r.status, 200)
         self.assertIn(b"__canvasAgent", body)
+
+    def test_anchor_served(self):
+        r, body = self.get("/__canvas/anchor.js")
+        self.assertEqual(r.status, 200)
+        self.assertIn(b"HubAnchor", body)
 
     def test_outside_hidden_and_unknown_types_refused(self):
         for p in (os.path.join(OUT, "x.html"), os.path.join(SITE, ".git", "config.json"), os.path.join(SITE, "secret.env"),

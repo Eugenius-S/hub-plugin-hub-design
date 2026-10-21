@@ -338,7 +338,7 @@ function theme() {
 function syncEp(ep, edit) {
   const path = ep.path;
   tellEp(ep, { t: "mode", mode: toolMode(P.tool), tool: P.tool, shape: P.shapes[P.tool] });
-  tellEp(ep, { t: "pins", pins: P.pins.filter((p) => p.file === path).map(({ id, n, sel, x, y, fx, fy, text, state }) => ({ id, n, sel, x, y, fx, fy, text, state })),
+  tellEp(ep, { t: "pins", pins: P.pins.filter((p) => p.file === path).map(({ id, n, sel, fp, lost, x, y, fx, fy, text, state }) => ({ id, n, sel, fp, lost, x, y, fx, fy, text, state })),
     drawings: P.drawings.filter((d) => d.file === path).map(({ id, path: pts, kind, state, from, to, box }) => ({ id, path: pts, kind, state, from, to, box })), edit });
 }
 const syncAll = (edit) => { for (const ep of eps.values()) syncEp(ep, edit && edit.file === ep.path ? edit.id : undefined); };
@@ -379,10 +379,21 @@ function handle(file, m, ep = epOf(file)) {
     P.seq += 1;
     const n = P.pins.filter((p) => p.state !== "done").reduce((a, p) => Math.max(a, p.n), 0) + 1;
     const pin = { id: "p" + P.seq, file, n, round: P.round, state: "draft", text: "",
-      sel: m.sel, label: m.label, x: m.x, y: m.y, fx: m.fx, fy: m.fy, ex: m.ex, ey: m.ey, w: m.w, h: m.h };
+      sel: m.sel, fp: m.fp || null, label: m.label, x: m.x, y: m.y, fx: m.fx, fy: m.fy, ex: m.ex, ey: m.ey, w: m.w, h: m.h };
     P.pins.push(pin);
     P.focus = file;
     syncAll({ file, id: pin.id });
+  } else if (m.t === "pinfix") {
+    // макет перечитан: пин нашёл свой элемент заново (другой селектор) или потерял его
+    const p = P.pins.find((q) => q.id === m.id);
+    if (!p || (!!p.lost === !!m.lost && p.sel === m.sel)) return;
+    p.lost = !!m.lost;
+    p.sel = m.sel;
+    if (!m.lost) Object.assign(p, { fp: m.fp, label: m.label || p.label, ex: m.ex, ey: m.ey, w: m.w, h: m.h, x: m.x, y: m.y });
+    save();
+    paint();
+    syncAll();
+    return;
   } else if (m.t === "comment") {
     const p = P.pins.find((q) => q.id === m.id);
     if (p) p.text = m.text;
@@ -1151,8 +1162,8 @@ function paintComments() {
   const rows = [];
   for (const p of pins) {
     const li = el("div", "hd-citem " + p.state);
-    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", p.text));
-    li.title = p.sel;
+    li.append(el("b", "hd-n", String(p.n)), el("span", "hd-ct", (p.lost ? "⚠ элемент не найден · " : "") + p.text));
+    li.title = p.lost ? "Элемент не найден — макет перевёрстан, точка на прежнем месте" : p.sel;
     rows.push(li);
   }
   for (const c of changes) {

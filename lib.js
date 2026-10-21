@@ -319,6 +319,20 @@ const tweakShow = (c, v) => (c.editor === "boolean" ? (v ? "вкл" : "выкл"
 export const describeTweak = (c) => `Крутилка \`${c.key}\`: ${tweakShow(c, c.from)} → ${tweakShow(c, c.to)}`;
 export const tweakEffect = (c) => c.from !== c.to;
 
+// чем отличить элемент, за который держится пин, когда в вёрстке у него нет id; пин потерял элемент — так и сказать
+export function anchorNote(c) {
+  if (c.lost) return "; элемент не найден — макет перевёрстан, точка осталась на прежнем месте";
+  const f = c.fp;
+  if (!f || f.id) return "";
+  const bits = [`тег ${f.tag}`];
+  if (f.text) bits.push(`текст «${cut(f.text, 50)}»`);
+  else if (f.attr) bits.push(`атрибуты «${cut(f.attr, 50)}»`);
+  if (f.anc) bits.push(`внутри #${f.anc}`);
+  if (f.cls && f.cls.length) bits.push(`классы ${f.cls.map((k) => "." + k).join(" ")}`);
+  if (f.near && f.near !== f.text) bits.push(`рядом «${cut(f.near, 40)}»`);
+  return `; нет id, приметы: ${bits.join(", ")}`;
+}
+
 // сообщение дизайнеру пачкой: комменты к точкам, правки руками, рисунки, заметки; файл правит он сам.
 // Пункты с полем file разных файлов — отдельными разделами; без поля — один файл path
 export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [] }) {
@@ -336,7 +350,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       if (!String(c.text || "").trim()) continue;
       n += 1;
       const el = c.sel ? `\`${c.sel}\`${c.label ? ` «${cut(c.label)}»` : ""}` : "точка";
-      lines.push(`${n}. Коммент к ${el}, точка x ${px(c.x)}, y ${px(c.y)} (элемент ${px(c.w)}×${px(c.h)} в x ${px(c.ex)}, y ${px(c.ey)}): ${String(c.text).trim()}`);
+      lines.push(`${n}. Коммент к ${el}, точка x ${px(c.x)}, y ${px(c.y)} (элемент ${px(c.w)}×${px(c.h)} в x ${px(c.ex)}, y ${px(c.ey)}${anchorNote(c)}): ${String(c.text).trim()}`);
     }
     const mine = changes.filter((x) => of(x) === f);
     for (const c of mine) {

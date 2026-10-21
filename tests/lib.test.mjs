@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 
 test("порт и адрес файла", () => {
@@ -525,4 +525,18 @@ test("message: сетки рамки — часть вида рамки, одн�
   assert.equal(lines[1], "Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): колонки 12 (зазор 24, поле 80, цвет #0a84ff).");
   assert.ok(!message({ path: "/d/a.html", round: 2, view: { w: 1, h: 1 }, comments: [{ text: "x", x: 1, y: 2, w: 3, h: 4, ex: 5, ey: 6 }], changes: [] }).includes("Сетка поверх"));
   assert.equal(describeGrids([{ kind: "grid", count: 8 }]), "клетки 8 (зазор 16, поле 0, цвет #ff3b30)");
+});
+
+test("коммент без id в вёрстке: в сообщении приметы элемента; потерянный — «не найден»", () => {
+  const base = { id: "p1", n: 1, text: "крупнее", sel: "section > div.card > a.btn", label: "Купить", x: 360, y: 610, w: 240, h: 44, ex: 340, ey: 600 };
+  const fp = { id: "", anc: "pricing", path: ["div", "a"], tag: "a", text: "Купить", attr: "", near: "Pro 9 $ Купить", cls: ["btn"], w: 240, h: 44, x: 340, y: 600 };
+  const m = message({ path: "/d/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [{ ...base, fp }], changes: [] });
+  assert.match(m, /нет id, приметы: тег a, текст «Купить», внутри #pricing, классы \.btn, рядом «Pro 9 \$ Купить»\): крупнее/);
+  // с id приметы не нужны
+  assert.doesNotMatch(message({ path: "/d/a.html", round: 1, view: { w: 1, h: 1 }, comments: [{ ...base, sel: "#buy", fp: { ...fp, id: "buy" } }], changes: [] }), /приметы/);
+  // старые пины без примет — как раньше
+  assert.doesNotMatch(message({ path: "/d/a.html", round: 1, view: { w: 1, h: 1 }, comments: [base], changes: [] }), /приметы|не найден/);
+  const lost = message({ path: "/d/a.html", round: 1, view: { w: 1, h: 1 }, comments: [{ ...base, fp, lost: true }], changes: [] });
+  assert.match(lost, /элемент не найден — макет перевёрстан, точка осталась на прежнем месте\): крупнее/);
+  assert.equal(anchorNote({ fp: { ...fp, id: "x" } }), "");
 });

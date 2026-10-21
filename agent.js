@@ -49,6 +49,7 @@
       display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;pointer-events:auto;cursor:pointer;
       box-shadow:0 1px 5px rgba(0,0,0,.3);border:2px solid var(--bg)}
     .pin.sent{background:var(--mu)}
+    .pin.lost{background:var(--bg);color:var(--a);border:2px dashed var(--a)}
     .nopin .pin{pointer-events:none}
     .pin.done{display:none}
     .ed{position:absolute;width:300px;background:var(--bg);color:var(--fg);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.22),0 0 0 1px var(--bd);padding:12px;pointer-events:auto}
@@ -135,8 +136,47 @@
   }
 
   // --- пины --------------------------------------------------------------------------------------------------------
+  // элемент пина: сперва его селектор, но только если там всё ещё он (приметы совпали); иначе ищем по приметам во всём
+  // документе. Не нашли — пин остаётся на своих координатах с пометкой «элемент не найден», на чужой не садится.
+  const A = window.HubAnchor;
+  const RECHECK = 300;           // не чаще: пока макет живёт анимацией, DOM меняется каждый кадр
+  let domRev = 0;
+  new MutationObserver(() => { domRev += 1; }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["id", "class"] });
+  const bound = new Map();       // id пина → { el, lost, rev, at, key }
+  function resolve(p) {
+    const key = p.sel + "|" + (p.fp ? p.fp.text + p.fp.x + p.fp.y : "");
+    const c = bound.get(p.id);
+    const now = Date.now();
+    if (c && c.key === key && (c.rev === domRev || now - c.at < RECHECK) && (!c.el || c.el.isConnected)) return c;
+    let el = find(p.sel), lost = false;
+    if (A && p.fp && !(el && A.matches(p.fp, el, pageRect))) {
+      const hit = A.locate(p.fp, document, pageRect);
+      el = hit ? hit.el : null;
+      lost = !hit;
+    } else if (!el) lost = !!p.fp;
+    const r = { el, lost, rev: domRev, at: now, key };
+    bound.set(p.id, r);
+    if (A && p.fp) reportPin(p, r);
+    return r;
+  }
+  const told = new Map();        // id → что страница уже знает про пин (чтобы не повторять)
+  function reportPin(p, r) {
+    const sel = r.el ? selector(r.el) : p.sel;
+    const was = told.get(p.id);
+    const now = (r.lost ? "lost|" : "ok|") + sel;
+    if (was === now) return;
+    told.set(p.id, now);
+    if (r.lost === !!p.lost && sel === p.sel) return;
+    const msg = { t: "pinfix", id: p.id, lost: r.lost, sel };
+    if (r.el) {
+      const b = pageRect(r.el);
+      Object.assign(msg, { fp: A.fingerprint(r.el, b), label: label(r.el), ex: b.x, ey: b.y, w: b.w, h: b.h,
+        x: b.x + p.fx * b.w, y: b.y + p.fy * b.h });
+    }
+    send(msg);
+  }
   function pinXY(p) {
-    const el = find(p.sel);
+    const { el } = resolve(p);
     if (el) {
       const r = pageRect(el);
       if (r.w || r.h) return { x: r.x + p.fx * r.w, y: r.y + p.fy * r.h };
@@ -158,8 +198,8 @@
         pinsBox.append(n);
       }
       n.textContent = String(p.n);
-      n.className = "pin " + (p.state || "draft");
-      n.title = p.text || "";
+      n.className = "pin " + (p.state || "draft") + (p.lost ? " lost" : "");
+      n.title = (p.lost ? "Элемент не найден — точка на прежнем месте. " : "") + (p.text || "");
     }
     for (const n of have.values()) n.remove();
     const ed = root.querySelector(".ed");
@@ -197,7 +237,7 @@
     if (ed) {
       const p = pins.find((q) => q.id === ed.dataset.id);
       if (p) {
-        const el = find(p.sel);
+        const el = resolve(p).el;
         const r = el ? pageRect(el) : { x: p.x, y: p.y, w: 0, h: 0 };
         const left = Math.min(r.x, scrollX + innerWidth - 312);
         ed.style.left = Math.max(scrollX + 4, left) + "px";
@@ -529,7 +569,7 @@
     if (!pickable(el)) return;
     const r = pageRect(el);
     const x = e.clientX + scrollX, y = e.clientY + scrollY;
-    send({ t: "pick", sel: selector(el), label: label(el), tag: el.tagName.toLowerCase(), x, y, ex: r.x, ey: r.y, w: r.w, h: r.h,
+    send({ t: "pick", sel: selector(el), fp: A ? A.fingerprint(el, r) : null, label: label(el), tag: el.tagName.toLowerCase(), x, y, ex: r.x, ey: r.y, w: r.w, h: r.h,
       fx: r.w ? (x - r.x) / r.w : 0, fy: r.h ? (y - r.y) / r.h : 0 });
   }, true);
   addEventListener("dblclick", (e) => {
@@ -643,6 +683,7 @@
       framed = null;
     } else if (m.t === "pins") {
       pins = m.pins || [];
+      for (const id of [...bound.keys()]) if (!pins.some((p) => p.id === id)) { bound.delete(id); told.delete(id); }
       drawings = m.drawings || [];
       drawPins();
       drawDrawings();
