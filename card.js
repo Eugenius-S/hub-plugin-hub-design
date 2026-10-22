@@ -1,8 +1,8 @@
 // Cards of designs, documents and videos in the chat feed. A design (.html), a document (.pdf, .svg) or a video (mp4/mov/webm/gif) that a session
 // sent as a file (hub send-file) or named by a full path in its reply becomes a card in the feed: a tile with a preview, a name, "Hub Design · agent",
 // the "Open in Hub Design" button, "share" and "Hide". A click on a card opens the file in Hub Design. Pictures are not cards. The feed is rebuilt from core snapshots, so the card nodes and everything asynchronous
-// (title, shot, video frame - failures too) are kept in the page memory: a repaint takes the ready result, with no flicker and no requests.
-import { CARD_MAX, cardKind, cardName, cardText, fileUrl, hideToggle, isAbsPath, pathFromHref } from "./lib.js";
+// (title, shot - failures too) are kept in the page memory: a repaint takes the ready result, with no flicker and no requests.
+import { CARD_MAX, cardKind, cardName, cardText, hideToggle, isAbsPath, pathFromHref } from "./lib.js";
 
 const HIDE_KEY = "hub-design:card-hidden";
 const META_TTL = 60000, FAIL_TTL = 120000;
@@ -47,33 +47,6 @@ function info(path) {
   return waiting.get(path);
 }
 
-// a video frame: a <video> with a CORS answer of the plugin process is drawn on a canvas. One at a time; it failed (codec, rights) - an icon
-let grabbing = Promise.resolve();
-function grab(path) {
-  const run = () => new Promise((done) => {
-    const v = document.createElement("video");
-    v.crossOrigin = "anonymous";
-    v.muted = true;
-    v.preload = "auto";
-    v.playsInline = true;
-    const end = (url) => { clearTimeout(timer); v.removeAttribute("src"); try { v.load(); } catch { /* already empty */ } done(url); };
-    const timer = setTimeout(() => end(null), 10000);
-    v.addEventListener("error", () => end(null));
-    v.addEventListener("loadedmetadata", () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); });
-    v.addEventListener("seeked", () => {
-      try {
-        const c = document.createElement("canvas"), w = 320, h = Math.max(1, Math.round(w * (v.videoHeight || 9) / (v.videoWidth || 16)));
-        c.width = w; c.height = h;
-        c.getContext("2d").drawImage(v, 0, 0, w, h);
-        end(c.toDataURL("image/jpeg", 0.72));
-      } catch { end(null); }
-    }, { once: true });
-    v.src = fileUrl(cfg.origin(), cfg.abs(path)) + "?v=1";
-  });
-  grabbing = grabbing.then(run, run);
-  return grabbing;
-}
-
 function showPicture(card, src) {
   const tile = card.querySelector(".hdcard-tile");
   const img = new Image();
@@ -84,7 +57,7 @@ function showPicture(card, src) {
   img.src = src;
 }
 
-// the preview - when the card comes into view: a design, a PDF and an SVG are a shot (the plugin process Chrome, cached on disk), a video is a frame, a gif is itself
+// the preview - when the card comes into view: a design, a PDF and an SVG are a shot (the plugin process Chrome, cached on disk); a presentation keeps its icon
 function preview(card) {
   const path = card.dataset.hdPath, kind = card.dataset.kind, m = meta.get(path);
   if (!m || m.state !== "ok" || card.dataset.pv === String(m.mtime)) return;
@@ -96,10 +69,6 @@ function preview(card) {
     fetch(src).then((r) => { if (!r.ok) throw new Error(String(r.status)); thumbs.set(src, "ok"); showPicture(card, src); }).catch(() => thumbs.set(src, Date.now()));
     return;
   }
-  if (/\.gif$/i.test(path)) return showPicture(card, fileUrl(cfg.origin(), cfg.abs(path)) + "?v=1");
-  const got = frames.get(path);
-  if (got) return got !== "none" && showPicture(card, got);
-  grab(path).then((url) => { frames.set(path, url || "none"); if (frames.size > 200) frames.delete(frames.keys().next().value); if (url) showPicture(card, url); });
 }
 
 const io = typeof IntersectionObserver === "function" ? new IntersectionObserver((list) => {
@@ -188,6 +157,7 @@ function build(path, kind, who) {
     setHidden(path, card.classList.contains("off"));
     hideLabel(card);
   });
+  if (kind === "pptx") open.hidden = true;   // a presentation does not open on the canvas: "Open" (the hub's Files) only
   acts.append(file, open, share, hide);
   card.append(head, acts);
   hideLabel(card);
@@ -202,7 +172,7 @@ function remember(key, card) {
   if (nodes.size > MAX_NODES) nodes.delete(nodes.keys().next().value);
 }
 
-// what is in a reply: a file from send-file (a video player, a file link) is replaced by a card in place, a path in the text - a card at the end of the reply
+// what is in a reply: a file from send-file (a file link) is replaced by a card in place, a path in the text - a card at the end of the reply
 function found(row) {
   const out = [];
   if (row.classList.contains("sent-file")) {

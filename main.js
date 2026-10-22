@@ -149,7 +149,7 @@ export default function register(h) {
   hub.addStyle("dashboard.css");
   hub.addStyle("card.css");
   addEventListener("message", onFrame);
-  // cards of designs and videos in the chat feed of any session; a click on a card opens the file here
+  // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
   // the address before Hub Design: "✕" returns there (none — to the home page)
   let prev = location.hash;
@@ -804,7 +804,7 @@ const app = {
   errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme(), lang: currentLang() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
-  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["video", "pdf", "svg"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1" }),
+  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["pdf", "svg"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1" }),
   pdf: (path) => savePdf(path),
   play: (path) => { if (path) window.open(fileUrl(origin(), path) + (cardKind(path) === "svg" ? "?player=1&v=1" : ""), "_blank", "noopener"); },
   basedOn,

@@ -198,6 +198,20 @@ class Posts(unittest.TestCase):
         self.file()                                              # a new design after the answer - a new post
         self.assertEqual(len(self.posts()), 4)
 
+    @unittest.skipUnless(".pptx" in (tgpost.rules() and tgpost.rules().TYPES or ()), "the hub code has no .pptx in design_posts.TYPES")
+    def test_a_presentation_goes_as_a_post_carrying_the_file_and_is_not_shot(self):
+        self.file(path="/w/Q4 deck.pptx")
+        (post,) = self.posts()
+        self.assertEqual(post["path"], "/w/Q4 deck.pptx")   # the bot sends it as a document with the buttons: not lost
+        self.assertEqual(post["buttons"], ["❤️", "👎"])
+        self.assertIn("Q4 deck", post["text"])
+        self.assertEqual(self.shots, [])
+
+    def test_video_and_pictures_get_no_post(self):
+        for f in ("/w/a.mp4", "/w/a.mov", "/w/a.gif", "/w/a.png", "/w/a.md"):
+            self.file(path=f)
+        self.assertEqual(self.out, [])
+
     def test_no_shot_goes_as_text_with_the_path(self):
         self.p.shot = lambda path: None
         self.file()
@@ -220,7 +234,8 @@ class Posts(unittest.TestCase):
         # one rule for both: the bot skips exactly what the plugin posts (else a design twice or never)
         from modules.telegram import design_posts
         for sender, path, cfg in [("designer", "/w/a.html", ON), ("designer-x", "/w/a.md", ON), ("maps", "/w/a.html", ON),
-                                  ("designer", "/w/a.png", ON), ("designer", "/w/a.html", {})]:
+                                  ("designer", "/w/a.png", ON), ("designer", "/w/a.html", {}), ("animator", "/w/a.mp4", ON),
+                                  ("designer", "/w/a.pptx", ON), ("designer", "/w/a.svg", ON)]:
             self.out.clear()
             self.cfg = cfg
             self.sessions[sender] = {"cwd": "/w"}

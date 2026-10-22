@@ -22,6 +22,7 @@ LIKE, NOPE = "❤️", "👎"
 WHY = ["composition", "type", "illustration", "colors", "all"]   # reasons after 👎: STR key suffixes
 KEEP_SENT, KEEP_WHY, KEEP_SHOTS = 300, 200, 50
 TICK = 2   # s between journal reads
+DECKS = (".pptx",)   # no shot to make: the post carries the file itself (the bot sends it as a document with the buttons)
 
 STR = {
     "en": {
@@ -181,10 +182,11 @@ class Poster:
         session = (self.state().get("sessions") or {}).get(sender)
         if not dp.claimed(cfg, sender, session if session is not None else {}, path):
             return
-        title = self.title(design) or os.path.splitext(os.path.basename(design))[0]
+        deck = os.path.splitext(path)[1].lower() in DECKS
+        title = (not deck and self.title(design)) or os.path.splitext(os.path.basename(design))[0]
         lang = _lang()
         text = tr(lang, "caption", title=title.replace("*", ""), who=sender)
-        png = self.keep(self.shot(design))
+        png = path if deck else self.keep(self.shot(design))
         if not png:   # no shot (no Chrome, an error): the post goes as text with the path - a link to the file on the page
             text += f"\n\n`{design}`"
         ref = f"hd:{ev['seq']}"

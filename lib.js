@@ -942,12 +942,12 @@ export function scrollsRight({ scrollLeft, clientWidth, scrollWidth }) {
   return scrollWidth - (scrollLeft + clientWidth) > 1;
 }
 
-// --- cards in the chat feed: a design or a video the session sent as a file or named by a full path -----------------------
+// --- cards in the chat feed: a design, a document or a presentation the session sent as a file or named by a full path -----------------------
 export const CARD_MAX = 4;   // cards in one reply; the other paths stay links
-// design - HTML; pdf and svg - documents: opened on the canvas and taken as the basis of a new design; video - in a player. Other pictures are not cards.
-// The one list of file types a card offers: .html/.htm, .pdf, .svg (Markdown is not offered)
+// design - HTML; pdf and svg - documents: opened on the canvas and taken as the basis of a new design; pptx - a presentation, opened as a file only. Videos, pictures and the rest are not cards.
+// The one list of file types a card offers: .html/.htm, .pdf, .svg, .pptx - the same as the core modules/telegram/design_posts.py TYPES
 export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.pdf$/i.test(path || "") ? "pdf" : /\.svg$/i.test(path || "") ? "svg"
-  : /\.(mp4|mov|m4v|webm|gif)$/i.test(path || "") ? "video" : null);
+  : /\.pptx$/i.test(path || "") ? "pptx" : null);
 export const isDocument = (path) => ["pdf", "svg"].includes(cardKind(path));
 export const isAbsPath = (p) => /^(~[\\/]|\/|[A-Za-z]:[\\/])/.test(p || "");
 
