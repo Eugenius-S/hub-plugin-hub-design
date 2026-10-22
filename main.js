@@ -184,7 +184,7 @@ export default function register(h) {
         b.type = "button";
         b.title = tr("open_in");
         b.setAttribute("aria-label", b.title);
-        b.innerHTML = PALETTE;
+        b.innerHTML = '<span class="hd-pi" aria-hidden="true"></span>';   // outline / filled-gradient layers: navicon.css
         b.addEventListener("click", () => handoff(root));
         root.append(b);
       },
@@ -1178,11 +1178,12 @@ function build(root) {
     paint();
   });
   const note = el("div", "hd-note");
-  const styleBtn = button("hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => st.open());
+  // a wide secondary button under the input window: the palette and the label (the chosen style's name once there is one)
+  const styleBtn = button("btn hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => st.open());
   styleBtn.hidden = true;
-  foot.append(icon("gear"), who, styleBtn);
+  foot.append(icon("gear"), who);
   card.append(need.node, chips, strip, input.node, foot, note);
-  left.append(top, tabs, chat, list, card);
+  left.append(top, tabs, chat, list, card, styleBtn);
 
   // the right part: the canvas with floating toolbars, the styles panel and the file list while the canvas is empty
   const right = el("div", "hd-right");
@@ -1221,7 +1222,6 @@ function relang() {
   ui.tabPlus.title = tr("add_html");
   ui.who.title = tr("who_title");
   ui.styleBtn.title = ts("btn_title");
-  ui.styleBtn.querySelector(".hd-style-t").textContent = ts("btn");
   ui.st.repaint();
   ui.input.set({ placeholder: tr("placeholder") });
 }
@@ -1644,6 +1644,7 @@ function paintCard() {
     ...(P.style ? [{ text: ts("chip", { name: P.style.name }), ic: "palette", del: () => { P.style = null; try { localStorage.setItem(STORE + "style", "null"); } catch { /* ignore */ } } }] : []),
   ];
   ui.styleBtn.hidden = !ui.st.avail();
+  ui.styleBtn.querySelector(".hd-style-t").textContent = P.style ? ts("chip", { name: P.style.name }) : ts("btn");
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
   ui.last.card = sig;

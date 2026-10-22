@@ -1,0 +1,34 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const rd = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+test("the palette button in the input is an empty mask span, so navicon.css can animate it like the menu icon", () => {
+  const main = rd("main.js");
+  const slot = main.slice(main.indexOf('hub.addSlot("composer.tools"'), main.indexOf("const PALETTE ="));
+  assert.match(slot, /hd-palette/);
+  assert.match(slot, /<span class="hd-pi" aria-hidden="true"><\/span>/);
+  assert.ok(!/PALETTE/.test(slot), "no inline svg in the button: the mask layers draw the icon");
+  assert.match(main, /hub\.addStyle\("navicon\.css"\)/);
+});
+
+test("navicon.css: the outline/filled layers and the gradient sweep cover the menu icon and the palette button; reduced motion is static", () => {
+  const css = rd("navicon.css");
+  assert.match(css, /\.hd-palette \.hd-pi/);
+  assert.match(css, /\.srow\.nav \.ext-icon\[style\*="hub-design\/icon\.svg"\]/);
+  assert.match(css, /:is\(\.srow\.nav, \.hd-palette\):is\(:hover, :focus-visible\)/);
+  assert.match(css, /icon-filled\.svg/);
+  const rm = css.slice(css.indexOf("prefers-reduced-motion"));
+  assert.match(rm, /animation: none/);
+  assert.match(rm, /transform: none/);
+});
+
+test("the Style button is a wide secondary .btn under the input window and shows the chosen style's name", () => {
+  const main = rd("main.js");
+  assert.match(main, /button\("btn hd-style"/);
+  assert.match(main, /left\.append\(top, tabs, chat, list, card, styleBtn\)/);
+  assert.match(main, /foot\.append\(icon\("gear"\), who\);/);
+  assert.match(main, /P\.style \? ts\("chip", \{ name: P\.style\.name \}\) : ts\("btn"\)/);
+  assert.match(rd("styles.css"), /\.hd \.hd-style\{display:flex/);
+});
