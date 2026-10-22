@@ -87,19 +87,39 @@ class Posts(unittest.TestCase):
         self.press(ref, "👎")
         self.assertEqual(len(self.posts()), 2)            # a second 👎 - no second question
         self.press(why["ref"], why["buttons"][2])
-        self.assertIn("Cluttered", self.said()[-1]["text"])
+        self.assertIn("Illustration", self.said()[-1]["text"])
         self.assertEqual(self.said()[-1]["to"], "designer")
         self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
         self.assertEqual(len(self.said()), 4)
 
-    def test_why_has_the_illustration_reason_and_no_off_style(self):
+    def test_why_buttons_in_order_and_keys_in_both_languages(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        self.assertEqual(self.posts()[1]["buttons"], ["Composition", "Typography", "Illustration", "Colors", "Everything"])
+        ru = ["Композиция", "Типографика", "Иллюстрация", "Цвета", "Всё вместе"]
+        for keys in (["Composition", "Typography", "Illustration", "Colors", "Everything"], ru):
+            self.assertEqual([tgpost.why_key(b) for b in keys], ["composition", "type", "illustration", "colors", "all"])
+        for old in ("Not pretty", "Некрасиво", "Cluttered", "Не то просил", "Не наш стиль"):
+            self.assertIsNone(tgpost.why_key(old))
+
+    def test_one_reason_asks_to_fix_it_and_resend_everything_asks_for_a_new_variant(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")
         why = self.posts()[1]
-        self.assertIn("Weak illustration", why["buttons"])
-        self.assertNotIn("Not our style", why["buttons"])
-        self.assertEqual(tgpost.why_key("Плохая иллюстрация"), "illustration")
-        self.assertIsNone(tgpost.why_key("Не наш стиль"))
+        self.press(why["ref"], "Colors")
+        text = self.said()[-1]["text"]
+        self.assertIn("Colors", text)
+        self.assertIn("only this", text)
+        self.assertIn("send the fixed version again", text)
+        self.assertNotIn("new variant", text)
+        self.file(path="/w/landing2.html")
+        ref2 = self.posts()[-1]["ref"]
+        self.press(ref2, "👎")
+        self.press(self.posts()[-1]["ref"], "Всё вместе")
+        text = self.said()[-1]["text"]
+        self.assertIn("Everything", text)
+        self.assertIn("new variant", text)
+        self.assertNotIn("only this", text)
 
     def test_a_reason_in_words(self):
         self.file()
@@ -108,6 +128,7 @@ class Posts(unittest.TestCase):
         self.add("telegram.replied", {"ext": "hub-design", "ref": self.posts()[1]["ref"], "text": "too dark"}, src="telegram")
         self.p.poll()
         self.assertIn("too dark", self.said()[-1]["text"])
+        self.assertIn("only this", self.said()[-1]["text"])
 
     def test_off_foreign_or_not_a_design_sends_nothing(self):
         self.cfg = {}

@@ -19,7 +19,7 @@ import time
 
 EXT = "hub-design"   # the facts are signed ext:hub-design - the bot passes presses and replies back by this name
 LIKE, NOPE = "❤️", "👎"
-WHY = ["ugly", "off-brief", "cluttered", "type", "illustration"]   # reasons after 👎: STR key suffixes
+WHY = ["composition", "type", "illustration", "colors", "all"]   # reasons after 👎: STR key suffixes
 KEEP_SENT, KEEP_WHY, KEEP_SHOTS = 300, 200, 50
 TICK = 2   # s between journal reads
 
@@ -28,21 +28,21 @@ STR = {
         "caption": "**{title}** · {who}\nReply to send {who} an edit.",
         "why_ask": "Why 👎? Press a button - or reply in your own words.",
         "why_settle": "Why: {}",
-        "why_ugly": "Not pretty",
-        "why_off-brief": "Not what I asked",
-        "why_cluttered": "Cluttered",
-        "why_type": "Weak type",
-        "why_illustration": "Weak illustration",
+        "why_composition": "Composition",
+        "why_type": "Typography",
+        "why_illustration": "Illustration",
+        "why_colors": "Colors",
+        "why_all": "Everything",
     },
     "ru": {
         "caption": "**{title}** · {who}\nРеплай — правка для {who}.",
         "why_ask": "Почему 👎? Кнопка — или реплаем своими словами.",
         "why_settle": "Почему: {}",
-        "why_ugly": "Некрасиво",
-        "why_off-brief": "Не то просил",
-        "why_cluttered": "Перегружено",
-        "why_type": "Слабая типографика",
-        "why_illustration": "Плохая иллюстрация",
+        "why_composition": "Композиция",
+        "why_type": "Типографика",
+        "why_illustration": "Иллюстрация",
+        "why_colors": "Цвета",
+        "why_all": "Всё вместе",
     },
 }
 
@@ -228,7 +228,7 @@ class Poster:
 
     def rated(self, ref, s, button):
         what = ("liked it - keep this direction" if button == LIKE
-                else "disliked it - the reason follows if the owner gives one; do not send this version again")
+                else "disliked it - the reason follows if the owner gives one")
         self.say(s["session"], f"hub-design: the owner gave your design \"{s['title']}\" ({s['path']}) a {button} in "
                                f"Telegram: {what}.")
         if button == NOPE and not s.get("asked"):
@@ -250,8 +250,12 @@ class Poster:
         if not s:
             return
         reason = text or tr("en", f"why_{code}")
-        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {reason}. "
-                               f"Take it into account in the next version.")
+        if code == "all" and not text:
+            todo = "The design does not work as a whole: make a new variant, not a patch of this one."
+        else:
+            todo = ("Redo only this in this design, leave the rest as it is, and send the fixed version again "
+                    "(hub send-file) - it comes to the owner as a new post.")
+        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {reason}. {todo}")
 
     def poll(self):
         ino = self.journal.identity(self.path)
