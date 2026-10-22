@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
+import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -818,4 +818,36 @@ test("mergeAuthors: a design the feed tail forgot stays; the higher rank and the
   assert.equal(mergeAuthors([], []).length, 0);
   // what the page stored and read back merges the same way
   assert.deepEqual(mergeAuthors(JSON.parse(JSON.stringify(all)), []).map((a) => a.path), all.map((a) => a.path));
+});
+
+test("dashboard: the registry brings the designs of sessions that are gone - no author, no feed, still listed", () => {
+  const mac = ["/u"];
+  const registry = [{ path: "/u/old/a.html", session: "gone-designer", ts: 3, last: 4, rank: 2 }, { path: "/u/old/b.pdf", session: "x1", ts: 2, last: 2, rank: 1 }];
+  const rows = dashboardFiles([], [], mac, { registry });
+  assert.deepEqual(rows.map((r) => [r.path, r.session, r.last, r.wrote, r.sent]), [["/u/old/a.html", "gone-designer", 4, true, false], ["/u/old/b.pdf", "x1", 2, false, true]]);
+});
+
+test("dashboard: the live feed wins over the registry and the file is listed once, however the path is written", () => {
+  const win = ["C:\\Users\\me"];
+  const authors = [{ path: "C:\\Users\\me\\Demo\\a.html", session: "designer", ts: 5, last: 5, wrote: true }];
+  const registry = [{ path: "c:/Users/me/demo/a.html", session: "designer", ts: 5, last: 9, rank: 2 }];
+  const rows = dashboardFiles(authors, ["C:/Users/me/DEMO/a.html"], win, { registry });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].path, "C:\\Users\\me\\Demo\\a.html");   // the path as the feed wrote it
+  assert.equal(rows[0].last, 9);                              // the later edit is not lost
+  assert.equal(authors[0].last, 5);                           // the page's own list is not changed
+});
+
+test("dashboard: registry paths of the other OS and the hub's own sessions are not listed", () => {
+  const registry = [{ path: "C:\\Users\\me\\a.html", session: "designer", ts: 1, last: 1 }, { path: "/u/b.html", session: "hub-core", ts: 1, last: 1 },
+    { path: "/u/c.html", session: "designer", ts: 1, last: 1 }];
+  assert.deepEqual(dashboardFiles([], [], ["/u"], { registry, skip: (n) => n === "hub-core" }).map((r) => r.path), ["/u/c.html"]);
+});
+
+test("pathKey: one key for slashes and the drive letter's case, the case of a Unix path is kept", () => {
+  assert.equal(pathKey("C:\\Work\\A.html"), "c:/work/a.html");
+  assert.equal(pathKey("c:/WORK/a.html"), "c:/work/a.html");
+  assert.equal(pathKey("/u/A.html"), "/u/A.html");
+  assert.notEqual(pathKey("/u/A.html"), pathKey("/u/a.html"));
+  assert.equal(pathKey("/u/dir/"), "/u/dir");
 });

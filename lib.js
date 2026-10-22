@@ -770,13 +770,32 @@ export function nativePath(path, cwds = []) {
   return win ? /^([A-Za-z]:[\\/]|\\\\)/.test(p) : /^(\/|~\/)/.test(p);
 }
 
-// designs for the dashboard: authors by timelines and those open on the canvas (not written by a hub specialist - a design added by path)
-export function dashboardFiles(authors, frames, cwds, { who = () => "", time = () => 0 } = {}) {
-  const out = (authors || []).filter((a) => nativePath(a.path, cwds));
+// a design's key whatever way its path was written: the separators, the drive letter's case (the feed says "C:\a\b.html", the registry "c:/a/b.html")
+export const pathKey = (p) => {
+  const s = String(p || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^[A-Za-z]:/.test(s) ? s.toLowerCase() : s;
+};
+
+// designs for the dashboard: authors by timelines, the registry of every design ever made (the plugin process keeps it: a session may be gone, the design stays),
+// and those open on the canvas (not written by a hub specialist - a design added by path). One entry per file; the live feeds come first.
+// registry: [{path, session, ts, last, rank}]; skip(session) - sessions whose designs are not listed (the hub's own)
+export function dashboardFiles(authors, frames, cwds, { who = () => "", time = () => 0, registry = [], skip = () => false } = {}) {
+  const out = [], seen = new Map();
+  const add = (a) => {
+    const k = pathKey(a.path), cur = seen.get(k);
+    if (cur) { cur.last = Math.max(cur.last || 0, a.last || a.ts || 0); return; }
+    seen.set(k, a);
+    out.push(a);
+  };
+  for (const a of authors || []) if (nativePath(a.path, cwds)) add({ ...a });
+  for (const r of registry || []) {
+    if (!r || !r.path || !nativePath(r.path, cwds) || skip(r.session)) continue;
+    add({ path: r.path, session: r.session || "", ts: Number(r.ts) || 0, last: Number(r.last || r.ts) || 0, rank: r.rank || 0, wrote: r.rank === 2, sent: r.rank === 1 });
+  }
   for (const path of (frames || []).map((f) => (typeof f === "string" ? f : f.path))) {
-    if (out.some((a) => a.path === path)) continue;
+    if (seen.has(pathKey(path))) continue;
     const t = Number(time(path)) || 0;   // open only on the canvas: the author is who wrote the file (if known), the time is the file edit on disk
-    out.push({ path, session: who(path) || "", ts: t, last: t, wrote: false });
+    add({ path, session: who(path) || "", ts: t, last: t, wrote: false });
   }
   return out;
 }
