@@ -113,6 +113,22 @@ class Posts(unittest.TestCase):
             self.file()
         self.assertEqual(self.out, [])
 
+    def test_the_shot_is_of_the_source_not_the_core_copy(self):
+        # 22.10: owner.file.path is the core's copy in attachments/ - no assets beside it, outside the folders a shot may
+        # open; all 15 live posts went without a picture. The source the session sent is shot, the copy only without it
+        src = os.path.join(self.dir, "site", "landing.html")
+        os.makedirs(os.path.dirname(src))
+        with open(src, "w", encoding="utf-8") as f:
+            f.write("<p>x</p>")
+        copy = "/state/attachments/ab12/landing.html"
+        self.add("owner.file", {"path": copy, "source": src, "sender": "designer", "channel": "session", "owner": False})
+        self.add("owner.file", {"path": copy, "source": "/gone/landing.html", "sender": "designer", "channel": "session",
+                                "owner": False})
+        self.p.poll()
+        self.assertEqual(self.shots, [src, copy])
+        self.press(self.posts()[0]["ref"], "❤️")
+        self.assertIn(src, self.said()[0]["text"])          # the author hears of his own file, not the copy
+
     def test_no_shot_goes_as_text_with_the_path(self):
         self.p.shot = lambda path: None
         self.file()

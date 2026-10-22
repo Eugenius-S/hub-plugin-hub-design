@@ -168,19 +168,24 @@ class Poster:
         sender, path = data.get("sender"), data.get("path")
         if not dp or not dp.config(cfg) or not sender or not isinstance(path, str):
             return
+        # the core sends the owner a copy (attachments/<id>/<name>) - no assets beside it and outside the folders the
+        # shot may open: the design itself is the source the session sent, while it is there
+        src = data.get("source")
+        design = src if isinstance(src, str) and os.path.splitext(src)[1].lower() == os.path.splitext(path)[1].lower() \
+            and os.path.isfile(src) else path
         if os.path.splitext(path)[1].lower() not in dp.config(cfg)["types"]:
             return
         session = (self.state().get("sessions") or {}).get(sender)
         if not dp.claimed(cfg, sender, session if session is not None else {}, path):
             return
-        title = self.title(path) or os.path.splitext(os.path.basename(path))[0]
+        title = self.title(design) or os.path.splitext(os.path.basename(design))[0]
         lang = _lang()
         text = tr(lang, "caption", title=title.replace("*", ""), who=sender)
-        png = self.keep(self.shot(path))
+        png = self.keep(self.shot(design))
         if not png:   # no shot (no Chrome, an error): the post goes as text with the path - a link to the file on the page
-            text += f"\n\n`{path}`"
+            text += f"\n\n`{design}`"
         ref = f"hd:{ev['seq']}"
-        self.st["sent"][ref] = {"session": sender, "path": path, "title": title}
+        self.st["sent"][ref] = {"session": sender, "path": design, "title": title}
         while len(self.st["sent"]) > KEEP_SENT:
             del self.st["sent"][next(iter(self.st["sent"]))]
         self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender,

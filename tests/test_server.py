@@ -302,6 +302,20 @@ class Server(unittest.TestCase):
         r, _ = self.get("/__canvas/thumb?" + urlencode({"path": os.path.join(OUT, "x.html")}))
         self.assertEqual(r.status, 404)
 
+    def test_tg_shot_says_why_there_is_no_picture(self):
+        # 22.10: posts went without a picture and the log was silent - a refused path or no Chrome is said aloud
+        import io
+        page = self.size_file("tgshot.html", "<p>x</p>")
+        for path, chrome, why in [(os.path.join(OUT, "x.html"), "/bin/x", "not a design in the hub's folders"),
+                                  (page, None, "nothing shot it")]:
+            err = io.StringIO()
+            with unittest.mock.patch.object(server, "chrome_path", return_value=chrome), \
+                    unittest.mock.patch.object(server, "thumb", side_effect=lambda *a, **k: None) if chrome is None else \
+                    unittest.mock.patch.object(server, "thumb", side_effect=AssertionError("must not shoot")), \
+                    unittest.mock.patch("sys.stderr", err):
+                self.assertIsNone(server.tg_shot(path))
+            self.assertIn(why, err.getvalue())
+
     def test_pdf_card_tile_is_the_first_page_not_the_headless_chrome_viewer(self):
         # the headless Chrome has no PDF viewer and shoots "Couldn't load plugin": a PDF is never given to it
         from urllib.parse import urlencode
