@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import handwrite
+import styles
 import tgpost
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -157,6 +158,11 @@ def gone_page(real, state):
             'height:100vh;font:14px system-ui,sans-serif;color:#555;background:#f4f4f5;text-align:center"><div><p style="font-size:16px;color:#222">%s</p>'
             '<p style="max-width:560px;overflow-wrap:anywhere">%s</p></div>' % (why, why, html.escape(real))).encode()
     return body
+
+
+def library():
+    """The style reference library of this hub (styles.py), None - the feature is off."""
+    return styles.load(styles.folder(config(), state_dir()))
 
 
 def page_origins():
@@ -662,6 +668,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.say(501, {"error": "no chrome"}, self.cors())
             self.head(200, "image/png", len(data), {**self.cors(), "Cache-Control": "private, max-age=3600"})
             return self.wfile.write(data) if self.command != "HEAD" else None
+        if url.path.startswith("/__canvas/style"):
+            return self.styles(url.path, q)
         if url.path == "/__canvas/stat":
             real = os.path.realpath(q.get("path", ""))
             if not real.lower().endswith(HTML) or not allowed(real):
@@ -681,6 +689,52 @@ class Handler(BaseHTTPRequestHandler):
                 return self.player(real)
             return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")))
         self.say(404, {"error": "no page"})
+
+    def styles(self, route, q):
+        """The style reference library (styles.py): /__canvas/styles - search and categories, /style - one card, /style-preview - its picture,
+        /style-md - its file as text. The data answers only to the hub page's origin; the picture and the file are plain GETs (an <img> and a link).
+        Only what the library index lists, inside the library folder."""
+        extra = self.cors()
+        files = route in ("/__canvas/style-preview", "/__canvas/style-md")   # an <img> and a link send no Origin: guard() already refused foreign sites
+        if not extra and not files:
+            return self.say(403, {"error": "origin"})
+        lib = library()
+        if route == "/__canvas/styles":
+            if not lib:   # no folder or an empty one: the page hides the feature
+                return self.say(200, {"ok": False}, extra)
+            def num(k, d):
+                try:
+                    return int(float(q.get(k) or d))
+                except ValueError:
+                    return d
+            total, items = lib.search(q.get("q", ""), q.get("cat", ""), num("offset", 0), num("limit", 24))
+            return self.say(200, {"ok": True, "count": len(lib.entries), "total": total, "items": items, "cats": lib.cats}, extra)
+        if not lib:
+            return self.say(404, {"error": "no library"}, extra)
+        sid = q.get("id", "")
+        if route == "/__canvas/style":
+            card = styles.detail(lib, sid)
+            return self.say(200 if card else 404, card or {"error": "no style"}, extra)
+        if route == "/__canvas/style-preview":
+            real = lib.preview(sid)
+            if not real:
+                return self.say(404, {"error": "no preview"}, extra)
+            with open(real, "rb") as f:
+                data = f.read()
+            return self.send(200, styles.IMAGES[os.path.splitext(real)[1].lower()], data, {**extra, "Cache-Control": "private, max-age=86400"})
+        if route == "/__canvas/style-md":
+            real = lib.path(sid)
+            if not real:
+                return self.say(404, {"error": "no style"}, extra)
+            with open(real, "rb") as f:
+                data = f.read(styles.MD_MAX)
+            return self.send(200, TYPES[".txt"], data, {**extra, "Content-Disposition": "inline"})
+        return self.say(404, {"error": "no page"}, extra)
+
+    def send(self, code, kind, body, extra=None):
+        self.head(code, kind, len(body), extra)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def player(self, real):
         """?player=1 - a video and a gif on the canvas: a simple player over the whole frame instead of the clip at its natural size; a PDF - its pages; an SVG - a picture in an <img> (its scripts do not run)."""

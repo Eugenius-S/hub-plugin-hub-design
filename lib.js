@@ -43,6 +43,7 @@ export const STR = {
     m_infile: " \u2014 already in the file",
     m_drawing: "Freehand drawing: {d}{text}.",
     m_auto: "These are my own moves in the Hub Design panel, sent automatically \u2014 no report needed: end the turn with a single line \u201c\u2014\u201d.",
+    m_style: "Style reference: {path}",   // the same line in every language: the designer's skill looks for it
     m_tweaks: "Tweaks are values from the Hub Design panel (#hub-tweaks): make the new ones the defaults and move them into the code.",
     m_hand_note: "I made the hand edits right in the preview \u2014 move them into the code so that it looks the same (not a transform on top, but in the layout).",
     m_file_note: "Hub Design wrote the items marked \u201calready in the file\u201d into the design itself, point by point: an inline style or the text of the element itself, tweaks on <html>{copy}. The look on screen is right \u2014 keep it; you may replace the inline with ordinary layout if the look does not change.",
@@ -104,7 +105,8 @@ export const STR = {
     m_infile: " \u2014 уже в файле",
     m_drawing: "Рисунок от руки: {d}{text}.",
     m_auto: "Это мои собственные действия в панели Hub Design, ушли сами \u2014 отчёт не нужен: итог хода одной строкой \u00ab\u2014\u00bb.",
-    m_tweaks: "Крутилки \u2014 это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.",
+    m_style: "Style reference: {path}",
+    m_tweaks: "Крутилки\u2014 это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.",
     m_hand_note: "Правки руками я сделал прямо в предпросмотре \u2014 перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).",
     m_file_note: "Пункты \u00abуже в файле\u00bb Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки \u2014 на <html>{copy}. Вид на экране верный \u2014 сохрани его; заменить inline обычной вёрсткой можно, если вид не изменится.",
     m_copy: "; копия файла до этих правок \u2014 `{c}`, её не перезаписывай и не удаляй",
@@ -590,7 +592,9 @@ export function createAuto({ fire, ms = AUTO_MS, set = setTimeout, clear = clear
 // the full path of the copy next to the file
 export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/, copy) : "");
 
-export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {}, auto = false }) {
+// the style chosen in the picker, one line for the designer: the full path of the style file (a DESIGN.md of the style reference library)
+export const styleLine = (path) => (path ? tr("m_style", { path: String(path) }) : "");
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {}, auto = false, style = "" }) {
   const files = [];
   const add = (f) => { if (!files.includes(f)) files.push(f); };
   const of = (x) => x.file || path;
@@ -647,6 +651,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   if (said.length) {
     blocks.push((blocks.length ? "" : tr("m_notes", { round })) + said.map((x, i) => `${blocks.length ? tr("m_note") : i + 1 + "."} ${cut(x.text, 500)}`).join("\n"));
   }
+  if (style && blocks.length) blocks.push(styleLine(style));
   if (auto && blocks.length) blocks.push(tr("m_auto"));
   return blocks.join("\n\n");
 }
