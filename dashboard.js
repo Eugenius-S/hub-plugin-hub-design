@@ -29,6 +29,11 @@ export const STR = {
     folder_none: "No direction",
     folder_count: "Designs: {n}",
     empty_folder: "No designs in this folder yet. Write on the left what you need: the designer will save it here.",
+    os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
+    peer_head: "{where} · designs: {n}",
+    peer_note: "A picture only: the file, the canvas and edits are on {where}.",
+    peer_noshot: "No picture yet",
+    peer_close: "Close",
   },
   ru: {
     preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Дизайн в коде", preset_system: "Дизайн-система", preset_motion: "Анимация",
@@ -53,6 +58,11 @@ export const STR = {
     folder_none: "Без направления",
     folder_count: "Макетов: {n}",
     empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно: дизайнер сохранит его сюда.",
+    os_mac: "Мак", os_windows: "Windows", os_linux: "Linux",
+    peer_head: "{where} · макетов: {n}",
+    peer_note: "Только картинка: файл, холст и правки — на машине {where}.",
+    peer_noshot: "Снимка пока нет",
+    peer_close: "Закрыть",
   },
 };
 export const t = makeT(STR);
@@ -130,9 +140,26 @@ export function view(rows, dirs, { folder = null, q = "" } = {}) {
   if (String(q || "").trim() || !groups.some((g) => g.key)) return { mode: "files", rows };
   return { mode: "folders", groups };
 }
+// the designs of the other machines of the owner (/__canvas/peers of the plugin process): a picture and a name each, the files stay there.
+// where: the kind of the machine ("Mac", "Windows"); two machines of one kind - with the machine name
+export function peerWhere(peer, all = []) {
+  const known = ["mac", "windows", "linux"].includes(peer.os);
+  const label = known ? t("os_" + peer.os) : peer.machine;
+  return known && all.filter((x) => x.os === peer.os).length > 1 ? `${label} (${peer.machine})` : label;
+}
+// "Mine" are the designs on this canvas: none of another machine; search by name, file and author; newest first
+export function peerRows(items, { tab = "all", q = "" } = {}) {
+  if (tab === "mine") return [];
+  const needle = String(q || "").trim().toLowerCase();
+  return items.filter((it) => !needle || [it.name, it.file, it.session].join(" ").toLowerCase().includes(needle))
+    .sort((a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0));
+}
+export const peerName = (it) => it.name || nameOf(it.file || "") || it.id;
+
 export const newest = (rows, n = PREVIEWS) => [...rows].sort((a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0)).slice(0, n);
 
-// createDashboard(app): app = { hub, files(), dirs(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name) }
+// createDashboard(app): app = { hub, files(), dirs(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name),
+//   peers() - [{machine, os, items}] of the other machines, peerShot(machine, shot) - the url of a picture }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
   const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false, folder: null };   // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd)
@@ -205,10 +232,104 @@ export function createDashboard(app) {
   const folders = el("div", "hdd-folders");
   const files = el("div", "hdd-files");
   const empty = el("div", "hdd-empty");
-  page.append(head, need.node, bar, pathIn, presets, crumb, folders, files, empty);
-  root.append(page);
+  const others = el("div", "hdd-peers");
+  page.append(head, need.node, bar, pathIn, presets, crumb, folders, files, empty, others);
+  // a design of another machine opens as a picture over the dashboard: the file and the canvas are there
+  const lb = el("div", "hdd-lb");
+  lb.hidden = true;
+  const lbBox = el("div", "hdd-lb-box");
+  const lbImg = el("img", "hdd-lb-img");
+  const lbName = el("div", "hdd-lb-name");
+  const lbMeta = el("div", "hdd-lb-meta");
+  const lbNote = el("div", "hdd-lb-note");
+  const lbClose = el("button", "hdd-lb-close");
+  lbClose.type = "button";
+  lbClose.innerHTML = "&times;";
+  lbBox.append(lbClose, lbImg, lbName, lbMeta, lbNote);
+  lb.append(lbBox);
+  const closeLb = () => { lb.hidden = true; lbImg.removeAttribute("src"); };
+  lb.addEventListener("click", (e) => { if (e.target === lb || e.target === lbClose) closeLb(); });
+  root.append(page, lb);
   // keys typed in the search and path fields do not reach the canvas hotkeys
-  root.addEventListener("keydown", (e) => e.stopPropagation());
+  root.addEventListener("keydown", (e) => { if (e.key === "Escape" && !lb.hidden) closeLb(); e.stopPropagation(); });
+  function zoom(peer, it, where) {
+    lbImg.hidden = !it.shot;
+    if (it.shot) lbImg.src = app.peerShot(peer.machine, it.shot);
+    lbName.textContent = peerName(it);
+    lbMeta.textContent = [where, it.session, editedText(it)].filter(Boolean).join(" · ");
+    lbNote.textContent = t("peer_note", { where });
+    lbClose.title = t("peer_close");
+    lbClose.setAttribute("aria-label", lbClose.title);
+    lb.dataset.peer = peer.machine + "/" + it.id;
+    lb.hidden = false;
+  }
+  // the cards of the other machines: a picture (no live frame - the file is not here); kept by machine/id so a repaint does not reload them
+  const pcards = new Map();
+  function pcard(peer, it) {
+    const key = peer.machine + "/" + it.id;
+    let c = pcards.get(key);
+    if (!c) {
+      const node = el("button", "hdd-card hdd-pcard");
+      node.type = "button";
+      node.dataset.peer = key;
+      const shot = el("span", "hdd-shot");
+      const img = el("img", "hdd-pimg");
+      img.loading = "lazy";
+      img.alt = "";
+      const none = el("span", "hdd-pnone");
+      shot.append(img, none);
+      const name = el("span", "hdd-name");
+      const badge = el("span", "hdd-badge");
+      const text = el("span", "hdd-mtext");
+      const meta = el("span", "hdd-meta");
+      meta.append(badge, text);
+      const body = el("span", "hdd-body");
+      body.append(name, meta);
+      node.append(shot, body);
+      c = { node, img, none, name, badge, text, src: "" };
+      node.addEventListener("click", () => zoom(c.peer, c.it, c.where));
+      pcards.set(key, c);
+    }
+    return c;
+  }
+  // returns how many cards of other machines are shown
+  function paintPeers(inFolder) {
+    const list = (!inFolder && app.peers && app.peers()) || [];
+    const live = new Set();
+    let count = 0;
+    const blocks = list.map((peer) => {
+      const rows = peerRows(peer.items || [], { tab: S.tab, q: S.q });
+      if (!rows.length) return null;
+      const where = peerWhere(peer, list);
+      const box = el("section", "hdd-peer");
+      box.dataset.machine = peer.machine;
+      const h = el("h2", "hdd-phead", t("peer_head", { where, n: rows.length }));
+      const grid = el("div", "hdd-files hdd-pfiles");
+      grid.classList.toggle("list", S.list);
+      grid.append(...rows.map((it) => {
+        const c = pcard(peer, it);
+        live.add(peer.machine + "/" + it.id);
+        Object.assign(c, { peer, it, where });
+        c.node.title = it.file || "";
+        c.name.textContent = peerName(it);
+        c.badge.textContent = where;
+        c.text.textContent = [it.session, editedText(it)].filter(Boolean).join(" · ");
+        const src = it.shot ? app.peerShot(peer.machine, it.shot) + "&v=" + encodeURIComponent(it.stamp || it.last || "") : "";
+        if (c.src !== src) { c.src = src; if (src) c.img.src = src; else c.img.removeAttribute("src"); }
+        c.img.hidden = !src;
+        c.none.hidden = !!src;
+        c.none.textContent = src ? "" : t("peer_noshot");
+        return c.node;
+      }));
+      count += rows.length;
+      box.append(h, grid);
+      return box;
+    }).filter(Boolean);
+    others.replaceChildren(...blocks);
+    others.hidden = !blocks.length;
+    for (const key of [...pcards.keys()]) if (!live.has(key)) pcards.delete(key);
+    return count;
+  }
 
   // a preview is the real document in a scaled-down iframe; only what is in view is loaded (and no more than LIVE_MAX at once)
   const LIVE_MAX = 16;
@@ -355,7 +476,8 @@ export function createDashboard(app) {
     }
     folders.hidden = !tnodes.length;
     files.hidden = v.mode !== "files";
-    empty.hidden = nodes.length > 0 || tnodes.length > 0;
+    const peerCount = paintPeers(inFolder);
+    empty.hidden = nodes.length > 0 || tnodes.length > 0 || peerCount > 0;
     // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"
     empty.textContent = inFolder && !S.q.trim() && S.tab === "all" ? t("empty_folder") : S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none");
     for (const c of cards.values()) { load(c); fit(c); }

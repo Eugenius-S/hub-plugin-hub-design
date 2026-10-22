@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import handwrite
+import peers
 import registry
 import styles
 import tgpost
@@ -357,19 +358,36 @@ def thumb(real, big=False):
         if data:
             keep_thumb(out, data)
         return data
+    win, scale = shot_window(real)
+    if big:
+        scale = min(2.0, TG_WIDTH / win[0])
+    data = chrome_shot(real, win, scale)
+    if data is not None:
+        keep_thumb(out, data)
+    return data
+
+
+MAGIC = {"png": b"\x89PNG", "jpeg": b"\xff\xd8"}
+
+
+def shot_window(real):
+    """(window, scale) of a card shot: a document (pdf, svg) - a narrow window whose column fills the tile; a design with a set size is shot whole."""
+    doc = not real.lower().endswith(HTML)
+    size = None if doc else size_of(real)
+    win = DOC_SIZE if doc else THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])
+    return win, (THUMB_SCALE * THUMB_SIZE[0] / win[0] if doc else THUMB_SCALE)
+
+
+def chrome_shot(real, win, scale, fmt="png"):
+    """Our own headless Chrome opens the file from our own address and shoots the window, shrunk while shooting (fmt: png or jpeg).
+    None - Chrome is not set up; PdfError - it failed."""
     chrome = chrome_path()
     if not chrome:
         return None
-    doc = not real.lower().endswith(HTML)   # a document (pdf, svg): a narrow window - its column fills the tile
     url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "raw=1&player=1" if real.lower().endswith(DOCS) else "raw=1")
-    size = None if doc else size_of(real)
-    win = DOC_SIZE if doc else THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])   # a design with a set size is shot whole
-    scale = THUMB_SCALE * THUMB_SIZE[0] / win[0] if doc else THUMB_SCALE
-    if big:
-        scale = min(2.0, TG_WIDTH / win[0])
     with _thumb_lock:
         tmp = tempfile.mkdtemp(prefix="hub-design-thumb-")
-        shot = os.path.join(tmp, "out.png")
+        shot = os.path.join(tmp, "out." + ("jpg" if fmt == "jpeg" else fmt))   # the headless Chrome picks the format by the extension
         cmd = [chrome, "--headless", "--disable-gpu", "--hide-scrollbars", "--user-data-dir=" + os.path.join(tmp, "profile"),
                "--window-size=%d,%d" % win, "--force-device-scale-factor=%s" % scale, "--virtual-time-budget=3000",
                "--screenshot=" + shot, url]
@@ -386,13 +404,12 @@ def thumb(real, big=False):
                     data = f.read()
             except OSError:
                 raise PdfError("Chrome left no shot (code %s)" % proc.returncode)
-            if not data.startswith(b"\x89PNG"):
+            if not data.startswith(MAGIC[fmt]):
                 raise PdfError("Chrome returned not an image")
         finally:
             if proc is not None:
                 kill_tree(proc)
             shutil.rmtree(tmp, ignore_errors=True)
-    keep_thumb(out, data)
     return data
 
 
@@ -408,22 +425,22 @@ def keep_thumb(out, data):
         pass   # the cache was not written - the shot is served anyway
 
 
-def pdf_shot(real, width=None):
-    """The first page of a PDF as a PNG ~490 px wide (or width): macOS has it built in (sips); elsewhere None - the card keeps its icon."""
+def pdf_shot(real, width=None, fmt="png"):
+    """The first page of a PDF as a PNG (or fmt="jpeg") ~490 px wide (or width): macOS has it built in (sips); elsewhere None - the card keeps its icon."""
     sips = shutil.which("sips")
     if not sips:
         return None
     tmp = tempfile.mkdtemp(prefix="hub-design-pdf-")
     try:
-        shot = os.path.join(tmp, "out.png")
+        shot = os.path.join(tmp, "out." + fmt)
         try:
-            subprocess.run([sips, "-s", "format", "png", "--resampleWidth", str(width or round(THUMB_SIZE[0] * THUMB_SCALE)), real, "--out", shot],
+            subprocess.run([sips, "-s", "format", fmt, "--resampleWidth", str(width or round(THUMB_SIZE[0] * THUMB_SCALE)), real, "--out", shot],
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=THUMB_TIMEOUT)
             with open(shot, "rb") as f:
                 data = f.read()
         except (OSError, subprocess.SubprocessError):
             return None
-        return data if data.startswith(b"\x89PNG") else None
+        return data if data.startswith(MAGIC[fmt]) else None
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -627,6 +644,19 @@ class Handler(BaseHTTPRequestHandler):
             rows = REG.listing() if REG else []
             out = [{**r, "state": file_state(os.path.expanduser(r["path"]))} for r in rows]
             return self.say(200, {"ready": bool(REG and REG.ready), "items": out}, self.cors())
+        if url.path == "/__canvas/peers":
+            # the designs of the other machines of the owner (peers.py): names and shots only, the files stay there. Off: {"on": false}
+            root = peers_root()
+            return self.say(200, {"on": bool(root), "machine": peers.machine(), "peers": peers.peers(root) if root else []}, self.cors())
+        if url.path == "/__canvas/peer-shot":
+            # a shot of a design of another machine: an <img> sends no Origin - guard() already refused foreign sites
+            real = peers.shot_path(peers_root(), q.get("m", ""), q.get("s", ""))
+            if not real:
+                return self.say(404, {"error": "no shot"})
+            with open(real, "rb") as f:
+                data = f.read()
+            self.head(200, "image/jpeg", len(data), {"Cache-Control": "private, max-age=600"})
+            return self.wfile.write(data) if self.command != "HEAD" else None
         if url.path == "/__canvas/times":
             # when the design files were edited (for the start screen cards): only those that can be shown
             paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
@@ -831,6 +861,40 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
+def peers_root():
+    """The shared folder of the machines of the owner (peers.py), None - off."""
+    return peers.folder(config())
+
+
+def peer_shot(real, out):
+    """A small JPEG of a design for the other machines: True - written to out. PDF - the system rasterizer (macOS), the rest - our Chrome."""
+    if real.lower().endswith(".pdf"):
+        data = pdf_shot(real, peers.SHOT_WIDTH, "jpeg")
+    else:
+        win, _ = shot_window(real)
+        data = chrome_shot(real, win, peers.SHOT_WIDTH / win[0], "jpeg")
+    if not data:
+        return False
+    tmp = out + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, out)
+    return True
+
+
+def peer_rows():
+    """The designs of this machine that may go to the others: only files we serve (gone and hidden ones are not exported)."""
+    return [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok"]
+
+
+def peer_stamp(real):
+    return newest(real) if real.lower().endswith(HTML) else os.path.getmtime(real)
+
+
+def peer_title(real):
+    return title_of(real) if real.lower().endswith(HTML) else ""
+
+
 def tg_shot(path):
     """The shot of a design for a Telegram post: only a file we may serve (the shot opens it from our own address); None - no shot."""
     real = os.path.realpath(path)
@@ -875,6 +939,8 @@ def main():
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the registry of designs (the journal is read in the background)
         REG = registry.Registry(state_dir())
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
+        # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
+        threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
         threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p))), daemon=True).start()
     try:

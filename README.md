@@ -78,6 +78,14 @@ The library is a folder with `index.json` next to the `.md` files and previews. 
 
 The plugin process serves a file only by the id from the index, only from inside that folder (a path with `..`, a drive, a backslash or a link leading out is refused), previews only as png, jpg, webp or avif; the JSON routes answer only to the hub page's origin.
 
+### Designs of your other machines
+
+One owner, several hubs (say a Mac and a Windows PC): each start screen shows the designs of the other machines below its own, one section per machine (“Mac · designs: 12”), as pictures with the name, the author, the date and a machine label. A click opens the picture large over the dashboard; the file, the canvas and the edits stay on the machine that has it. “Mine” shows none of them; the search finds them by name, file and author.
+
+It works through a folder all the hubs share. Every plugin process writes `<folder>/<machine>/registry.json` (the names, authors and dates of its designs, file names only, no paths) and `<folder>/<machine>/shots/<id>.jpg` (a 480 px wide shot: HTML through headless Chrome, PDF through `sips` on a Mac), and reads the other machines' subfolders. A shot is taken again only when the design changed (at most 12 per pass, a pass a minute), the registry is written only when something changed, and the shots of designs that are gone are deleted. About 15–40 KB per design.
+
+The folder is `<hub code>/hub-sync/design` when the hub code has a `hub-sync/sync.py` next to it (the hub-sync exchange then carries it between the machines), otherwise `extensions.<account>:hub-design.peers_dir` in hub.json or the `HUB_DESIGN_PEERS` environment variable of the plugin process (it wins over the setting); `""` turns it off. No folder, nothing changes. The machine name is the host name, as in hub-sync.
+
 ### Specialists
 
 Hub Design installs the designer specialist from the specialists catalog (a button on the start screen). The specialists the plugin needs are designer (required) and animator (for the "Animation" preset, desirable); the list is `NEEDED` in `lib.js`. If there is no designer in the hub, the start screen shows a banner "Hub Design needs the designer" with an "Install" button: it sends the hub, in your name, "Install the specialist for Hub Design: specialists install designer" (the hub installs it); after the click it reads "Asked the hub, waiting", and the banner disappears by itself when the session appears. If there is no animator, a quiet line "no specialist animator" appears by the "Animation" preset. If you write in the chat of a specialist who is not in the hub, the same banner shows above the input.

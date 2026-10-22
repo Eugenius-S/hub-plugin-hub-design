@@ -135,7 +135,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], regAt: 0, regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
+  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], regAt: 0, peers: [], peersAt: 0, peersSig: "", regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
 };
 
 globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
@@ -441,8 +441,27 @@ async function loadRegistry(force = false) {
   if (!r.ready) regTimer = setTimeout(() => loadRegistry(true), 5000);   // the first pass over the archive is still running
   if (changed) { recompute(); paint(); }
 }
+// the designs of the other machines of the owner (peers.py of the plugin process): pictures and names, refreshed at most once a minute
+async function loadPeers(force = false) {
+  if (P.alive !== true || !local()) return;
+  if (!force && Date.now() - P.peersAt < 60000) return;
+  P.peersAt = Date.now();
+  let r = null;
+  try {
+    const res = await fetch(origin() + "/__canvas/peers", { cache: "no-store" });
+    r = res.ok ? await res.json() : null;
+  } catch { /* the process does not answer - ping will show it */ }
+  if (!r || !Array.isArray(r.peers)) return;
+  const sig = JSON.stringify(r.peers);
+  if (sig === P.peersSig) return;
+  P.peersSig = sig;
+  P.peers = r.peers;
+  paint();
+}
+const peerShot = (machine, shot) => origin() + "/__canvas/peer-shot?" + new URLSearchParams({ m: machine, s: shot });
 const verifyAll = () => {
   loadRegistry();
+  loadPeers();
   return verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);
 };
 // came back to the tab or the window — the files could have been changed behind the hub's back
@@ -1029,6 +1048,7 @@ async function scanDesigns(snap) {
   P.hubs = new Set((snap.sessions || []).filter((x) => x.kind === "hub").map((x) => x.name));
   if (!P.shown) return;
   loadRegistry();
+  loadPeers();
   backfill();   // does not wait for the feed pass: a slow feed must not keep the history from being read
   if (scanning) return;
   const revs = snap.timeline_rev || {};
@@ -1199,7 +1219,7 @@ function build(root) {
   const dash = createDashboard({
     hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { registry: P.registry, skip: (n) => P.hubs.has(n), who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
-    preset: (p) => startPreset(p), lacking: lackNow, install,
+    preset: (p) => startPreset(p), lacking: lackNow, install, peers: () => P.peers, peerShot,
   });
   const exitB = button("hd-exit", tr("exit"), tr("exit_title", { name: P.session }), () => app.exit());
   right.append(cv.node, props, dash.node, st.node, exitB);
