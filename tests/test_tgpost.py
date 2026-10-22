@@ -92,6 +92,15 @@ class Posts(unittest.TestCase):
         self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
         self.assertEqual(len(self.said()), 4)
 
+    def test_why_has_the_illustration_reason_and_no_off_style(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        why = self.posts()[1]
+        self.assertIn("Weak illustration", why["buttons"])
+        self.assertNotIn("Not our style", why["buttons"])
+        self.assertEqual(tgpost.why_key("Плохая иллюстрация"), "illustration")
+        self.assertIsNone(tgpost.why_key("Не наш стиль"))
+
     def test_a_reason_in_words(self):
         self.file()
         ref = self.posts()[0]["ref"]
@@ -112,6 +121,54 @@ class Posts(unittest.TestCase):
         with mock.patch.object(tgpost, "rules", lambda: None):   # the hub's bot has no design posts
             self.file()
         self.assertEqual(self.out, [])
+
+    def test_the_shot_is_of_the_source_not_the_core_copy(self):
+        # 22.10: owner.file.path is the core's copy in attachments/ - no assets beside it, outside the folders a shot may
+        # open; all 15 live posts went without a picture. The source the session sent is shot, the copy only without it
+        src = os.path.join(self.dir, "site", "landing.html")
+        os.makedirs(os.path.dirname(src))
+        with open(src, "w", encoding="utf-8") as f:
+            f.write("<p>x</p>")
+        copy = "/state/attachments/ab12/landing.html"
+        self.add("owner.file", {"path": copy, "source": src, "sender": "designer", "channel": "session", "owner": False})
+        self.add("owner.file", {"path": copy, "source": "/gone/landing.html", "sender": "designer", "channel": "session",
+                                "owner": False})
+        self.p.poll()
+        self.assertEqual(self.shots, [src, copy])
+        self.press(self.posts()[0]["ref"], "❤️")
+        self.assertIn(src, self.said()[0]["text"])          # the author hears of his own file, not the copy
+
+    def unposts(self):
+        return [d["ref"] for t, d in self.out if t == "telegram.unpost"]
+
+    def test_an_answer_on_the_page_removes_the_author_posts_from_telegram(self):
+        # d275945, the owner: "if I answer in the chat, delete them in Telegram" - a message from the page (the author's
+        # chat or the Hub Design chat, both /api/send) to the author takes back his open posts and their "Why?"
+        self.sessions["designer-x"] = {"cwd": "/w"}
+        self.file()
+        self.file("designer-x")
+        first, other = (p["ref"] for p in self.posts())
+        self.press(first, "👎")
+        why = self.posts()[2]["ref"]
+
+        def say(to, src="web", channel="web", **extra):
+            self.add("message.received", {"to": to, "text": "ok", "channel": channel, "owner": src != "session", **extra}, src=src)
+            self.p.poll()
+        say("maps")                                               # another session
+        say("designer", src="telegram", channel="telegram")      # an answer in Telegram - the post stays
+        say("designer", src="session", channel="session")        # a session, not the owner
+        say("designer", action=True)                             # a page button, not an answer
+        self.assertEqual(self.unposts(), [])
+        say("designer")
+        self.assertEqual(self.unposts(), [first, why])
+        say("designer")                                          # once
+        self.assertEqual(self.unposts(), [first, why])
+        self.press(first, "❤️")                                   # a late press of a removed post - nothing
+        self.assertEqual(len(self.said()), 1)
+        say("designer-x")
+        self.assertEqual(self.unposts(), [first, why, other])
+        self.file()                                              # a new design after the answer - a new post
+        self.assertEqual(len(self.posts()), 4)
 
     def test_no_shot_goes_as_text_with_the_path(self):
         self.p.shot = lambda path: None

@@ -8,7 +8,8 @@ setting (modules/telegram/design_posts.py): the bot then skips the design as a d
 rule which files are designs is one for both, so the owner gets a design once. No such module - nothing is sent.
 Turned on by hub.json "telegram": {"design_posts": true}.
 
-It reads the journal with its own offset and does not touch the core. Texts for the owner are in the hub language
+The owner answers the author on the page (a message from the page to that session) - the author's posts are removed from
+Telegram (telegram.unpost). It reads the journal with its own offset and does not touch the core. Texts for the owner are in the hub language
 (core.i18n.current()), read when sent; messages to sessions are English."""
 import hashlib
 import json
@@ -18,7 +19,7 @@ import time
 
 EXT = "hub-design"   # the facts are signed ext:hub-design - the bot passes presses and replies back by this name
 LIKE, NOPE = "❤️", "👎"
-WHY = ["ugly", "off-brief", "cluttered", "type", "off-style"]   # reasons after 👎: STR key suffixes
+WHY = ["ugly", "off-brief", "cluttered", "type", "illustration"]   # reasons after 👎: STR key suffixes
 KEEP_SENT, KEEP_WHY, KEEP_SHOTS = 300, 200, 50
 TICK = 2   # s between journal reads
 
@@ -31,7 +32,7 @@ STR = {
         "why_off-brief": "Not what I asked",
         "why_cluttered": "Cluttered",
         "why_type": "Weak type",
-        "why_off-style": "Not our style",
+        "why_illustration": "Weak illustration",
     },
     "ru": {
         "caption": "**{title}** · {who}\nРеплай — правка для {who}.",
@@ -41,7 +42,7 @@ STR = {
         "why_off-brief": "Не то просил",
         "why_cluttered": "Перегружено",
         "why_type": "Слабая типографика",
-        "why_off-style": "Не наш стиль",
+        "why_illustration": "Плохая иллюстрация",
     },
 }
 
@@ -149,6 +150,8 @@ class Poster:
         kind = ev.get("type")
         if kind == "owner.file":
             return self.offer(ev, data)
+        if kind == "message.received":
+            return self.answered_on_page(ev, data)
         if kind not in ("telegram.pressed", "telegram.replied") or data.get("ext") != EXT or ev.get("src") != "telegram":
             return
         ref = str(data.get("ref") or "")
@@ -168,23 +171,45 @@ class Poster:
         sender, path = data.get("sender"), data.get("path")
         if not dp or not dp.config(cfg) or not sender or not isinstance(path, str):
             return
+        # the core sends the owner a copy (attachments/<id>/<name>) - no assets beside it and outside the folders the
+        # shot may open: the design itself is the source the session sent, while it is there
+        src = data.get("source")
+        design = src if isinstance(src, str) and os.path.splitext(src)[1].lower() == os.path.splitext(path)[1].lower() \
+            and os.path.isfile(src) else path
         if os.path.splitext(path)[1].lower() not in dp.config(cfg)["types"]:
             return
         session = (self.state().get("sessions") or {}).get(sender)
         if not dp.claimed(cfg, sender, session if session is not None else {}, path):
             return
-        title = self.title(path) or os.path.splitext(os.path.basename(path))[0]
+        title = self.title(design) or os.path.splitext(os.path.basename(design))[0]
         lang = _lang()
         text = tr(lang, "caption", title=title.replace("*", ""), who=sender)
-        png = self.keep(self.shot(path))
+        png = self.keep(self.shot(design))
         if not png:   # no shot (no Chrome, an error): the post goes as text with the path - a link to the file on the page
-            text += f"\n\n`{path}`"
+            text += f"\n\n`{design}`"
         ref = f"hd:{ev['seq']}"
-        self.st["sent"][ref] = {"session": sender, "path": path, "title": title}
+        self.st["sent"][ref] = {"session": sender, "path": design, "title": title}
         while len(self.st["sent"]) > KEEP_SENT:
             del self.st["sent"][next(iter(self.st["sent"]))]
         self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender,
                                     **({"path": png} if png else {})})
+
+    def answered_on_page(self, ev, data):
+        """The owner wrote the author on the page (its chat or the Hub Design chat - both are /api/send): the posts of
+        that author's designs are answered - they leave Telegram (telegram.unpost; d275945, the owner: "if I answer in the
+        chat, delete them in Telegram"). A page button (action), another session, or a reply in Telegram - no."""
+        if ev.get("src") != "web" or data.get("channel") != "web" or data.get("owner") is not True or data.get("action"):
+            return
+        to = data.get("to")
+        refs = [ref for ref, s in self.st["sent"].items() if to and s.get("session") == to]
+        if not refs or not rules():
+            return
+        for ref in refs:
+            del self.st["sent"][ref]
+            self.emit("telegram.unpost", {"ref": ref})
+            for why in [w for w, r in self.st["why"].items() if r == ref]:   # its "Why?" question goes too
+                del self.st["why"][why]
+                self.emit("telegram.unpost", {"ref": why})
 
     def keep(self, data):
         if not data:

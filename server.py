@@ -762,10 +762,14 @@ class Handler(BaseHTTPRequestHandler):
 def tg_shot(path):
     """The shot of a design for a Telegram post: only a file we may serve (the shot opens it from our own address); None - no shot."""
     real = os.path.realpath(path)
-    if not real.lower().endswith(PAGES) or not allowed(real):
+    if not real.lower().endswith(PAGES) or not allowed(real):   # said aloud: a post without a picture must have a reason in the log
+        print(f"hub-design: telegram: no shot of {real}: not a design in the hub's folders", file=sys.stderr, flush=True)
         return None
     try:
-        return thumb(real, big=True)
+        data = thumb(real, big=True)
+        if data is None:
+            print(f"hub-design: telegram: no shot of {real}: nothing shot it (no Chrome at testchrome.path in hub.json, or PDF rendering failed)", file=sys.stderr, flush=True)
+        return data
     except PdfError as e:
         print(f"hub-design: telegram: no shot of {real}: {e}", file=sys.stderr, flush=True)
         return None

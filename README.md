@@ -62,9 +62,9 @@ The author of a design is the session that wrote the file (Write/Edit), then the
 
 ### Designs in Telegram
 
-Off by default. A design (HTML, PDF, SVG) that the designer or the animator (or their executors) sends with `hub send-file` comes to Telegram as a post: a shot of its first screen, its name and author, and ❤️ / 👎 buttons. A press goes back to the author as a message; after 👎 a "Why?" with reason buttons follows (or reply in your own words). A reply to the post goes to the author as an edit. The design does not come a second time as a document.
+Off by default. A design (HTML, PDF, SVG) that the designer or the animator (or their executors) sends with `hub send-file` comes to Telegram as a post: a shot of its first screen, its name and author, and ❤️ / 👎 buttons. A press goes back to the author as a message; after 👎 a "Why?" with reason buttons follows (or reply in your own words). A reply to the post goes to the author as an edit. The design does not come a second time as a document. Once you answer the author on the page (in the author's chat or the Hub Design chat), the author's posts leave Telegram.
 
-It needs a hub whose Telegram bot knows the `telegram.post` fact and the `telegram.design_posts` setting; without them nothing is sent. Turn it on in hub.json: `"telegram": {"design_posts": true}`; your own lists: `{"sessions": ["designer", "animator"], "types": [".html", ".pdf", ".md"]}`, `"sessions": "*"` is any session.
+It needs a hub whose Telegram bot knows the `telegram.post` and `telegram.unpost` facts and the `telegram.design_posts` setting; without them nothing is sent. Turn it on in hub.json: `"telegram": {"design_posts": true}`; your own lists: `{"sessions": ["designer", "animator"], "types": [".html", ".pdf", ".svg"]}`, `"sessions": "*"` is any session.
 
 ### Specialists
 
