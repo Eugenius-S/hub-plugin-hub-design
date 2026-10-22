@@ -156,6 +156,12 @@ class Index(unittest.TestCase):
         })
         self.assertEqual(list(styles.load(self.root).by_id), ["ok"])
 
+    def test_a_name_with_a_line_break_is_refused(self):
+        # a name like that is legal on macOS and Linux; it would add lines to the message to the designer
+        for bad in ("a\nb.md", "a\rb.md", "a\x00b.md"):
+            self.assertIsNone(styles._inside(self.root, bad), repr(bad))
+        self.assertTrue(styles._inside(self.root, "plain__c3.md"))
+
     def test_a_preview_outside_or_not_a_picture_is_dropped_but_the_style_stays(self):
         self.write_index({
             "a": {"name": "A", "file": "plain__c3.md", "preview": "../" + os.path.basename(self.out) + "/evil.png"},

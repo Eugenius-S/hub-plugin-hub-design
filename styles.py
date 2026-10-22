@@ -17,6 +17,7 @@ INDEX = "index.json"
 PAGE_MAX = 60            # entries in one answer, however many the page asks for
 TAGS_SHOWN = 6
 MD_MAX = 1024 * 1024     # a style file is read up to this size
+PREVIEW_MAX = 8 * 1024 * 1024   # a preview picture is served up to this size
 INDEX_MAX = 32 * 1024 * 1024
 IMAGES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif"}
 PALETTE_MAX = 24
@@ -47,7 +48,7 @@ def _text(x, limit=0):
 
 def _inside(root, rel):
     """The real path of rel inside root, or None if it points elsewhere (.., absolute, a link out) or is not a file."""
-    if not rel or os.path.isabs(rel) or "\\" in rel or ":" in rel:
+    if not rel or os.path.isabs(rel) or "\\" in rel or ":" in rel or any(ord(c) < 32 for c in rel):   # a newline would break the message line
         return None
     real = os.path.realpath(os.path.join(root, *rel.split("/")))
     try:

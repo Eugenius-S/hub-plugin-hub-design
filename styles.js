@@ -97,9 +97,25 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   // is there a library: the button is shown only if so; asked when Hub Design opens and when the process wakes up
   async function probe() {
     let ok = false;
-    try { const r = await ask("styles", listQuery({ limit: 0 })); ok = !!r.ok; S.count = r.count || 0; } catch { ok = false; }
+    let answered = false;
+    try { const r = await ask("styles", listQuery({ limit: 0 })); ok = !!r.ok; answered = true; S.count = r.count || 0; } catch { ok = false; }
     if (ok !== S.avail) { S.avail = ok; onChange(); }
+    await recheck(answered, ok);
     return ok;
+  }
+
+  // a style kept from an earlier visit: the library may have changed since. The library is gone or the style is not in it - drop the choice,
+  // the file moved - take the new path; the process not answering at all proves nothing, the choice stays
+  async function recheck(answered, ok) {
+    const cur = get();
+    if (!cur || !answered) return;
+    if (!ok) return set(null);
+    try {
+      const d = await ask("style", new URLSearchParams({ id: cur.id }).toString());
+      if (d && typeof d.path === "string" && d.path && d.path !== cur.path) set({ ...cur, path: d.path });
+    } catch (e) {
+      if (String(e && e.message) === "404") set(null);
+    }
   }
 
   async function load() {

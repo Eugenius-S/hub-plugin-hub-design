@@ -77,6 +77,11 @@ test("main: the style chip, once-only sending and no style on auto-send are in p
   assert.ok(!/style/.test(auto.replace('comments: [], notes: [], errors: []', "")), "auto-send of hand edits never carries a style");
   assert.match(main, /const batchText = \(extra = \{\}\) => withSel\(message\(\{[\s\S]*style: "", \.\.\.extra \}\)\);/);
   assert.match(main, /onSent: \(\) => \{\n\s+if \(P\.style\) attachStyle\(null\);/);   // the style goes with one message
+  assert.match(main, /return withStyle\(b \? b \+ "\\n\\n" \+ text : text\); \}/);   // in a design the style line comes after the selection and the typed text: the last line
+  assert.match(main, /return withStyle\(withSave\(newDesignPrefix\(\) \+ text\)\)/);
+  const st = readFileSync(new URL("../styles.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(st, /if \(!ok\) return set\(null\);/);                 // the library is gone: a style kept from before is dropped
+  assert.match(st, /=== "404"\) set\(null\)/);                         // and so is one the library no longer has
   assert.match(main, /ts\("chip", \{ name: P\.style\.name \}\)/);
   assert.match(main, /hub\.addStyle\("styles\.css"\)/);
 });

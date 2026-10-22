@@ -801,6 +801,20 @@ class StyleLibrary(unittest.TestCase):
         self.assertEqual((d["ok"], d["items"], d["count"]), (True, [], 3))
         _, d = self.ask("/__canvas/styles?offset=junk&limit=junk")
         self.assertEqual(len(d["items"]), 3)
+        for q in ("offset=inf&limit=1e400", "offset=nan", "offset=-5"):   # odd numbers fall back, the connection does not drop
+            r, d = self.ask("/__canvas/styles?" + q)
+            self.assertEqual((r.status, d["ok"]), (200, True), q)
+
+    def test_a_huge_preview_is_not_served(self):
+        import styles
+        big = os.path.join(self.root, "previews", "marlin.png")
+        with open(big, "rb") as f:
+            keep = f.read()
+        self.addCleanup(lambda: open(big, "wb").write(keep))
+        with open(big, "wb") as f:
+            f.write(b"\0" * (styles.PREVIEW_MAX + 1))
+        r, _ = self.get("/__canvas/style-preview?id=a1")
+        self.assertEqual(r.status, 404)
 
     def test_the_data_answers_only_to_the_hub_page(self):
         r, _ = self.ask("/__canvas/styles", headers={})

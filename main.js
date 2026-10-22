@@ -1128,7 +1128,7 @@ function build(root) {
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: tr("placeholder"),
-    prefix: (text) => { if (home()) return withStyle(withSave(newDesignPrefix() + text)); const b = withStyle(batchText({ style: P.style ? P.style.path : "" }) || selText()); return b ? b + "\n\n" + text : text; },
+    prefix: (text) => { if (home()) return withStyle(withSave(newDesignPrefix() + text)); const b = batchText() || selText(); return withStyle(b ? b + "\n\n" + text : text); },   // the style line is the last line of the message
     onSent: () => {
       if (P.style) attachStyle(null);
       if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // on the start screen they wrote — this is a task for a new design

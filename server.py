@@ -705,7 +705,7 @@ class Handler(BaseHTTPRequestHandler):
             def num(k, d):
                 try:
                     return int(float(q.get(k) or d))
-                except ValueError:
+                except (ValueError, OverflowError):
                     return d
             total, items = lib.search(q.get("q", ""), q.get("cat", ""), num("offset", 0), num("limit", 24))
             return self.say(200, {"ok": True, "count": len(lib.entries), "total": total, "items": items, "cats": lib.cats}, extra)
@@ -719,15 +719,23 @@ class Handler(BaseHTTPRequestHandler):
             real = lib.preview(sid)
             if not real:
                 return self.say(404, {"error": "no preview"}, extra)
-            with open(real, "rb") as f:
-                data = f.read()
+            try:
+                with open(real, "rb") as f:
+                    data = f.read(styles.PREVIEW_MAX + 1)
+            except OSError:
+                data = b""
+            if not data or len(data) > styles.PREVIEW_MAX:   # gone meanwhile, or not a preview but a huge picture
+                return self.say(404, {"error": "no preview"}, extra)
             return self.send(200, styles.IMAGES[os.path.splitext(real)[1].lower()], data, {**extra, "Cache-Control": "private, max-age=86400"})
         if route == "/__canvas/style-md":
             real = lib.path(sid)
             if not real:
                 return self.say(404, {"error": "no style"}, extra)
-            with open(real, "rb") as f:
-                data = f.read(styles.MD_MAX)
+            try:
+                with open(real, "rb") as f:
+                    data = f.read(styles.MD_MAX)
+            except OSError:
+                return self.say(404, {"error": "no style"}, extra)
             return self.send(200, TYPES[".txt"], data, {**extra, "Content-Disposition": "inline"})
         return self.say(404, {"error": "no page"}, extra)
 
