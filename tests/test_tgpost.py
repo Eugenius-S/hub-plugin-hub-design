@@ -129,6 +129,38 @@ class Posts(unittest.TestCase):
         self.press(self.posts()[0]["ref"], "❤️")
         self.assertIn(src, self.said()[0]["text"])          # the author hears of his own file, not the copy
 
+    def unposts(self):
+        return [d["ref"] for t, d in self.out if t == "telegram.unpost"]
+
+    def test_an_answer_on_the_page_removes_the_author_posts_from_telegram(self):
+        # d275945, the owner: "if I answer in the chat, delete them in Telegram" - a message from the page (the author's
+        # chat or the Hub Design chat, both /api/send) to the author takes back his open posts and their "Why?"
+        self.sessions["designer-x"] = {"cwd": "/w"}
+        self.file()
+        self.file("designer-x")
+        first, other = (p["ref"] for p in self.posts())
+        self.press(first, "👎")
+        why = self.posts()[2]["ref"]
+
+        def say(to, src="web", channel="web", **extra):
+            self.add("message.received", {"to": to, "text": "ok", "channel": channel, "owner": src != "session", **extra}, src=src)
+            self.p.poll()
+        say("maps")                                               # another session
+        say("designer", src="telegram", channel="telegram")      # an answer in Telegram - the post stays
+        say("designer", src="session", channel="session")        # a session, not the owner
+        say("designer", action=True)                             # a page button, not an answer
+        self.assertEqual(self.unposts(), [])
+        say("designer")
+        self.assertEqual(self.unposts(), [first, why])
+        say("designer")                                          # once
+        self.assertEqual(self.unposts(), [first, why])
+        self.press(first, "❤️")                                   # a late press of a removed post - nothing
+        self.assertEqual(len(self.said()), 1)
+        say("designer-x")
+        self.assertEqual(self.unposts(), [first, why, other])
+        self.file()                                              # a new design after the answer - a new post
+        self.assertEqual(len(self.posts()), 4)
+
     def test_no_shot_goes_as_text_with_the_path(self):
         self.p.shot = lambda path: None
         self.file()

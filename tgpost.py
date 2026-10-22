@@ -8,7 +8,8 @@ setting (modules/telegram/design_posts.py): the bot then skips the design as a d
 rule which files are designs is one for both, so the owner gets a design once. No such module - nothing is sent.
 Turned on by hub.json "telegram": {"design_posts": true}.
 
-It reads the journal with its own offset and does not touch the core. Texts for the owner are in the hub language
+The owner answers the author on the page (a message from the page to that session) - the author's posts are removed from
+Telegram (telegram.unpost). It reads the journal with its own offset and does not touch the core. Texts for the owner are in the hub language
 (core.i18n.current()), read when sent; messages to sessions are English."""
 import hashlib
 import json
@@ -149,6 +150,8 @@ class Poster:
         kind = ev.get("type")
         if kind == "owner.file":
             return self.offer(ev, data)
+        if kind == "message.received":
+            return self.answered_on_page(ev, data)
         if kind not in ("telegram.pressed", "telegram.replied") or data.get("ext") != EXT or ev.get("src") != "telegram":
             return
         ref = str(data.get("ref") or "")
@@ -190,6 +193,23 @@ class Poster:
             del self.st["sent"][next(iter(self.st["sent"]))]
         self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender,
                                     **({"path": png} if png else {})})
+
+    def answered_on_page(self, ev, data):
+        """The owner wrote the author on the page (its chat or the Hub Design chat - both are /api/send): the posts of
+        that author's designs are answered - they leave Telegram (telegram.unpost; d275945, the owner: "if I answer in the
+        chat, delete them in Telegram"). A page button (action), another session, or a reply in Telegram - no."""
+        if ev.get("src") != "web" or data.get("channel") != "web" or data.get("owner") is not True or data.get("action"):
+            return
+        to = data.get("to")
+        refs = [ref for ref, s in self.st["sent"].items() if to and s.get("session") == to]
+        if not refs or not rules():
+            return
+        for ref in refs:
+            del self.st["sent"][ref]
+            self.emit("telegram.unpost", {"ref": ref})
+            for why in [w for w, r in self.st["why"].items() if r == ref]:   # its "Why?" question goes too
+                del self.st["why"][why]
+                self.emit("telegram.unpost", {"ref": why})
 
     def keep(self, data):
         if not data:
