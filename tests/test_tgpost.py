@@ -92,6 +92,13 @@ class Posts(unittest.TestCase):
         self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
         self.assertEqual(len(self.said()), 4)
 
+    def test_posts_ask_the_bot_to_bump_them_down_the_chat(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        design, why = self.posts()
+        self.assertIs(design.get("bump"), True)
+        self.assertIs(why.get("bump"), True)
+
     def test_why_buttons_in_order_and_keys_in_both_languages(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")

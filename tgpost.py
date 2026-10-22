@@ -191,7 +191,7 @@ class Poster:
         self.st["sent"][ref] = {"session": sender, "path": design, "title": title}
         while len(self.st["sent"]) > KEEP_SENT:
             del self.st["sent"][next(iter(self.st["sent"]))]
-        self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender,
+        self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender, "bump": True,
                                     **({"path": png} if png else {})})
 
     def answered_on_page(self, ev, data):
@@ -240,7 +240,7 @@ class Poster:
                 del self.st["why"][next(iter(self.st["why"]))]
             lang = _lang()
             self.emit("telegram.post", {"text": tr(lang, "why_ask"), "ref": why, "settle": tr(lang, "why_settle"),
-                                        "buttons": [tr(lang, f"why_{k}") for k in WHY]})
+                                        "buttons": [tr(lang, f"why_{k}") for k in WHY], "bump": True})
 
     def answer_why(self, why, button=None, text=None):
         code = why_key(button) if button else None
