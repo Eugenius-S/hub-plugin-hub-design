@@ -27,6 +27,9 @@ test("navicon.css: the outline/filled layers and the gradient sweep cover the me
 test("the Style button is a wide secondary .btn under the input window and shows the chosen style's name", () => {
   const main = rd("main.js");
   assert.match(main, /button\("btn hd-style"/);
+  assert.match(main, /button\("hd-style-x", "×", ts\("detach"\), \(\) => attachStyle\(null\)\)/);   // the x on the button detaches the style
+  assert.match(main, /ui\.styleBtn\.lastChild\.hidden = !P\.style/);
+  assert.ok(!/text: ts\("chip"/.test(main), "no chip above the input: the name is on the button");
   assert.match(main, /left\.append\(top, tabs, chat, list, card, styleBtn\)/);
   assert.match(main, /foot\.append\(icon\("gear"\), who\);/);
   assert.match(main, /P\.style \? ts\("chip", \{ name: P\.style\.name \}\) : ts\("btn"\)/);

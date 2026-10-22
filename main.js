@@ -1179,7 +1179,12 @@ function build(root) {
   });
   const note = el("div", "hd-note");
   // a wide secondary button under the input window: the palette and the label (the chosen style's name once there is one)
-  const styleBtn = button("btn hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => st.open());
+  // with a style chosen a small x on its right end detaches it (the click does not open the picker)
+  const styleOpen = button("btn hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => st.open());
+  const styleX = button("hd-style-x", "×", ts("detach"), () => attachStyle(null));
+  styleX.hidden = true;
+  const styleBtn = el("div", "hd-style-w");
+  styleBtn.append(styleOpen, styleX);
   styleBtn.hidden = true;
   foot.append(icon("gear"), who);
   card.append(need.node, chips, strip, input.node, foot, note);
@@ -1221,7 +1226,8 @@ function relang() {
   ui.tabPlus.replaceChildren(icon("file", tr("add_design")));
   ui.tabPlus.title = tr("add_html");
   ui.who.title = tr("who_title");
-  ui.styleBtn.title = ts("btn_title");
+  ui.styleBtn.firstChild.title = ts("btn_title");
+  ui.styleBtn.lastChild.title = ts("detach");
   ui.st.repaint();
   ui.input.set({ placeholder: tr("placeholder") });
 }
@@ -1641,10 +1647,10 @@ function paintCard() {
     ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: tr("note_chip", { text: d.text }), ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
     ...draftErrs().map((e) => ({ text: tr("design_errors", { n: normErrors(e.items).length }), ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
-    ...(P.style ? [{ text: ts("chip", { name: P.style.name }), ic: "palette", del: () => { P.style = null; try { localStorage.setItem(STORE + "style", "null"); } catch { /* ignore */ } } }] : []),
   ];
   ui.styleBtn.hidden = !ui.st.avail();
   ui.styleBtn.querySelector(".hd-style-t").textContent = P.style ? ts("chip", { name: P.style.name }) : ts("btn");
+  ui.styleBtn.lastChild.hidden = !P.style;
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
   ui.last.card = sig;
