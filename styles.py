@@ -9,7 +9,11 @@ index.json: a dict {id: entry} or a list of entries. Entry fields: id (or uuid; 
 in the folder), category, tags [..], preview (an image file in the folder, may be in a sub-folder), site, description.
 Everything but name and file is optional.
 
-tags.json (next to index.json, optional): {id: {theme: "dark", style: [..], mood: [..], industry: [..]}} - the labels of every style, written by an
+The default style (optional): extensions.<account>:hub-design.default_style is a folder with a DESIGN.md (and a preview.png beside it). It is a
+library of one style that does not depend on the main one: the style window shows it first, marked "default", and a message to the designer
+with no style chosen carries its DESIGN.md. Not set, or no DESIGN.md there - nothing of this exists.
+
+tags.json (next to index.json, optional): {id: {theme: "dark", style: [..], mood: [..], industry: [..], medium: [..], density: [..]}} - the labels of every style, written by an
 auto-tagger from the label dictionary style-vocab.json. With it the search understands "dark fintech" and "like <style>" (stylesearch.py), the panel
 gets filter chips and a style shows its labels. Without it the search is by name, category and tags, as before."""
 import json
@@ -19,11 +23,13 @@ import re
 import stylesearch
 
 DEFAULT_DIR = "style-library"
+DEFAULT_ID = "__default"   # the id of the default style in /style, /style-preview and /style-md
+DEFAULT_FILE = "DESIGN.md"
 INDEX = "index.json"
 TAGS = "tags.json"
 LABELS_SHOWN = 3         # labels on a card of the list
 LABELS_PER_AXIS = 8
-FACETS_TOP = {"theme": 3, "style": 10, "mood": 8, "industry": 8}   # chips of the panel: how many of the most frequent labels of each axis
+FACETS_TOP = {"medium": 8, "theme": 3, "style": 10, "mood": 8, "industry": 8, "density": 3}   # chips of the panel: how many of the most frequent labels of each axis
 PAGE_MAX = 60            # entries in one answer, however many the page asks for
 TAGS_SHOWN = 6
 MD_MAX = 1024 * 1024     # a style file is read up to this size
@@ -49,6 +55,36 @@ def folder(config, state_dir):
     path = os.path.expanduser(path) if path else os.path.join(state_dir, DEFAULT_DIR)
     real = os.path.realpath(path)
     return real if os.path.isdir(real) else None
+
+
+def default_library(config):
+    """The default style (the folder of default_style in hub.json, or HUB_DESIGN_DEFAULT_STYLE for tests) as a library of one entry; None - not set
+    or there is no DESIGN.md in the folder. The name is the first heading of the file."""
+    path = (os.environ.get("HUB_DESIGN_DEFAULT_STYLE") or "").strip()
+    if not path:
+        for key, val in ((config or {}).get("extensions") or {}).items():
+            if isinstance(val, dict) and str(key).rsplit(":", 1)[-1] == "hub-design" and str(val.get("default_style") or "").strip():
+                path = str(val["default_style"]).strip()
+                break
+    root = os.path.realpath(os.path.expanduser(path)) if path else ""
+    md = _inside(root, DEFAULT_FILE) if root and os.path.isdir(root) else None
+    if not md:
+        return None
+    prev = next((n for n in ("preview" + ext for ext in IMAGES) if _inside(root, n)), "")
+    sig = (md, _stat(md), prev, _stat(os.path.join(root, prev)) if prev else None)
+    hit = _cache.get(("default", root))
+    if hit and hit[0] == sig:
+        return hit[1]
+    try:
+        with open(md, "rb") as f:
+            head = f.read(MD_MAX).decode("utf-8", "replace")
+    except OSError:
+        return None
+    name = next((ln[2:].strip() for ln in head.splitlines() if ln.startswith("# ") and ln[2:].strip()), "") or os.path.basename(root)
+    entry = {"id": DEFAULT_ID, "name": name[:120], "file": DEFAULT_FILE, "category": "", "tags": [], "preview": prev, "site": "", "description": "", "labels": {}}
+    lib = Library(root, [entry])
+    _cache[("default", root)] = (sig, lib)
+    return lib
 
 
 def _text(x, limit=0):
@@ -93,7 +129,7 @@ def _labels(raw):
     theme = _text(raw.get("theme"), 40)
     if theme:
         out["theme"] = theme
-    for axis in stylesearch.AXES[1:]:
+    for axis in (a for a in stylesearch.AXES if a != "theme"):
         v = raw.get(axis)
         got = [_text(x, 40) for x in ([v] if isinstance(v, str) else v if isinstance(v, list) else [])]
         got = [x for x in got if x][:LABELS_PER_AXIS]

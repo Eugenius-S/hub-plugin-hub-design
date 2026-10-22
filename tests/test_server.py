@@ -897,6 +897,85 @@ class StyleLibrary(unittest.TestCase):
             with open(cfg, "w", encoding="utf-8") as f:
                 f.write(old)
 
+    # --- the default style (hub.json default_style, here HUB_DESIGN_DEFAULT_STYLE): a library of one DESIGN.md, listed on its own, outside the main folder
+    def with_default(self):
+        from test_styles import png
+        self.dir = os.path.join(TMP, "default-style")
+        os.makedirs(self.dir, exist_ok=True)
+        with open(os.path.join(self.dir, "DESIGN.md"), "w", encoding="utf-8") as f:
+            f.write("# Inkwell\n> A made-up house style.\n\n## Colors\n| Ink | #112233 | Primary |\n")
+        with open(os.path.join(self.dir, "preview.png"), "wb") as f:
+            f.write(png())
+        patch = unittest.mock.patch.dict(os.environ, {"HUB_DESIGN_DEFAULT_STYLE": self.dir})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_probe_carries_the_default_with_the_path_of_its_file(self):
+        self.with_default()
+        _, d = self.ask("/__canvas/styles?limit=0&lang=en")
+        want = os.path.join(os.path.realpath(self.dir), "DESIGN.md")
+        self.assertEqual((d["ok"], d["count"]), (True, 3))
+        self.assertEqual({k: d["default"][k] for k in ("id", "name", "preview", "path")}, {"id": "__default", "name": "Inkwell", "preview": True, "path": want})
+        _, d = self.ask("/__canvas/styles?q=neon")
+        self.assertEqual([i["id"] for i in d["items"]], ["b2"])   # the default is not among the results: the page puts it first itself
+
+    def test_the_default_has_a_card_a_picture_and_a_file_like_any_style(self):
+        self.with_default()
+        r, d = self.ask("/__canvas/style?id=__default")
+        self.assertEqual((r.status, d["name"], d["palette"][0]["hex"], d["tagline"]), (200, "Inkwell", "#112233", "A made-up house style."))
+        self.assertEqual(d["path"], os.path.join(os.path.realpath(self.dir), "DESIGN.md"))
+        r, body = self.get("/__canvas/style-preview?id=__default")
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "image/png"))
+        r, body = self.get("/__canvas/style-md?id=__default")
+        self.assertEqual(r.status, 200)
+        self.assertIn(b"Inkwell", body)
+        r, _ = self.ask("/__canvas/style?id=a1")   # the main library is as before
+        self.assertEqual(r.status, 200)
+
+    def test_without_the_option_nothing_changes(self):
+        self.with_default()
+        with unittest.mock.patch.dict(os.environ):
+            del os.environ["HUB_DESIGN_DEFAULT_STYLE"]
+            _, d = self.ask("/__canvas/styles?limit=0")
+            self.assertNotIn("default", d)
+            r, _ = self.ask("/__canvas/style?id=__default")
+            self.assertEqual(r.status, 404)
+
+    def test_a_folder_without_design_md_is_no_default(self):
+        self.with_default()
+        os.remove(os.path.join(self.dir, "DESIGN.md"))
+        _, d = self.ask("/__canvas/styles?limit=0")
+        self.assertNotIn("default", d)
+
+    def test_the_default_alone_makes_the_feature_available(self):
+        self.with_default()
+        with unittest.mock.patch.dict(os.environ, {"HUB_DESIGN_STYLES": os.path.join(TMP, "none")}):
+            _, d = self.ask("/__canvas/styles?offset=0&limit=24")
+            self.assertEqual((d["ok"], d["items"], d["total"], d["default"]["name"]), (True, [], 0, "Inkwell"))
+            r, d = self.ask("/__canvas/style?id=__default")
+            self.assertEqual((r.status, d["name"]), (200, "Inkwell"))
+            r, _ = self.ask("/__canvas/style?id=a1")
+            self.assertEqual(r.status, 404)
+
+    def test_the_option_comes_from_hub_json_and_only_the_hub_design_entry_counts(self):
+        self.with_default()
+        cfg = os.environ["HUB_CONFIG"]
+        with open(cfg, encoding="utf-8") as f:
+            old = f.read()
+        try:
+            with open(cfg, "w", encoding="utf-8") as f:
+                json.dump({"extensions": {"someone:hub-design": {"default_style": self.dir}}}, f)
+            with unittest.mock.patch.dict(os.environ):
+                del os.environ["HUB_DESIGN_DEFAULT_STYLE"]
+                _, d = self.ask("/__canvas/styles?limit=0")
+                self.assertEqual(d["default"]["name"], "Inkwell")
+                real = os.path.join(TMP, "outside")   # a folder without DESIGN.md is no default
+                self.assertIsNone(server.styles.default_library({"extensions": {"x:hub-design": {"default_style": real}}}))
+                self.assertIsNone(server.styles.default_library({"extensions": {"x:other": {"default_style": self.dir}}}))
+        finally:
+            with open(cfg, "w", encoding="utf-8") as f:
+                f.write(old)
+
 
 class DesignRegistry(unittest.TestCase):
     """/__canvas/registry: the designs ever made, with the state of each file; their folders are served though no session works there any more."""

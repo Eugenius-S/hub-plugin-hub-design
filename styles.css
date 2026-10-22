@@ -32,6 +32,7 @@
 .hds-name{font-size:var(--text-base);line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hds-cat-name{font-size:var(--text-xs);color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:16px}
 .hds-labs{font-size:var(--text-xs);color:var(--muted-foreground);opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hds-def{font-size:var(--text-xs);color:var(--hd-acc,var(--primary));font-weight:500;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hds-empty{padding:48px 0;text-align:center;color:var(--muted-foreground)}
 .hds-foot{display:flex;align-items:center;justify-content:center;gap:var(--space-3);padding:10px 24px 16px;flex:none;border-top:1px solid var(--border)}
 .hds-pg{border:1px solid var(--border);background:none;color:var(--foreground);border-radius:var(--radius);padding:4px 14px}

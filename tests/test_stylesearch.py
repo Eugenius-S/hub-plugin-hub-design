@@ -149,6 +149,79 @@ class Labelled(unittest.TestCase):
         self.assertEqual(lib.by_id["f1"]["labels"], {})
 
 
+MEDIA = {   # a made-up library with the medium and the density: the same look in a site, a deck and an app
+    "w1": ("Fruitphone", "E-commerce", "clean white phone store", {"theme": "light", "style": ["minimal", "glass"], "mood": ["premium"], "medium": ["web"], "density": ["airy"]}),
+    "w2": ("Nightcode", "Dev Tools", "terminal docs", {"theme": "dark", "style": ["technical"], "mood": ["serious"], "medium": ["web"], "density": ["dense"]}),
+    "s1": ("Pitchwhite", "Slides", "a clean deck", {"theme": "light", "style": ["minimal", "glass"], "mood": ["premium"], "medium": ["slides"], "density": ["airy"]}),
+    "s2": ("Deckdark", "Slides", "a dark deck", {"theme": "dark", "style": ["technical"], "mood": ["serious"], "medium": ["slides"], "density": ["dense"]}),
+    "i1": ("Pocketpay", "Mobile", "a light pay app", {"theme": "light", "style": ["minimal"], "mood": ["friendly"], "medium": ["ios-app"], "density": ["balanced"]}),
+    "m1": ("Androbank", "Mobile", "a bank app", {"theme": "light", "style": ["playful"], "mood": ["friendly"], "medium": ["mobile-app"], "density": ["balanced"]}),
+}
+MEDIA_ALIAS = {"brand": "fruit", "match": ["fruitparty", "фруктопати"], "add": {"theme": ["light"], "style": ["minimal", "glass"], "mood": ["premium"]}}
+
+
+class Medium(unittest.TestCase):
+    """The medium (what a style is made for) and the density: a word names them, a wrong medium goes down, "like <brand>" does not override them."""
+
+    def setUp(self):
+        self.root = os.path.realpath(tempfile.mkdtemp(prefix="hd-medium-"))
+        index = {}
+        for sid, (name, cat, desc, _) in MEDIA.items():
+            with open(os.path.join(self.root, sid + ".md"), "w", encoding="utf-8") as f:
+                f.write("# " + name + "\n")
+            index[sid] = {"name": name, "file": sid + ".md", "category": cat, "description": desc, "tags": []}
+        with open(os.path.join(self.root, "index.json"), "w", encoding="utf-8") as f:
+            json.dump(index, f)
+        with open(os.path.join(self.root, "tags.json"), "w", encoding="utf-8") as f:
+            json.dump({sid: v[3] for sid, v in MEDIA.items()}, f)
+        with open(stylesearch.VOCAB, encoding="utf-8") as f:
+            data = json.load(f)
+        data["aliases"].append(MEDIA_ALIAS)
+        self.keep = stylesearch._cache.get("v")
+        stylesearch._cache["v"] = stylesearch.Vocab(data)
+        self.lib = styles.load(self.root)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+        if self.keep is None:
+            stylesearch._cache.pop("v", None)
+        else:
+            stylesearch._cache["v"] = self.keep
+
+    def names(self, q, **kw):
+        return [i["name"] for i in self.lib.search(q=q, **kw)[1]]
+
+    def test_the_medium_and_the_density_are_labels(self):
+        self.assertEqual(self.lib.by_id["s2"]["labels"]["medium"], ["slides"])
+        self.assertEqual(styles._labels({"medium": ["slides", "web"], "density": "airy"}), {"medium": ["slides", "web"], "density": ["airy"]})
+        self.assertEqual(stylesearch.parse("слайды", stylesearch.vocab())[0]["medium"], {"slides": 1.0})
+        self.assertEqual(stylesearch.parse("плотный дашборд", stylesearch.vocab())[0]["density"], {"dense": 1.0})
+
+    def test_a_medium_asked_for_puts_the_other_media_down(self):
+        got = self.names("light minimal slides")
+        self.assertEqual(got[0], "Pitchwhite")
+        self.assertNotIn("Fruitphone", got)   # the same look, but a site: under the cut
+        self.assertEqual(self.names("слайды")[:2], ["Deckdark", "Pitchwhite"])   # "slides" alone: both decks, nothing else
+
+    def test_like_a_brand_does_not_beat_the_medium(self):
+        got = self.names("слайды как фруктопати")   # slides like <brand>: the brand's own site is Fruitphone
+        self.assertEqual(got[0], "Pitchwhite")
+        self.assertNotEqual(got[0], "Fruitphone")
+        self.assertEqual(self.names("как фруктопати")[0], "Fruitphone")   # no medium asked: the brand style itself is first
+
+    def test_an_ios_app_is_a_mobile_app_too_but_not_the_other_way_round(self):
+        self.assertEqual(set(self.names("mobile app")), {"Pocketpay", "Androbank"})
+        self.assertEqual(self.names("ios app"), ["Pocketpay"])
+
+    def test_density_words_rank_and_chips_come_with_the_medium_first(self):
+        self.assertEqual(set(self.names("плотный")), {"Nightcode", "Deckdark"})   # dense
+        f = self.lib.facets()
+        self.assertEqual(list(f)[0], "medium")
+        self.assertEqual({x["k"]: x["n"] for x in f["medium"]}, {"web": 2, "slides": 2, "ios-app": 1, "mobile-app": 1})
+        self.assertEqual({x["k"] for x in f["density"]}, {"airy", "dense", "balanced"})
+        self.assertEqual(self.names("", filters={"medium": "slides", "density": "dense"}), ["Deckdark"])
+
+
 class Unlabelled(unittest.TestCase):
     def setUp(self):
         self.root = os.path.realpath(tempfile.mkdtemp(prefix="hd-labels-"))

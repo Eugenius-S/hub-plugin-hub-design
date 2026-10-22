@@ -31,7 +31,10 @@
       "neon": {"en": "neon / cyber", "ru": "неон", "syn": ["neon", "cyberpunk", "synthwave", "vaporwave", "electric", "glowing", "неон", "неоновый", "киберпанк", "синтвейв", "электрик"]},
       "cinematic": {"en": "cinematic", "ru": "кинематографичный", "syn": ["cinematic", "film", "movie", "dramatic", "moody", "video-led", "кинематографичный", "кино", "киношный", "драматичный", "атмосферный", "видео"]},
       "pastel": {"en": "pastel / soft", "ru": "пастельный, мягкий", "syn": ["pastel", "soft", "muted", "gentle", "dreamy", "candy", "пастель", "пастельный", "мягкий", "приглушённый", "приглушенный", "нежный", "воздушные цвета"]},
-      "photographic": {"en": "photo-led", "ru": "фото-ориентированный", "syn": ["photographic", "photo", "photography", "image-led", "full-bleed", "lookbook", "фото", "фотография", "фотографичный", "на фото", "фотографический", "полноэкранные фото", "лукбук"]}
+      "photographic": {"en": "photo-led", "ru": "фото-ориентированный", "syn": ["photographic", "photo", "photography", "image-led", "full-bleed", "lookbook", "фото", "фотография", "фотографичный", "на фото", "фотографический", "полноэкранные фото", "лукбук"]},
+      "flat": {"en": "flat", "ru": "плоский", "syn": ["flat", "flat design", "2d", "vector", "плоский", "флэт", "плоский дизайн", "векторный"]},
+      "hand-drawn": {"en": "hand-drawn", "ru": "нарисованный от руки", "syn": ["hand-drawn", "handmade", "sketch", "doodle", "crayon", "paper-cut", "рукописный", "от руки", "скетч", "набросок", "рисованный"]},
+      "pixel": {"en": "pixel / 8-bit", "ru": "пиксельный, 8-бит", "syn": ["pixel", "pixel art", "8-bit", "8bit", "16-bit", "arcade", "crt", "пиксель", "пиксельный", "8-бит", "аркада"]}
     },
     "mood": {
       "calm": {"en": "calm", "ru": "спокойный", "syn": ["calm", "quiet", "serene", "peaceful", "relaxed", "zen", "спокойный", "спокойствие", "тихий", "умиротворённый", "умиротворенный", "расслабленный", "дзен"]},
@@ -48,7 +51,9 @@
       "optimistic": {"en": "optimistic", "ru": "оптимистичный", "syn": ["optimistic", "uplifting", "fresh", "hopeful", "bright mood", "positive", "оптимистичный", "позитивный", "свежий", "бодрый", "воодушевляющий", "светлое настроение"]},
       "mysterious": {"en": "mysterious", "ru": "загадочный", "syn": ["mysterious", "enigmatic", "dark mood", "eerie", "secretive", "mystic", "загадочный", "таинственный", "мистический", "мрачный", "тайна"]},
       "nostalgic": {"en": "nostalgic", "ru": "ностальгичный", "syn": ["nostalgic", "sentimental", "heritage", "classic", "timeless", "ностальгичный", "ностальгия", "наследие", "классический", "вне времени", "тёплое прошлое"]},
-      "raw": {"en": "raw", "ru": "сырой, честный", "syn": ["raw", "unpolished", "honest", "gritty", "lo-fi", "anti-design", "сырой", "необработанный", "честный", "лофай", "антидизайн", "неотполированный"]}
+      "raw": {"en": "raw", "ru": "сырой, честный", "syn": ["raw", "unpolished", "honest", "gritty", "lo-fi", "anti-design", "сырой", "необработанный", "честный", "лофай", "антидизайн", "неотполированный"]},
+      "confident": {"en": "confident", "ru": "уверенный", "syn": ["confident", "assertive", "high-impact", "loud", "statement", "уверенный", "громкий", "смелый"]},
+      "focused": {"en": "focused", "ru": "собранный, сфокусированный", "syn": ["focused", "clear", "precise", "no-nonsense", "functional", "собранный", "чёткий", "точный", "функциональный"]}
     },
     "industry": {
       "saas": {"en": "SaaS", "ru": "SaaS", "syn": ["saas", "software", "platform", "b2b software", "cloud", "софт", "программное обеспечение", "платформа", "облако", "сервис"]},
@@ -68,12 +73,31 @@
       "education": {"en": "Education", "ru": "образование", "syn": ["education", "learning", "course", "school", "university", "образование", "обучение", "курс", "курсы", "школа", "университет", "учёба", "учеба"]},
       "gaming": {"en": "Gaming", "ru": "игры", "syn": ["gaming", "game", "games", "esports", "игры", "игра", "игровой", "гейминг", "киберспорт"]},
       "culture": {"en": "Art / culture", "ru": "искусство, культура", "syn": ["art", "culture", "museum", "gallery", "music", "festival", "theatre", "architecture", "искусство", "культура", "музей", "галерея", "музыка", "фестиваль", "театр", "архитектура"]},
-      "automotive": {"en": "Automotive / mobility", "ru": "авто, транспорт", "syn": ["automotive", "car", "mobility", "ev", "vehicle", "transport", "авто", "автомобиль", "машина", "транспорт", "электромобиль", "мобильность"]},
+      "automotive": {"en": "Automotive / mobility", "ru": "авто, транспорт", "syn": ["automotive", "car", "mobility", "ev", "vehicle", "transport", "авто", "автомобиль", "машина", "транспорт", "электромобиль"]},
       "hardware": {"en": "Hardware / devices", "ru": "железо, устройства", "syn": ["hardware", "device", "gadget", "electronics", "robotics", "железо", "устройство", "гаджет", "электроника", "робототехника"]},
       "real_estate": {"en": "Real estate / construction", "ru": "недвижимость, стройка", "syn": ["real estate", "property", "construction", "interior", "недвижимость", "строительство", "интерьер", "жильё", "жилье"]},
       "social": {"en": "Social / community", "ru": "соцсети, сообщество", "syn": ["social", "community", "network", "messaging", "dating", "соцсеть", "соцсети", "сообщество", "мессенджер", "знакомства"]},
       "energy": {"en": "Energy / climate", "ru": "энергия, климат", "syn": ["energy", "climate", "sustainability", "solar", "green", "nonprofit", "энергия", "климат", "устойчивость", "солнечная энергия", "экология", "некоммерческий"]},
-      "sport": {"en": "Sport / outdoor", "ru": "спорт, активный отдых", "syn": ["sport", "sports", "outdoor", "athletic", "спорт", "спортивный", "активный отдых", "поход"]}
+      "sport": {"en": "Sport / outdoor", "ru": "спорт, активный отдых", "syn": ["sport", "sports", "outdoor", "athletic", "спорт", "спортивный", "активный отдых", "поход"]},
+      "music": {"en": "Music / audio", "ru": "музыка, аудио", "syn": ["music", "audio", "podcast", "listening", "radio", "музыка", "аудио", "подкаст", "плеер"]}
+    },
+    "medium": {
+      "web": {"en": "website / web app", "ru": "сайт, веб-приложение", "syn": ["web", "website", "webpage", "landing", "landing page", "web app", "веб", "лендинг", "сайт", "веб-приложение"]},
+      "ios-app": {"en": "iOS app", "ru": "приложение iOS", "syn": ["ios app", "iphone app", "ios", "iphone", "ipad", "swiftui", "приложение ios", "айос", "айфон", "приложение для айфона"]},
+      "mobile-app": {"en": "mobile app", "ru": "мобильное приложение", "syn": ["mobile app", "mobile", "android app", "app screen", "мобильное приложение", "мобильный", "приложение", "андроид"]},
+      "slides": {"en": "slides / presentation", "ru": "слайды, презентация", "syn": ["slides", "slide", "deck", "presentation", "pitch deck", "keynote", "powerpoint", "слайды", "слайд", "презентация", "питч"]},
+      "email": {"en": "email", "ru": "email, рассылка", "syn": ["email", "e-mail", "newsletter", "mailing", "рассылка", "письмо", "имейл", "емейл", "имейла"]},
+      "banner": {"en": "banner / ad", "ru": "баннер, реклама", "syn": ["banner", "ad", "ads", "cover", "header", "creative", "баннер", "реклама", "рекламный", "обложка"]},
+      "poster": {"en": "poster / print", "ru": "постер, печать", "syn": ["poster", "print", "flyer", "leaflet", "постер", "плакат", "афиша", "печать", "листовка"]},
+      "social-post": {"en": "social post", "ru": "пост для соцсетей", "syn": ["social post", "social media", "instagram", "story", "stories", "carousel", "соцсети", "соцсеть", "инстаграм", "сториз", "карусель"]},
+      "dashboard": {"en": "dashboard / data UI", "ru": "дашборд, аналитика", "syn": ["dashboard", "analytics", "admin", "data ui", "report", "дашборд", "панель", "аналитика", "админка", "отчёт"]},
+      "document": {"en": "document / report", "ru": "документ, отчёт", "syn": ["document", "doc", "resume", "cv", "one-pager", "whitepaper", "pdf", "документ", "резюме", "одностраничник", "брошюра"]},
+      "wireframe": {"en": "wireframe", "ru": "вайрфрейм, прототип", "syn": ["wireframe", "lo-fi", "low-fi", "prototype", "sketch flow", "вайрфрейм", "прототип", "схема экрана"]}
+    },
+    "density": {
+      "airy": {"en": "airy / spacious", "ru": "воздушный, просторный", "syn": ["airy", "spacious", "whitespace", "generous", "sparse", "воздушный", "просторный", "много воздуха", "разреженный"]},
+      "balanced": {"en": "balanced", "ru": "сбалансированный", "syn": ["balanced", "moderate", "medium density", "сбалансированный", "умеренный"]},
+      "dense": {"en": "dense / data-rich", "ru": "плотный, насыщенный", "syn": ["dense", "compact", "data-rich", "packed", "information-dense", "плотный", "компактный", "насыщенный", "много данных"]}
     }
   },
   "category_map": {
@@ -87,6 +111,19 @@
     "Fintech": "fintech",
     "Media": "media",
     "Crypto": "crypto"
+  },
+  "medium_map": {
+    "iOS-приложение": "ios-app",
+    "Мобильное приложение": "mobile-app",
+    "Слайды": "slides",
+    "Раскладка слайда": "slides",
+    "Email": "email",
+    "Баннер": "banner",
+    "Постер": "poster",
+    "Соцсети": "social-post",
+    "Дашборд": "dashboard",
+    "Документ": "document",
+    "Вайрфрейм": "wireframe"
   },
   "aliases": [
     {"brand": "apple", "match": ["apple", "эпл", "эппл", "эпле", "яблоко", "ios", "macos", "айос", "айфон", "iphone", "liquid glass"], "add": {"theme": ["light"], "style": ["minimal", "glass"], "mood": ["premium", "elegant"]}},

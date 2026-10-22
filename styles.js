@@ -11,7 +11,7 @@ export const STR = {
     btn: "Style", btn_title: "Pick a style reference for the designer",
     title: "Style reference", count: "{n} styles", found: "Found: {n}",
     search_ph: "Search: \"dark fintech\", \"like Apple\", a name", all: "All",
-    ax_theme: "Theme", ax_style: "Style", ax_mood: "Mood", ax_industry: "Industry", labels: "Labels",
+    ax_theme: "Theme", ax_style: "Style", ax_mood: "Mood", ax_industry: "Industry", ax_medium: "Medium", ax_density: "Density", labels: "Labels",
     prev: "Back", next: "Next", page: "{a} / {b}",
     nothing: "Nothing found.", loading: "Loading…", failed: "The plugin process did not answer.",
     close: "Close", back: "All styles",
@@ -19,12 +19,14 @@ export const STR = {
     open_md: "Open DESIGN.md", site: "Site", palette: "Palette", fonts: "Fonts", tags: "Tags",
     theme_light: "light", theme_dark: "dark",
     chip: "Style: {name}", chip_title: "The designer gets the path of this style file with your next message",
+    def_badge: "default", def_chip: "Style: {name} (default)", def_on: "This style goes with every message to the designer, until you attach another one",
+    def_use: "Use as default",
   },
   ru: {
     btn: "Стиль", btn_title: "Выбрать стиль-референс для дизайнера",
     title: "Стили-референсы", count: "Стилей: {n}", found: "Найдено: {n}",
     search_ph: "Поиск: «тёмный финтех», «как эпл», название", all: "Все",
-    ax_theme: "Тема", ax_style: "Стиль", ax_mood: "Настроение", ax_industry: "Сфера", labels: "Метки",
+    ax_theme: "Тема", ax_style: "Стиль", ax_mood: "Настроение", ax_industry: "Сфера", ax_medium: "Носитель", ax_density: "Плотность", labels: "Метки",
     prev: "Назад", next: "Дальше", page: "{a} / {b}",
     nothing: "Ничего не нашлось.", loading: "Загрузка…", failed: "Процесс плагина не ответил.",
     close: "Закрыть", back: "Все стили",
@@ -32,6 +34,8 @@ export const STR = {
     open_md: "Открыть DESIGN.md", site: "Сайт", palette: "Палитра", fonts: "Шрифты", tags: "Теги",
     theme_light: "светлая", theme_dark: "тёмная",
     chip: "Стиль: {name}", chip_title: "Дизайнер получит путь к файлу этого стиля с вашим следующим сообщением",
+    def_badge: "по умолчанию", def_chip: "Стиль: {name} (по умолчанию)", def_on: "Этот стиль идёт с каждым сообщением дизайнеру, пока вы не прикрепите другой",
+    def_use: "Вернуть по умолчанию",
   },
 };
 export const t = makeT(STR);
@@ -43,8 +47,14 @@ export function pager(total, offset, size = PAGE) {
   const page = Math.min(pages, Math.floor(Math.max(0, offset) / size) + 1);
   return { page, pages, prev: page > 1 ? (page - 2) * size : null, next: page < pages ? page * size : null };
 }
-export const AXES = ["theme", "style", "mood", "industry"];
-const axisName = (a) => ({ theme: t("ax_theme"), style: t("ax_style"), mood: t("ax_mood"), industry: t("ax_industry") })[a] || a;
+export const DEFAULT_ID = "__default";   // the id of the default style (hub.json default_style, styles.py DEFAULT_ID)
+// the default style from the answer of the plugin process: only id, name, the path of the file and whether it has a picture; none - null
+export function defaultStyle(raw) {
+  const s = raw && typeof raw === "object" ? raw : null;
+  return s && s.id === DEFAULT_ID && typeof s.path === "string" && s.path ? { id: DEFAULT_ID, name: String(s.name || DEFAULT_ID).slice(0, 120), path: s.path, preview: !!s.preview } : null;
+}
+export const AXES = ["medium", "theme", "style", "mood", "industry", "density"];   // the order of the chip rows: what it is made for goes first
+const axisName = (a) => ({ medium: t("ax_medium"), theme: t("ax_theme"), style: t("ax_style"), mood: t("ax_mood"), industry: t("ax_industry"), density: t("ax_density") })[a] || a;
 // the request to the plugin process: the text, the category, the chosen label of each axis {theme: "dark"}, the language of the label names
 export function listQuery({ q = "", cat = "", offset = 0, limit = PAGE, f = {}, lang = "" } = {}) {
   const p = new URLSearchParams({ q: String(q).trim(), cat, offset: String(offset), limit: String(limit) });
@@ -75,7 +85,7 @@ const initials = (name) => String(name || "?").split(/\s+/).map((w) => w[0]).joi
 // base: () => the address of the plugin process; get/set: the style attached now (the page keeps it); hub.el builds the nodes
 export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   const el = hub.el;
-  const S = { avail: false, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0 };
+  const S = { avail: false, def: null, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0 };
   const node = el("div", "hds");
   node.hidden = true;
   node.setAttribute("role", "dialog");
@@ -110,8 +120,11 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   async function probe() {
     let ok = false;
     let answered = false;
-    try { const r = await ask("styles", listQuery({ limit: 0 })); ok = !!r.ok; answered = true; S.count = r.count || 0; } catch { ok = false; }
-    if (ok !== S.avail) { S.avail = ok; onChange(); }
+    let def = null;
+    try { const r = await ask("styles", listQuery({ limit: 0 })); ok = !!r.ok; answered = true; S.count = r.count || 0; def = defaultStyle(r.default); } catch { ok = false; }
+    const was = S.def;
+    if (answered) S.def = def;   // the process not answering proves nothing: the default stays
+    if (ok !== S.avail || (answered && JSON.stringify(def) !== JSON.stringify(was))) { S.avail = ok; onChange(); }
     await recheck(answered, ok);
     return ok;
   }
@@ -137,7 +150,8 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     try {
       const r = await ask("styles", listQuery({ q: S.q, cat: S.cat, f: S.f, offset: S.offset, lang: currentLang() }));
       if (my !== S.seq) return;
-      if (!r.ok) { S.avail = false; onChange(); return close(); }
+      if (!r.ok) { S.avail = false; S.def = null; onChange(); return close(); }
+      S.def = defaultStyle(r.default);
       Object.assign(S, { items: r.items, total: r.total, cats: r.cats || [], facets: r.facets || {}, count: r.count, state: "ok" });
     } catch {
       if (my !== S.seq) return;
@@ -169,9 +183,12 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     }
     paint();
   }
-  const attached = (id) => { const s = get(); return !!s && s.id === id; };
+  // the default style counts as the attached one while no other is chosen
+  const attached = (id) => { const s = get(); return id === DEFAULT_ID ? !!S.def && !s : !!s && s.id === id; };
+  const listed = () => (S.def && !S.q.trim() && !S.cat && !filtered(S.f) && S.offset === 0 ? [{ ...S.def, category: "", labels: [], isDefault: true }, ...S.items] : S.items);
   function attach(d) {
-    set(attached(d.id) ? null : chosen({ id: d.id, name: d.name, path: d.path }));
+    if (d.id === DEFAULT_ID) set(null);   // back to the default: nothing chosen
+    else set(attached(d.id) ? null : chosen({ id: d.id, name: d.name, path: d.path }));
     close();
   }
 
@@ -211,7 +228,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     } else {
       pic = el("span", "hds-img hds-none", initials(it.name));
     }
-    b.append(pic, el("span", "hds-name", it.name), el("span", "hds-cat-name", it.category || ""));
+    b.append(pic, el("span", "hds-name", it.name), it.isDefault ? el("span", "hds-def", t("def_badge")) : el("span", "hds-cat-name", it.category || ""));
     if (it.labels && it.labels.length) b.append(el("span", "hds-labs", it.labels.map((x) => x.t).join(" · ")));
     b.addEventListener("click", () => show(it.id));
     return b;
@@ -229,7 +246,8 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     if (d.description) right.append(el("p", "hds-desc", d.description));
     const row = el("div", "hds-acts");
     const on = attached(d.id);
-    row.append(btn("hds-go" + (on ? " on" : ""), on ? t("detach") : t("attach"), () => attach(d)));
+    const isDef = d.id === DEFAULT_ID;
+    if (!isDef || !on) row.append(btn("hds-go" + (on && !isDef ? " on" : ""), isDef ? t("def_use") : on ? t("detach") : t("attach"), () => attach(d)));
     const md = el("a", "hds-link", t("open_md"));
     md.href = url("style-md", new URLSearchParams({ id: d.id }).toString());
     md.target = "_blank";
@@ -237,7 +255,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     row.append(md);
     if (d.site) { const a = el("a", "hds-link", t("site")); a.href = d.site; a.target = "_blank"; a.rel = "noopener noreferrer"; row.append(a); }
     right.append(row);
-    if (on) right.append(el("div", "hds-note", t("attached")));
+    if (on) right.append(el("div", "hds-note", isDef ? t("def_on") : t("attached")));
     if (d.palette && d.palette.length) {
       right.append(el("h4", "hds-h4", t("palette")));
       const sw = el("div", "hds-sw");
@@ -271,10 +289,11 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   function paintBody() {
     if (S.detail) { body.replaceChildren(paintDetail(S.detail)); foot.hidden = true; return; }
     if (S.state === "failed") { body.replaceChildren(el("div", "hds-empty", t("failed"))); foot.hidden = true; return; }
-    if (S.state === "loading" && !S.items.length) { body.replaceChildren(el("div", "hds-empty", t("loading"))); foot.hidden = true; return; }
-    if (!S.items.length) { body.replaceChildren(el("div", "hds-empty", t("nothing"))); foot.hidden = true; return; }
+    if (S.state === "loading" && !S.items.length && !S.def) { body.replaceChildren(el("div", "hds-empty", t("loading"))); foot.hidden = true; return; }
+    const shown = listed();
+    if (!shown.length) { body.replaceChildren(el("div", "hds-empty", t("nothing"))); foot.hidden = true; return; }
     const grid = el("div", "hds-grid");
-    grid.append(...S.items.map(card));
+    grid.append(...shown.map(card));
     body.replaceChildren(grid);
     body.scrollTop = 0;
     const p = pager(S.total, S.offset);
@@ -287,5 +306,5 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     foot.replaceChildren(prev, el("span", "hds-pages", t("page", { a: p.page, b: p.pages })), next);
   }
 
-  return { node, open, close, probe, avail: () => S.avail, state: S, repaint: () => { if (!node.hidden) paint(); } };
+  return { node, open, close, probe, avail: () => S.avail, def: () => S.def, state: S, repaint: () => { if (!node.hidden) paint(); } };
 }

@@ -10,8 +10,9 @@ import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VOCAB = os.path.join(HERE, "style-vocab.json")
-AXES = ("theme", "style", "mood", "industry")
-W_AXIS = {"theme": 3, "style": 3, "mood": 2, "industry": 2}   # what a label of each axis is worth in the score
+AXES = ("theme", "style", "mood", "industry", "medium", "density")   # medium: what the style is made for (web, slides, ios-app, ...), density: content per screen
+W_AXIS = {"theme": 3, "style": 3, "mood": 2, "industry": 2, "medium": 3, "density": 1.5}   # what a label of each axis is worth in the score
+WRONG_MEDIUM = 0.2   # the score of an entry whose medium is not the requested one: slides asked - apps and sites go down
 CUT = 0.5   # an entry that scores under this share of the best one is not an answer, just a distant relative
 _WORD = re.compile("[a-zа-я0-9][a-zа-я0-9+#.]*")
 _CYR_OR_S = re.compile("[а-я]|s$")
@@ -111,6 +112,8 @@ def parse(query, v):
             terms = [key, lab.get("en"), lab.get("ru")] + list(lab.get("syn") or [])
             if any(m.hit(t) for t in terms if t):
                 wanted[axis][key] = 1.0
+    if "mobile-app" in wanted["medium"]:   # an iOS app is a mobile one too; not the other way round
+        wanted["medium"].setdefault("ios-app", 1.0)
     free = [t for i, t in enumerate(m.toks) if i not in m.used and t not in v.stop and t not in v.like and len(t) > 1]
     like = any(t in v.like for t in m.toks) or bool(brands)
     return wanted, brands, free, like
@@ -175,6 +178,7 @@ def rank(rows, v, query):
     ref_ids = {r["e"]["id"] for r in refs}
     fstem = [v.stem(t) for t in free]
     direct = sum(1 for a in wanted.values() for k in a.values() if k >= 1.0)
+    medium = [k for k, w in wanted["medium"].items() if w >= 1.0]
     scored = []
     for r in rows:
         eid = r["e"]["id"]
@@ -198,8 +202,12 @@ def rank(rows, v, query):
                 s += 1.5
         if direct and len(set(hits)) >= direct:
             s += 2   # all the direct labels of the query
-        if eid in ref_ids:
+        got = have(r["t"], "medium")
+        wrong = bool(medium and got and not set(medium) & set(got))
+        if eid in ref_ids and not wrong:   # "slides like <brand>": the brand's own site does not beat the slides
             s += 20
+        if wrong:
+            s *= WRONG_MEDIUM
         if s > 0:
             scored.append((s, r["e"]["name"], r["e"], hits))
     scored.sort(key=lambda x: (-x[0], x[1]))
