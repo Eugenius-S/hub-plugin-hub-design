@@ -32,6 +32,6 @@ test("the Style button is a wide secondary .btn under the input window and shows
   assert.ok(!/text: ts\("chip"/.test(main), "no chip above the input: the name is on the button");
   assert.match(main, /left\.append\(top, tabs, chat, list, card, styleBtn\)/);
   assert.match(main, /foot\.append\(icon\("gear"\), who\);/);
-  assert.match(main, /P\.style \? ts\("chip", \{ name: P\.style\.name \}\) : ts\("btn"\)/);
+  assert.match(main, /P\.style \? ts\("chip", \{ name: P\.style\.name \}\) : def \? ts\("def_chip", \{ name: def\.name \}\) : ts\("btn"\)/);   // the default style shows on the button when no other is chosen
   assert.match(rd("styles.css"), /\.hd \.hd-style\{display:flex/);
 });

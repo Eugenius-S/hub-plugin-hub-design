@@ -23,6 +23,7 @@ import handwrite
 import peers
 import registry
 import styles
+import stylesearch
 import tgpost
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -738,21 +739,30 @@ class Handler(BaseHTTPRequestHandler):
         if not extra and not files:
             return self.say(403, {"error": "origin"})
         lib = library()
+        dflt = styles.default_library(config())   # the default style: a library of one, outside the main one
         if route == "/__canvas/styles":
-            if not lib:   # no folder or an empty one: the page hides the feature
+            if not lib and not dflt:   # no folder or an empty one: the page hides the feature
                 return self.say(200, {"ok": False}, extra)
             def num(k, d):
                 try:
                     return int(float(q.get(k) or d))
                 except (ValueError, OverflowError):
                     return d
-            total, items = lib.search(q.get("q", ""), q.get("cat", ""), num("offset", 0), num("limit", 24))
-            return self.say(200, {"ok": True, "count": len(lib.entries), "total": total, "items": items, "cats": lib.cats}, extra)
+            lang = "ru" if str(q.get("lang", "")).lower().startswith("ru") else "en"
+            extra_default = {"default": {**styles.brief(dflt.entries[0], lang), "path": dflt.path(styles.DEFAULT_ID)}} if dflt else {}
+            if not lib:   # only the default style: the window shows it alone
+                return self.say(200, {"ok": True, "count": 0, "total": 0, "items": [], "cats": [], "facets": {}, **extra_default}, extra)
+            filters = {a: q.get(a, "") for a in stylesearch.AXES if q.get(a)}
+            total, items = lib.search(q.get("q", ""), q.get("cat", ""), num("offset", 0), num("limit", 24), filters, lang)
+            return self.say(200, {"ok": True, "count": len(lib.entries), "total": total, "items": items, "cats": lib.cats,
+                                  "facets": lib.facets(lang, list(filters.values())), **extra_default}, extra)
+        sid = q.get("id", "")
+        if sid == styles.DEFAULT_ID:
+            lib = dflt
         if not lib:
             return self.say(404, {"error": "no library"}, extra)
-        sid = q.get("id", "")
         if route == "/__canvas/style":
-            card = styles.detail(lib, sid)
+            card = styles.detail(lib, sid, "ru" if str(q.get("lang", "")).lower().startswith("ru") else "en")
             return self.say(200 if card else 404, card or {"error": "no style"}, extra)
         if route == "/__canvas/style-preview":
             real = lib.preview(sid)

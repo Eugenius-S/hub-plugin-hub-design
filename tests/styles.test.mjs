@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { PAGE, STR, chosen, listQuery, pager, t, textOn } from "../styles.js";
+import { AXES, DEFAULT_ID, PAGE, STR, chosen, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
 import { setLangSource } from "../i18n.js";
 
 const cyr = /[Ѐ-ӿ]/;
@@ -49,6 +49,45 @@ test("the request: trimmed words, the category, the page; one screen at a time b
   assert.equal(listQuery(), `q=&cat=&offset=0&limit=${PAGE}`);
   assert.equal(listQuery({ limit: 0 }), "q=&cat=&offset=0&limit=0");
   assert.ok(PAGE <= 30, "the grid never holds a thousand pictures");
+});
+
+test("the request carries the chosen labels (known axes, non-empty strings only) and the language", () => {
+  assert.deepEqual(AXES, ["medium", "theme", "style", "mood", "industry", "density"]);
+  assert.equal(listQuery({ q: "dark", f: { theme: "dark", industry: "fintech" }, lang: "ru" }), `q=dark&cat=&offset=0&limit=${PAGE}&theme=dark&industry=fintech&lang=ru`);
+  assert.equal(listQuery({ f: { theme: "", style: 5, taste: "x", mood: ["a"] } }), `q=&cat=&offset=0&limit=${PAGE}`);
+  assert.equal(listQuery({ f: null }), `q=&cat=&offset=0&limit=${PAGE}`);
+});
+
+test("chips: a click sets the label of the axis, the same chip again takes it off, the others stay", () => {
+  const f = toggled({ theme: "dark" }, "style", "neon");
+  assert.deepEqual(f, { theme: "dark", style: "neon" });
+  assert.deepEqual(toggled(f, "style", "neon"), { theme: "dark", style: "" });
+  assert.deepEqual(toggled(f, "theme", "light"), { theme: "light", style: "neon" });
+  assert.equal(filtered({}), false);
+  assert.equal(filtered({ theme: "" }), false);
+  assert.equal(filtered(null), false);
+  assert.equal(filtered(f), true);
+});
+
+test("styles: the new words exist in both languages", () => {
+  for (const k of ["search_ph", "ax_medium", "ax_theme", "ax_style", "ax_mood", "ax_industry", "ax_density", "labels"]) {
+    assert.ok(STR.en[k] && STR.ru[k], k);
+  }
+});
+
+test("the default style from the answer of the plugin process: only the id, a name, the path of the file and the picture flag; anything else is none", () => {
+  assert.equal(DEFAULT_ID, "__default");
+  assert.deepEqual(defaultStyle({ id: DEFAULT_ID, name: "Inkwell", path: "/d/DESIGN.md", preview: true, extra: 1 }), { id: DEFAULT_ID, name: "Inkwell", path: "/d/DESIGN.md", preview: true });
+  assert.deepEqual(defaultStyle({ id: DEFAULT_ID, path: "/d/DESIGN.md" }), { id: DEFAULT_ID, name: DEFAULT_ID, path: "/d/DESIGN.md", preview: false });
+  assert.equal(defaultStyle({ id: DEFAULT_ID, name: "x", path: "" }), null);
+  assert.equal(defaultStyle({ id: "a1", name: "x", path: "/p" }), null);
+  for (const bad of [null, undefined, "x", 7]) assert.equal(defaultStyle(bad), null);
+  assert.equal(defaultStyle({ id: DEFAULT_ID, name: "n".repeat(500), path: "/p" }).name.length, 120);
+});
+
+test("the words of the default style exist in both languages", () => {
+  for (const k of ["def_badge", "def_chip", "def_on", "def_use"]) assert.ok(STR.en[k] && STR.ru[k], k);
+  assert.match(STR.en.def_chip, /\{name\}/);
 });
 
 test("chosen: only an id, a name and a path survive; garbage is nothing", () => {

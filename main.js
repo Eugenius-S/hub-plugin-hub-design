@@ -310,7 +310,9 @@ const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).pa
   changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), style: "", ...extra }));
 const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 // the style reference chosen in the picker goes with the next message to the designer (once): the line "Style reference: <path>", see message() in lib.js
-const styleNow = () => (P.style ? styleLine(P.style.path) : "");
+// no style chosen - the default one (hub.json default_style), if the hub has it
+const styleOf = () => P.style || (ui && ui.st && ui.st.def()) || null;
+const styleNow = () => { const s = styleOf(); return s ? styleLine(s.path) : ""; };
 const withStyle = (b) => { const l = styleNow(); return l && !(b || "").includes(l) ? (b ? b + "\n\n" + l : l) : b; };
 function attachStyle(x) {
   P.style = chosen(x);
@@ -1669,7 +1671,8 @@ function paintCard() {
     ...draftErrs().map((e) => ({ text: tr("design_errors", { n: normErrors(e.items).length }), ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
   ];
   ui.styleBtn.hidden = !ui.st.avail();
-  ui.styleBtn.querySelector(".hd-style-t").textContent = P.style ? ts("chip", { name: P.style.name }) : ts("btn");
+  const def = !P.style && ui.st.def();
+  ui.styleBtn.querySelector(".hd-style-t").textContent = P.style ? ts("chip", { name: P.style.name }) : def ? ts("def_chip", { name: def.name }) : ts("btn");
   ui.styleBtn.lastChild.hidden = !P.style;
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;

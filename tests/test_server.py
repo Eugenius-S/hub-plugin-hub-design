@@ -805,6 +805,25 @@ class StyleLibrary(unittest.TestCase):
             r, d = self.ask("/__canvas/styles?" + q)
             self.assertEqual((r.status, d["ok"]), (200, True), q)
 
+    def test_labels_filters_and_chips_ride_the_same_route(self):
+        tags = os.path.join(self.root, "tags.json")
+        with open(tags, "w", encoding="utf-8") as f:
+            json.dump({"a1": {"theme": "light", "style": ["minimal"], "industry": ["media"]},
+                       "b2": {"theme": "dark", "style": ["neon"], "mood": ["bold"]}}, f)
+        self.addCleanup(os.remove, tags)
+        _, d = self.ask("/__canvas/styles?q=dark")
+        self.assertEqual([i["id"] for i in d["items"]], ["b2"])
+        self.assertEqual([x["k"] for x in d["items"][0]["labels"]], ["dark", "neon", "bold"])
+        _, d = self.ask("/__canvas/styles?theme=light&lang=ru")
+        self.assertEqual([i["id"] for i in d["items"]], ["a1"])
+        self.assertEqual(d["total"], 1)
+        self.assertEqual([x["k"] for x in d["facets"]["theme"]], ["dark", "light"])   # chips stay on the whole library, the chosen one too
+        self.assertNotEqual(d["items"][0]["labels"][0]["t"], "light")   # named in Russian
+        _, d = self.ask("/__canvas/styles?theme=light&theme=dark&style=%00&mood=" + "x" * 5000)   # junk in a filter is no label: nothing breaks
+        self.assertTrue(d["ok"])
+        _, d = self.ask("/__canvas/style?id=a1&lang=ru")
+        self.assertEqual([x["k"] for x in d["labels"]], ["light", "minimal", "media"])
+
     def test_a_huge_preview_is_not_served(self):
         import styles
         big = os.path.join(self.root, "previews", "marlin.png")
@@ -874,6 +893,85 @@ class StyleLibrary(unittest.TestCase):
                 del os.environ["HUB_DESIGN_STYLES"]
                 _, d = self.ask("/__canvas/styles?limit=0")
             self.assertEqual((d["ok"], d["count"]), (True, 3))
+        finally:
+            with open(cfg, "w", encoding="utf-8") as f:
+                f.write(old)
+
+    # --- the default style (hub.json default_style, here HUB_DESIGN_DEFAULT_STYLE): a library of one DESIGN.md, listed on its own, outside the main folder
+    def with_default(self):
+        from test_styles import png
+        self.dir = os.path.join(TMP, "default-style")
+        os.makedirs(self.dir, exist_ok=True)
+        with open(os.path.join(self.dir, "DESIGN.md"), "w", encoding="utf-8") as f:
+            f.write("# Inkwell\n> A made-up house style.\n\n## Colors\n| Ink | #112233 | Primary |\n")
+        with open(os.path.join(self.dir, "preview.png"), "wb") as f:
+            f.write(png())
+        patch = unittest.mock.patch.dict(os.environ, {"HUB_DESIGN_DEFAULT_STYLE": self.dir})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_the_probe_carries_the_default_with_the_path_of_its_file(self):
+        self.with_default()
+        _, d = self.ask("/__canvas/styles?limit=0&lang=en")
+        want = os.path.join(os.path.realpath(self.dir), "DESIGN.md")
+        self.assertEqual((d["ok"], d["count"]), (True, 3))
+        self.assertEqual({k: d["default"][k] for k in ("id", "name", "preview", "path")}, {"id": "__default", "name": "Inkwell", "preview": True, "path": want})
+        _, d = self.ask("/__canvas/styles?q=neon")
+        self.assertEqual([i["id"] for i in d["items"]], ["b2"])   # the default is not among the results: the page puts it first itself
+
+    def test_the_default_has_a_card_a_picture_and_a_file_like_any_style(self):
+        self.with_default()
+        r, d = self.ask("/__canvas/style?id=__default")
+        self.assertEqual((r.status, d["name"], d["palette"][0]["hex"], d["tagline"]), (200, "Inkwell", "#112233", "A made-up house style."))
+        self.assertEqual(d["path"], os.path.join(os.path.realpath(self.dir), "DESIGN.md"))
+        r, body = self.get("/__canvas/style-preview?id=__default")
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "image/png"))
+        r, body = self.get("/__canvas/style-md?id=__default")
+        self.assertEqual(r.status, 200)
+        self.assertIn(b"Inkwell", body)
+        r, _ = self.ask("/__canvas/style?id=a1")   # the main library is as before
+        self.assertEqual(r.status, 200)
+
+    def test_without_the_option_nothing_changes(self):
+        self.with_default()
+        with unittest.mock.patch.dict(os.environ):
+            del os.environ["HUB_DESIGN_DEFAULT_STYLE"]
+            _, d = self.ask("/__canvas/styles?limit=0")
+            self.assertNotIn("default", d)
+            r, _ = self.ask("/__canvas/style?id=__default")
+            self.assertEqual(r.status, 404)
+
+    def test_a_folder_without_design_md_is_no_default(self):
+        self.with_default()
+        os.remove(os.path.join(self.dir, "DESIGN.md"))
+        _, d = self.ask("/__canvas/styles?limit=0")
+        self.assertNotIn("default", d)
+
+    def test_the_default_alone_makes_the_feature_available(self):
+        self.with_default()
+        with unittest.mock.patch.dict(os.environ, {"HUB_DESIGN_STYLES": os.path.join(TMP, "none")}):
+            _, d = self.ask("/__canvas/styles?offset=0&limit=24")
+            self.assertEqual((d["ok"], d["items"], d["total"], d["default"]["name"]), (True, [], 0, "Inkwell"))
+            r, d = self.ask("/__canvas/style?id=__default")
+            self.assertEqual((r.status, d["name"]), (200, "Inkwell"))
+            r, _ = self.ask("/__canvas/style?id=a1")
+            self.assertEqual(r.status, 404)
+
+    def test_the_option_comes_from_hub_json_and_only_the_hub_design_entry_counts(self):
+        self.with_default()
+        cfg = os.environ["HUB_CONFIG"]
+        with open(cfg, encoding="utf-8") as f:
+            old = f.read()
+        try:
+            with open(cfg, "w", encoding="utf-8") as f:
+                json.dump({"extensions": {"someone:hub-design": {"default_style": self.dir}}}, f)
+            with unittest.mock.patch.dict(os.environ):
+                del os.environ["HUB_DESIGN_DEFAULT_STYLE"]
+                _, d = self.ask("/__canvas/styles?limit=0")
+                self.assertEqual(d["default"]["name"], "Inkwell")
+                real = os.path.join(TMP, "outside")   # a folder without DESIGN.md is no default
+                self.assertIsNone(server.styles.default_library({"extensions": {"x:hub-design": {"default_style": real}}}))
+                self.assertIsNone(server.styles.default_library({"extensions": {"x:other": {"default_style": self.dir}}}))
         finally:
             with open(cfg, "w", encoding="utf-8") as f:
                 f.write(old)
