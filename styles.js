@@ -1,15 +1,17 @@
-// Hub Design: the style picker - a panel over the canvas with the style reference library of this hub (see styles.py): search by name, category and
-// tags, a grid of previews, a card of a style (description, palette, fonts). "Attach" puts the style on the next message to the designer
+// Hub Design: the style picker - a panel over the canvas with the style reference library of this hub (see styles.py): search by name, category,
+// tags and - if the library has labels (tags.json) - by labels in plain words ("dark fintech", "like <brand>", stylesearch.py) with filter chips
+// of the labels, a grid of previews with the labels of each style, a card of a style (description, palette, fonts). "Attach" puts the style on the next message to the designer
 // (lib.js styleLine). Only previews, a page at a time and lazily: the library has over a thousand styles, they are never loaded at once.
 import { CANVAS_ICONS as CI } from "./icons.js";
-import { makeT } from "./i18n.js";
+import { currentLang, makeT } from "./i18n.js";
 
 export const PAGE = 24;   // previews on a screen; the next ones come by the pager, not by scrolling: the page never holds more than this
 export const STR = {
   en: {
     btn: "Style", btn_title: "Pick a style reference for the designer",
     title: "Style reference", count: "{n} styles", found: "Found: {n}",
-    search_ph: "Search by name, category or tag", all: "All",
+    search_ph: "Search: \"dark fintech\", \"like Apple\", a name", all: "All",
+    ax_theme: "Theme", ax_style: "Style", ax_mood: "Mood", ax_industry: "Industry", labels: "Labels",
     prev: "Back", next: "Next", page: "{a} / {b}",
     nothing: "Nothing found.", loading: "Loading…", failed: "The plugin process did not answer.",
     close: "Close", back: "All styles",
@@ -21,7 +23,8 @@ export const STR = {
   ru: {
     btn: "Стиль", btn_title: "Выбрать стиль-референс для дизайнера",
     title: "Стили-референсы", count: "Стилей: {n}", found: "Найдено: {n}",
-    search_ph: "Поиск по названию, категории или тегу", all: "Все",
+    search_ph: "Поиск: «тёмный финтех», «как эпл», название", all: "Все",
+    ax_theme: "Тема", ax_style: "Стиль", ax_mood: "Настроение", ax_industry: "Сфера", labels: "Метки",
     prev: "Назад", next: "Дальше", page: "{a} / {b}",
     nothing: "Ничего не нашлось.", loading: "Загрузка…", failed: "Процесс плагина не ответил.",
     close: "Закрыть", back: "Все стили",
@@ -40,9 +43,18 @@ export function pager(total, offset, size = PAGE) {
   const page = Math.min(pages, Math.floor(Math.max(0, offset) / size) + 1);
   return { page, pages, prev: page > 1 ? (page - 2) * size : null, next: page < pages ? page * size : null };
 }
-// the request to the plugin process
-export const listQuery = ({ q = "", cat = "", offset = 0, limit = PAGE } = {}) =>
-  new URLSearchParams({ q: String(q).trim(), cat, offset: String(offset), limit: String(limit) }).toString();
+export const AXES = ["theme", "style", "mood", "industry"];
+const axisName = (a) => ({ theme: t("ax_theme"), style: t("ax_style"), mood: t("ax_mood"), industry: t("ax_industry") })[a] || a;
+// the request to the plugin process: the text, the category, the chosen label of each axis {theme: "dark"}, the language of the label names
+export function listQuery({ q = "", cat = "", offset = 0, limit = PAGE, f = {}, lang = "" } = {}) {
+  const p = new URLSearchParams({ q: String(q).trim(), cat, offset: String(offset), limit: String(limit) });
+  for (const a of AXES) if (f && typeof f[a] === "string" && f[a]) p.set(a, f[a]);
+  if (lang) p.set("lang", lang);
+  return p.toString();
+}
+// the filter chosen by a click on a chip: the same chip again takes it off
+export const toggled = (f, axis, key) => ({ ...f, [axis]: f[axis] === key ? "" : key });
+export const filtered = (f) => AXES.some((a) => f && f[a]);
 // what is stored and sent about the chosen style: only its id, name and the path of the file; anything else is dropped
 export function chosen(raw) {
   const s = raw && typeof raw === "object" ? raw : null;
@@ -63,7 +75,7 @@ const initials = (name) => String(name || "?").split(/\s+/).map((w) => w[0]).joi
 // base: () => the address of the plugin process; get/set: the style attached now (the page keeps it); hub.el builds the nodes
 export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   const el = hub.el;
-  const S = { avail: false, q: "", cat: "", offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0 };
+  const S = { avail: false, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0 };
   const node = el("div", "hds");
   node.hidden = true;
   node.setAttribute("role", "dialog");
@@ -123,10 +135,10 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     S.state = "loading";
     paintBody();
     try {
-      const r = await ask("styles", listQuery({ q: S.q, cat: S.cat, offset: S.offset }));
+      const r = await ask("styles", listQuery({ q: S.q, cat: S.cat, f: S.f, offset: S.offset, lang: currentLang() }));
       if (my !== S.seq) return;
       if (!r.ok) { S.avail = false; onChange(); return close(); }
-      Object.assign(S, { items: r.items, total: r.total, cats: r.cats || [], count: r.count, state: "ok" });
+      Object.assign(S, { items: r.items, total: r.total, cats: r.cats || [], facets: r.facets || {}, count: r.count, state: "ok" });
     } catch {
       if (my !== S.seq) return;
       S.state = "failed";
@@ -148,7 +160,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     S.detail = { id, loading: true };
     paint();
     try {
-      const d = await ask("style", new URLSearchParams({ id }).toString());
+      const d = await ask("style", new URLSearchParams({ id, lang: currentLang() }).toString());
       if (my !== S.seq) return;
       S.detail = d;
     } catch {
@@ -165,11 +177,24 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
 
   const btn = (cls, text, fn) => { const b = el("button", cls, text); b.type = "button"; b.addEventListener("click", fn); return b; };
 
+  // the filter chips: a row per axis when the library has labels (the most frequent ones), otherwise the row of categories
   function paintCats() {
-    cats.hidden = !!S.detail || !S.cats.length;
+    const rows = AXES.filter((a) => (S.facets[a] || []).length);
+    cats.hidden = !!S.detail || (!rows.length && !S.cats.length);
     if (cats.hidden) return;
-    const chip = (name, label, n) => { const b = btn("hds-cat" + (S.cat === name ? " on" : ""), label + (n != null ? ` ${n}` : ""), () => { S.cat = name; S.offset = 0; load(); }); return b; };
-    cats.replaceChildren(chip("", t("all"), S.count), ...S.cats.map((c) => chip(c.name, c.name, c.n)));
+    const chip = (on, label, title, fn) => { const b = btn("hds-cat" + (on ? " on" : ""), label, fn); if (title) b.title = title; return b; };
+    cats.classList.toggle("rows", rows.length > 0);
+    if (!rows.length) {
+      const one = (name, label, n) => chip(S.cat === name, label + (n != null ? ` ${n}` : ""), "", () => { S.cat = name; S.offset = 0; load(); });
+      return cats.replaceChildren(one("", t("all"), S.count), ...S.cats.map((c) => one(c.name, c.name, c.n)));
+    }
+    cats.replaceChildren(...rows.map((a) => {
+      const row = el("div", "hds-fr");
+      const strip = el("div", "hds-fs");
+      strip.append(...S.facets[a].map((x) => chip(S.f[a] === x.k, x.t, `${x.t} · ${x.n}`, () => { S.f = toggled(S.f, a, x.k); S.offset = 0; load(); })));
+      row.append(el("span", "hds-fl", axisName(a)), strip);
+      return row;
+    }));
   }
 
   function card(it) {
@@ -187,6 +212,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
       pic = el("span", "hds-img hds-none", initials(it.name));
     }
     b.append(pic, el("span", "hds-name", it.name), el("span", "hds-cat-name", it.category || ""));
+    if (it.labels && it.labels.length) b.append(el("span", "hds-labs", it.labels.map((x) => x.t).join(" · ")));
     b.addEventListener("click", () => show(it.id));
     return b;
   }
@@ -225,6 +251,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
       right.append(sw);
     }
     if (d.fonts && d.fonts.length) right.append(el("h4", "hds-h4", t("fonts")), el("div", "hds-fonts", d.fonts.join(", ")));
+    if (d.labels && d.labels.length) { right.append(el("h4", "hds-h4", t("labels"))); const lb = el("div", "hds-tags"); for (const x of d.labels) lb.append(el("span", "hds-tagc", x.t)); right.append(lb); }
     if (d.tags && d.tags.length) { right.append(el("h4", "hds-h4", t("tags"))); const tg = el("div", "hds-tags"); for (const x of d.tags) tg.append(el("span", "hds-tagc", x)); right.append(tg); }
     wrap.append(left, right);
     return wrap;
@@ -233,7 +260,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   function paint() {
     h1.textContent = S.detail ? "" : t("title");
     if (S.detail) h1.replaceChildren(btn("hds-backb", "← " + t("back"), back));
-    sub.textContent = S.detail ? "" : S.q.trim() || S.cat ? t("found", { n: S.total }) : S.count ? t("count", { n: S.count }) : "";
+    sub.textContent = S.detail ? "" : S.q.trim() || S.cat || filtered(S.f) ? t("found", { n: S.total }) : S.count ? t("count", { n: S.count }) : "";
     x.title = t("close");
     search.placeholder = t("search_ph");
     bar.hidden = !!S.detail;

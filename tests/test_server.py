@@ -805,6 +805,25 @@ class StyleLibrary(unittest.TestCase):
             r, d = self.ask("/__canvas/styles?" + q)
             self.assertEqual((r.status, d["ok"]), (200, True), q)
 
+    def test_labels_filters_and_chips_ride_the_same_route(self):
+        tags = os.path.join(self.root, "tags.json")
+        with open(tags, "w", encoding="utf-8") as f:
+            json.dump({"a1": {"theme": "light", "style": ["minimal"], "industry": ["media"]},
+                       "b2": {"theme": "dark", "style": ["neon"], "mood": ["bold"]}}, f)
+        self.addCleanup(os.remove, tags)
+        _, d = self.ask("/__canvas/styles?q=dark")
+        self.assertEqual([i["id"] for i in d["items"]], ["b2"])
+        self.assertEqual([x["k"] for x in d["items"][0]["labels"]], ["dark", "neon", "bold"])
+        _, d = self.ask("/__canvas/styles?theme=light&lang=ru")
+        self.assertEqual([i["id"] for i in d["items"]], ["a1"])
+        self.assertEqual(d["total"], 1)
+        self.assertEqual([x["k"] for x in d["facets"]["theme"]], ["dark", "light"])   # chips stay on the whole library, the chosen one too
+        self.assertNotEqual(d["items"][0]["labels"][0]["t"], "light")   # named in Russian
+        _, d = self.ask("/__canvas/styles?theme=light&theme=dark&style=%00&mood=" + "x" * 5000)   # junk in a filter is no label: nothing breaks
+        self.assertTrue(d["ok"])
+        _, d = self.ask("/__canvas/style?id=a1&lang=ru")
+        self.assertEqual([x["k"] for x in d["labels"]], ["light", "minimal", "media"])
+
     def test_a_huge_preview_is_not_served(self):
         import styles
         big = os.path.join(self.root, "previews", "marlin.png")

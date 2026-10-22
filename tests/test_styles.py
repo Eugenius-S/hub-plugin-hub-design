@@ -254,7 +254,7 @@ class Search(unittest.TestCase):
 
     def test_a_list_row_is_short_it_carries_no_paths(self):
         _, items = self.lib.search(q="marlin")
-        self.assertEqual(items[0], {"id": "a1", "name": "Marlin", "category": "Editorial", "tags": ["calm", "blue", "serif"], "preview": True})
+        self.assertEqual(items[0], {"id": "a1", "name": "Marlin", "category": "Editorial", "tags": ["calm", "blue", "serif"], "preview": True, "labels": []})
 
 
 class Card(unittest.TestCase):

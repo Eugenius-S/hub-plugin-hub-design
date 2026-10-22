@@ -9,10 +9,15 @@
 .hds-backb{border:0;background:none;color:var(--muted-foreground);padding:6px 10px;margin-left:-10px;border-radius:var(--radius);font-size:var(--text-base)}
 .hds-backb:hover{background:var(--muted);color:var(--foreground)}
 .hds-bar{padding:14px 24px 0}
-.hds-search{display:block;width:100%;max-width:420px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);color:var(--foreground);padding:7px 10px;outline:none;min-width:0}
+.hds-search{display:block;width:100%;max-width:460px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);color:var(--foreground);padding:7px 10px;outline:none;min-width:0}
 .hds-search:focus{border-color:var(--ring)}
 .hds-cats{display:flex;flex-wrap:nowrap;gap:6px;padding:12px 24px 0;overflow-x:auto;scrollbar-width:none;flex:none}   /* a long row of categories scrolls without a bar */
 .hds-cats::-webkit-scrollbar{display:none}
+.hds-cats.rows{flex-direction:column;gap:6px;overflow:visible}   /* with labels: a row per axis, each scrolls on its own */
+.hds-fr{display:flex;align-items:center;gap:10px;min-width:0}
+.hds-fl{flex:none;width:104px;color:var(--muted-foreground);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hds-fs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;min-width:0;flex:1;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+.hds-fs::-webkit-scrollbar{display:none}
 .hds-cat{flex:none;border:1px solid var(--border);background:none;color:var(--muted-foreground);border-radius:var(--radius-pill);padding:3px 12px;font-size:var(--text-sm);white-space:nowrap}
 .hds-cat:hover{color:var(--foreground);background:var(--muted)}
 .hds-cat.on{background:var(--foreground);border-color:var(--foreground);color:var(--background)}
@@ -26,6 +31,7 @@
 .hds-card.on .hds-img{outline:2px solid var(--hd-acc,var(--primary));outline-offset:2px}
 .hds-name{font-size:var(--text-base);line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hds-cat-name{font-size:var(--text-xs);color:var(--muted-foreground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:16px}
+.hds-labs{font-size:var(--text-xs);color:var(--muted-foreground);opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hds-empty{padding:48px 0;text-align:center;color:var(--muted-foreground)}
 .hds-foot{display:flex;align-items:center;justify-content:center;gap:var(--space-3);padding:10px 24px 16px;flex:none;border-top:1px solid var(--border)}
 .hds-pg{border:1px solid var(--border);background:none;color:var(--foreground);border-radius:var(--radius);padding:4px 14px}
