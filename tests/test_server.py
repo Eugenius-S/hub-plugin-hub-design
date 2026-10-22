@@ -289,6 +289,11 @@ class Server(unittest.TestCase):
         clip = os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")
         r, body = self.get("/__canvas/card?" + urlencode({"path": clip}))
         self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))
+        deck = os.path.join(os.path.realpath(SITE), "deck.pptx")
+        with open(deck, "wb") as f:
+            f.write(b"PK")
+        r, body = self.get("/__canvas/card?" + urlencode({"path": deck}))
+        self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))   # a presentation: a card with its file
         r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(OUT, "x.html")}))
         self.assertEqual(json.loads(body)["state"], "denied")
         r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "notes.md")}))   # Markdown is no design: not served, no title

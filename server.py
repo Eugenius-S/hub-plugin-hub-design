@@ -33,6 +33,7 @@ TYPES = {
     ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf", ".mp4": "video/mp4",
     ".webm": "video/webm", ".mov": "video/quicktime", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".txt": "text/plain; charset=utf-8",
     ".lottie": "application/zip", ".pdf": "application/pdf",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 HTML = (".html", ".htm")
 DOCS = (".pdf", ".svg")   # documents: opened on the canvas read-only, as a basis for a new design (the one list of non-HTML file types)

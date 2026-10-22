@@ -1,4 +1,4 @@
-/* A design/document/video card in the chat feed: a tile with a preview, a name, "Hub Design · agent", share and hide. Colors and fonts come from the hub theme */
+/* A design/document/presentation card in the chat feed: a tile with a preview, a name, "Hub Design · agent", share and hide. Colors and fonts come from the hub theme */
 .hdcard{display:flex;flex-direction:column;align-items:stretch;gap:var(--space-3);box-sizing:border-box;max-width:520px;margin:var(--space-2) 0 var(--space-1);padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius-xl);background:var(--muted);color:var(--foreground);font-family:var(--font);font-size:var(--text-sm);line-height:1.35;cursor:pointer;transition:border-color .15s,background-color .15s}
 .hdcard:hover{border-color:color-mix(in oklab,var(--primary) 35%,var(--border))}
 .hdcard:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
