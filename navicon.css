@@ -1,0 +1,35 @@
+/* Hub Design icon in the sidebar and the ☰ menu: on hover the outline palette turns filled and a pink/primary gradient
+   sweeps over it, like the send button's color. The core draws the icon as a mask (.ext-icon, --src); two layers replace it
+   here: the outline (::before, currentColor) and the filled palette with the gradient (::after), cross-faded by opacity,
+   since a mask image cannot be transitioned. Only our icon matches the selector; the file paths resolve against this stylesheet. */
+.srow.nav .ext-icon[style*="hub-design/icon.svg"] {
+  --hdi-pink: light-dark(#ec3f97, #ff7ab8);
+  position: relative; background: none; -webkit-mask: none; mask: none;
+  transition: transform .28s cubic-bezier(.34, 1.56, .64, 1);
+}
+.srow.nav .ext-icon[style*="hub-design/icon.svg"]::before,
+.srow.nav .ext-icon[style*="hub-design/icon.svg"]::after {
+  content: ""; position: absolute; inset: 0;
+  -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat;
+  transition: opacity .22s ease;
+}
+.srow.nav .ext-icon[style*="hub-design/icon.svg"]::before {
+  background: currentColor; -webkit-mask-image: url("icon.svg"); mask-image: url("icon.svg"); opacity: 1;
+}
+.srow.nav .ext-icon[style*="hub-design/icon.svg"]::after {
+  -webkit-mask-image: url("icon-filled.svg"); mask-image: url("icon-filled.svg"); opacity: 0;
+  background: linear-gradient(90deg, var(--primary), var(--hdi-pink), color-mix(in oklab, var(--primary) 55%, var(--hdi-pink)), var(--primary)) 0 0 / 200% 100% repeat-x;
+}
+.srow.nav:is(:hover, :focus-visible) .ext-icon[style*="hub-design/icon.svg"] { transform: scale(1.12); }
+.srow.nav:is(:hover, :focus-visible) .ext-icon[style*="hub-design/icon.svg"]::before { opacity: 0; }
+.srow.nav:is(:hover, :focus-visible) .ext-icon[style*="hub-design/icon.svg"]::after {
+  opacity: 1; animation: hdi-sweep 1.8s linear infinite;
+}
+@keyframes hdi-sweep { to { background-position: 200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .srow.nav .ext-icon[style*="hub-design/icon.svg"],
+  .srow.nav .ext-icon[style*="hub-design/icon.svg"]::before,
+  .srow.nav .ext-icon[style*="hub-design/icon.svg"]::after { transition: none; }
+  .srow.nav:is(:hover, :focus-visible) .ext-icon[style*="hub-design/icon.svg"] { transform: none; }
+  .srow.nav:is(:hover, :focus-visible) .ext-icon[style*="hub-design/icon.svg"]::after { animation: none; }
+}

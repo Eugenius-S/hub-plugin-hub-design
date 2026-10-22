@@ -16,13 +16,21 @@ def read(name):
 
 
 class Manifest(unittest.TestCase):
+    def test_nav_icon_hover_files(self):
+        css = read("navicon.css")
+        self.assertIn('url("icon.svg")', css)
+        self.assertIn('url("icon-filled.svg")', css)
+        self.assertIn("prefers-reduced-motion", css)
+        self.assertIn('hub.addStyle("navicon.css")', read("main.js"))
+        self.assertIn('fill-rule="evenodd"', read("icon-filled.svg"))
+
     def test_fields(self):
         m = json.loads(read("hub-plugin.json"))
         self.assertEqual(m["name"], "hub-design")
         for key in ("description", "why", "version", "hub", "web", "icon"):
             self.assertTrue(m.get(key), key)
         self.assertEqual(m["run"], ["python3", "server.py"])
-        for name in (m["web"], m["icon"], "icon.svg", "style.css", "agent.js", "lib.js", "canvas.js", "icons.js", "dashboard.js", "dashboard.css", "server.py", "i18n.js", "card.js", "card.css"):
+        for name in (m["web"], m["icon"], "icon.svg", "style.css", "agent.js", "lib.js", "canvas.js", "icons.js", "dashboard.js", "dashboard.css", "server.py", "i18n.js", "card.js", "card.css", "navicon.css", "icon-filled.svg"):
             self.assertTrue(os.path.isfile(os.path.join(HERE, name)), name)
 
     def test_description_is_english_and_russian_is_in_i18n(self):

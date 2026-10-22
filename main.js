@@ -151,6 +151,7 @@ export default function register(h) {
   hub.addStyle("dashboard.css");
   hub.addStyle("card.css");
   hub.addStyle("styles.css");
+  hub.addStyle("navicon.css");
   addEventListener("message", onFrame);
   // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
