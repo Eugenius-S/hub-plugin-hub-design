@@ -92,6 +92,15 @@ class Posts(unittest.TestCase):
         self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
         self.assertEqual(len(self.said()), 4)
 
+    def test_why_has_the_illustration_reason_and_no_off_style(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        why = self.posts()[1]
+        self.assertIn("Weak illustration", why["buttons"])
+        self.assertNotIn("Not our style", why["buttons"])
+        self.assertEqual(tgpost.why_key("Плохая иллюстрация"), "illustration")
+        self.assertIsNone(tgpost.why_key("Не наш стиль"))
+
     def test_a_reason_in_words(self):
         self.file()
         ref = self.posts()[0]["ref"]

@@ -19,7 +19,7 @@ import time
 
 EXT = "hub-design"   # the facts are signed ext:hub-design - the bot passes presses and replies back by this name
 LIKE, NOPE = "❤️", "👎"
-WHY = ["ugly", "off-brief", "cluttered", "type", "off-style"]   # reasons after 👎: STR key suffixes
+WHY = ["ugly", "off-brief", "cluttered", "type", "illustration"]   # reasons after 👎: STR key suffixes
 KEEP_SENT, KEEP_WHY, KEEP_SHOTS = 300, 200, 50
 TICK = 2   # s between journal reads
 
@@ -32,7 +32,7 @@ STR = {
         "why_off-brief": "Not what I asked",
         "why_cluttered": "Cluttered",
         "why_type": "Weak type",
-        "why_off-style": "Not our style",
+        "why_illustration": "Weak illustration",
     },
     "ru": {
         "caption": "**{title}** · {who}\nРеплай — правка для {who}.",
@@ -42,7 +42,7 @@ STR = {
         "why_off-brief": "Не то просил",
         "why_cluttered": "Перегружено",
         "why_type": "Слабая типографика",
-        "why_off-style": "Не наш стиль",
+        "why_illustration": "Плохая иллюстрация",
     },
 }
 
