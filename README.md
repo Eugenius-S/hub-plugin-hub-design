@@ -60,6 +60,12 @@ The author of a design is the session that wrote the file (Write/Edit), then the
 - **Grid.** For a container with `grid-template-columns: repeat(N, minmax(0, 1fr))` the properties panel shows "Columns: N"; "To flex" and "To grid" wrap the selection.
 - **Grids over the frame** (frame menu → "Grids over the frame…"): up to six, columns, rows or cells, gap, margin, color. Only on the canvas — they do not reach the design or PLAY; in the batch they go as a line of the frame view.
 
+### Designs in Telegram
+
+Off by default. A design (HTML, PDF, Markdown) that the designer or the animator (or their executors) sends with `hub send-file` comes to Telegram as a post: a shot of its first screen, its name and author, and ❤️ / 👎 buttons. A press goes back to the author as a message; after 👎 a "Why?" with reason buttons follows (or reply in your own words). A reply to the post goes to the author as an edit. The design does not come a second time as a document.
+
+It needs a hub whose Telegram bot knows the `telegram.post` fact and the `telegram.design_posts` setting; without them nothing is sent. Turn it on in hub.json: `"telegram": {"design_posts": true}`; your own lists: `{"sessions": ["designer", "animator"], "types": [".html", ".pdf", ".md"]}`, `"sessions": "*"` is any session.
+
 ### Specialists
 
 Hub Design installs the designer specialist from the specialists catalog (a button on the start screen). The specialists the plugin needs are designer (required) and animator (for the "Animation" preset, desirable); the list is `NEEDED` in `lib.js`. If there is no designer in the hub, the start screen shows a banner "Hub Design needs the designer" with an "Install" button: it sends the hub, in your name, "Install the specialist for Hub Design: specialists install designer" (the hub installs it); after the click it reads "Asked the hub, waiting", and the banner disappears by itself when the session appears. If there is no animator, a quiet line "no specialist animator" appears by the "Animation" preset. If you write in the chat of a specialist who is not in the hub, the same banner shows above the input.
@@ -92,6 +98,6 @@ The plugin process (`server.py`) listens on `127.0.0.1` at the hub page's port +
 
 ## Tests
 
-`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests` — the server, writing to the file (`handwrite.py`), PDF, the manifest; `node --test tests/*.test.mjs` — the logic, element landmarks, the en/ru tables. No browser needed.
+`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests` — the server, writing to the file (`handwrite.py`), PDF, Telegram posts (`tgpost.py`), the manifest; `node --test tests/*.test.mjs` — the logic, element landmarks, the en/ru tables. No browser needed.
 
 Icon — [3D Fluency](https://icons8.com/icons/3d-fluency) by Icons8.

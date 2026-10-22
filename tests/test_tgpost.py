@@ -1,0 +1,147 @@
+"""Designs to Telegram as posts (tgpost.py): owner.file of a designer -> telegram.post with a shot and ❤️ 👎; a press and a
+reason after 👎 -> a message to the author; off - nothing. Needs the hub code on PYTHONPATH (modules/telegram/design_posts)."""
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TMP = tempfile.mkdtemp(prefix="hd-tg-test-")
+os.environ["HUB_STATE_DIR"] = os.path.join(TMP, "state")   # never the live hub
+os.environ["HUB_CONFIG"] = os.path.join(TMP, "hub.json")
+sys.path.insert(0, HERE)
+import tgpost  # noqa: E402
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 64
+ON = {"telegram": {"design_posts": True}}
+
+
+def tearDownModule():
+    shutil.rmtree(TMP, ignore_errors=True)
+
+
+@unittest.skipUnless(tgpost.rules(), "no hub code with modules/telegram/design_posts on PYTHONPATH")
+class Posts(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(dir=TMP)
+        self.journal = os.path.join(self.dir, "journal.jsonl")
+        self.seq, self.out, self.cfg = 0, [], dict(ON)
+        self.sessions = {"designer": {"cwd": "/w"}, "maps": {"cwd": "/w"}}
+        self.shots = []
+        self.add("core.started", {})
+        self.p = self.poster()
+
+    def poster(self):
+        def shot(path):
+            self.shots.append(path)
+            return PNG
+        return tgpost.Poster(self.dir, shot, lambda: self.cfg, title=lambda p: "Landing",
+                             state=lambda: {"sessions": self.sessions}, emit=lambda t, d: self.out.append((t, d)))
+
+    def add(self, type, data, src="session"):
+        self.seq += 1
+        with open(self.journal, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"seq": self.seq, "type": type, "src": src, "data": data}) + "\n")
+
+    def file(self, sender="designer", path="/w/landing.html"):
+        self.add("owner.file", {"path": path, "sender": sender, "channel": "session", "owner": False})
+        self.p.poll()
+
+    def posts(self):
+        return [d for t, d in self.out if t == "telegram.post"]
+
+    def said(self):
+        return [d for t, d in self.out if t == "message.received"]
+
+    def press(self, ref, button):
+        self.add("telegram.pressed", {"ext": "hub-design", "ref": ref, "button": button}, src="telegram")
+        self.p.poll()
+
+    def test_a_design_goes_as_a_post_with_a_shot_and_buttons_for_its_author(self):
+        self.file()
+        (post,) = self.posts()
+        self.assertEqual(post["buttons"], ["❤️", "👎"])
+        self.assertEqual(post["session"], "designer")      # a reply goes to the author
+        self.assertIn("Landing", post["text"])
+        self.assertIn("designer", post["text"])
+        with open(post["path"], "rb") as f:
+            self.assertEqual(f.read(), PNG)
+        self.assertEqual(self.shots, ["/w/landing.html"])
+
+    def test_a_press_goes_to_the_author_and_dislike_asks_why_once(self):
+        self.file()
+        ref = self.posts()[0]["ref"]
+        self.press(ref, "❤️")
+        (msg,) = self.said()
+        self.assertEqual(msg["to"], "designer")
+        self.assertIn("❤️", msg["text"])
+        self.assertIn("/w/landing.html", msg["text"])
+        self.press(ref, "👎")
+        self.assertEqual(len(self.said()), 2)
+        why = self.posts()[1]
+        self.assertTrue(why["settle"])
+        self.assertNotIn("session", why)                   # the reason comes back to the plugin, not straight to the author
+        self.press(ref, "👎")
+        self.assertEqual(len(self.posts()), 2)            # a second 👎 - no second question
+        self.press(why["ref"], why["buttons"][2])
+        self.assertIn("Cluttered", self.said()[-1]["text"])
+        self.assertEqual(self.said()[-1]["to"], "designer")
+        self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
+        self.assertEqual(len(self.said()), 4)
+
+    def test_a_reason_in_words(self):
+        self.file()
+        ref = self.posts()[0]["ref"]
+        self.press(ref, "👎")
+        self.add("telegram.replied", {"ext": "hub-design", "ref": self.posts()[1]["ref"], "text": "too dark"}, src="telegram")
+        self.p.poll()
+        self.assertIn("too dark", self.said()[-1]["text"])
+
+    def test_off_foreign_or_not_a_design_sends_nothing(self):
+        self.cfg = {}
+        self.file()
+        self.cfg = ON
+        self.file("maps")
+        self.file(path="/w/shot.png")
+        self.add("telegram.pressed", {"ext": "hub-design", "ref": "hd:1", "button": "❤️"}, src="session")   # not from the bot
+        self.p.poll()
+        self.assertEqual(self.out, [])
+        with mock.patch.object(tgpost, "rules", lambda: None):   # the hub's bot has no design posts
+            self.file()
+        self.assertEqual(self.out, [])
+
+    def test_no_shot_goes_as_text_with_the_path(self):
+        self.p.shot = lambda path: None
+        self.file()
+        (post,) = self.posts()
+        self.assertNotIn("path", post)
+        self.assertIn("/w/landing.html", post["text"])
+
+    def test_a_restart_does_not_post_again_and_the_first_start_skips_old_files(self):
+        self.file()
+        self.p = self.poster()
+        self.p.poll()
+        self.assertEqual(len(self.posts()), 1)
+        fresh = tempfile.mkdtemp(dir=TMP)
+        shutil.copy(self.journal, os.path.join(fresh, "journal.jsonl"))
+        self.dir = fresh
+        self.poster().poll()
+        self.assertEqual(len(self.posts()), 1)
+
+    def test_the_bot_and_the_plugin_agree_which_file_is_a_design(self):
+        # one rule for both: the bot skips exactly what the plugin posts (else a design twice or never)
+        from modules.telegram import design_posts
+        for sender, path, cfg in [("designer", "/w/a.html", ON), ("designer-x", "/w/a.md", ON), ("maps", "/w/a.html", ON),
+                                  ("designer", "/w/a.png", ON), ("designer", "/w/a.html", {})]:
+            self.out.clear()
+            self.cfg = cfg
+            self.sessions[sender] = {"cwd": "/w"}
+            self.file(sender, path)
+            self.assertEqual(bool(self.posts()), design_posts.claimed(cfg, sender, {"cwd": "/w"}, path), (sender, path))
+
+
+if __name__ == "__main__":
+    unittest.main()

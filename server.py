@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import handwrite
 import mdrender
+import tgpost
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_PORT = int(os.environ.get("HUB_WEB_PORT") or 8787)
@@ -51,6 +52,7 @@ DOC_SIZE = (900, 634)       # the window a document is shot in: the same ratio a
 THUMB_SCALE = 0.34         # Chrome shrinks the shot at once: ~490 px wide
 THUMB_TIMEOUT = 30
 THUMB_KEEP = 300           # shots in the cache: older ones are erased
+TG_WIDTH = 1080            # px: the shot of a design for a Telegram post (tgpost.py) - sharp on a phone
 TITLE_READ = 64 * 1024     # how far into the file we look for <title>
 
 
@@ -332,17 +334,18 @@ def thumb_path(real, stamp):
 _thumb_lock = threading.Lock()
 
 
-def thumb(real):
+def thumb(real, big=False):
     """A shot of the design for a card: our own headless Chrome (the one that prints PDF) opens the file as on disk and shoots a 1440×900 window,
-    shrunk while shooting. The cache is by path and the edit time of the design folder. None - Chrome is not set up; PdfError - it failed."""
-    out = thumb_path(real, newest(real))
+    shrunk while shooting. The cache is by path and the edit time of the design folder. None - Chrome is not set up; PdfError - it failed.
+    big - TG_WIDTH px wide (a Telegram post) instead of a card's ~490."""
+    out = thumb_path(real, "%s|tg" % newest(real) if big else newest(real))
     try:
         with open(out, "rb") as f:
             return f.read()
     except OSError:
         pass
     if real.lower().endswith(".pdf"):   # the headless Chrome has no PDF viewer ("Couldn't load plugin"): the first page - by the system's own rasterizer
-        data = pdf_shot(real)
+        data = pdf_shot(real, TG_WIDTH if big else None)
         if data:
             keep_thumb(out, data)
         return data
@@ -353,11 +356,14 @@ def thumb(real):
     url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "raw=1&player=1" if real.lower().endswith(".pdf") else "raw=1")
     size = None if doc else size_of(real)
     win = DOC_SIZE if doc else THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])   # a design with a set size is shot whole
+    scale = THUMB_SCALE * THUMB_SIZE[0] / win[0] if doc else THUMB_SCALE
+    if big:
+        scale = min(2.0, TG_WIDTH / win[0])
     with _thumb_lock:
         tmp = tempfile.mkdtemp(prefix="hub-design-thumb-")
         shot = os.path.join(tmp, "out.png")
         cmd = [chrome, "--headless", "--disable-gpu", "--hide-scrollbars", "--user-data-dir=" + os.path.join(tmp, "profile"),
-               "--window-size=%d,%d" % win, "--force-device-scale-factor=%s" % (THUMB_SCALE * THUMB_SIZE[0] / win[0] if doc else THUMB_SCALE), "--virtual-time-budget=3000",
+               "--window-size=%d,%d" % win, "--force-device-scale-factor=%s" % scale, "--virtual-time-budget=3000",
                "--screenshot=" + shot, url]
         kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" else {"start_new_session": True}
         proc = None
@@ -394,8 +400,8 @@ def keep_thumb(out, data):
         pass   # the cache was not written - the shot is served anyway
 
 
-def pdf_shot(real):
-    """The first page of a PDF as a PNG ~490 px wide: macOS has it built in (sips); elsewhere None - the card keeps its icon."""
+def pdf_shot(real, width=None):
+    """The first page of a PDF as a PNG ~490 px wide (or width): macOS has it built in (sips); elsewhere None - the card keeps its icon."""
     sips = shutil.which("sips")
     if not sips:
         return None
@@ -403,7 +409,7 @@ def pdf_shot(real):
     try:
         shot = os.path.join(tmp, "out.png")
         try:
-            subprocess.run([sips, "-s", "format", "png", "--resampleWidth", str(round(THUMB_SIZE[0] * THUMB_SCALE)), real, "--out", shot],
+            subprocess.run([sips, "-s", "format", "png", "--resampleWidth", str(width or round(THUMB_SIZE[0] * THUMB_SCALE)), real, "--out", shot],
                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=THUMB_TIMEOUT)
             with open(shot, "rb") as f:
                 data = f.read()
@@ -760,6 +766,18 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
+def tg_shot(path):
+    """The shot of a design for a Telegram post: only a file we may serve (the shot opens it from our own address); None - no shot."""
+    real = os.path.realpath(path)
+    if not allowed(real):
+        return None
+    try:
+        return thumb(real, big=True)
+    except PdfError as e:
+        print(f"hub-design: telegram: no shot of {real}: {e}", file=sys.stderr, flush=True)
+        return None
+
+
 def version():
     try:
         with open(os.path.join(HERE, "hub-plugin.json"), encoding="utf-8") as f:
@@ -784,6 +802,8 @@ def main():
     print(f"hub-design: http://localhost:{PORT}/", file=sys.stderr, flush=True)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
+    if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
+        threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p))), daemon=True).start()
     try:
         t.join()
     except KeyboardInterrupt:
