@@ -19,7 +19,7 @@ const STR = {
     open_in: "Open in Hub Design: this session's conversation and the typed text",
     local_only: "Hub Design works only on this computer: open the hub via localhost.",
     no_proc: "The plugin process is not responding at {origin}. Restart the plugin: hub restart ext:{id}",
-    write_fail: "The edits were not written to the file — they will go to the designer in words",
+    write_fail: "The edits did not reach the file. They will go to the designer as text",
     not_sent: "Not sent: {err}",
     pdf_fail: "PDF failed: {why}",
     del_edit: "Remove the edit",
@@ -32,7 +32,7 @@ const STR = {
     add_html: "Add an HTML file to the canvas",
     placeholder: "Describe what to change…",
     who_title: "Who receives the edits",
-    exit_title: "Leave Hub Design for the chat: {name}",
+    exit: "Exit Hub Design", exit_title: "Leave Hub Design for the chat: {name}",
     q_failed: "Not removed",
     q_removed: "Removed from the queue",
     q_retry: "Retry",
@@ -47,8 +47,8 @@ const STR = {
     layout: "Layout",
     to_flex: "To flex",
     to_grid: "To grid",
-    flex_title: "display: flex — children in a row",
-    grid_title: "display: grid — two columns",
+    flex_title: "display: flex, children in a row",
+    grid_title: "display: grid, two columns",
     tweaks: "Tweaks",
     bi_title: "Margins and type",
     bi_pad: "Margins", bi_fs: "Font size", bi_ls: "Tracking", bi_lh: "Leading",
@@ -58,9 +58,9 @@ const STR = {
     remove: "Remove",
     lost_prefix: "⚠ element not found · ",
     area_title: "Area x {x}, y {y}, {w}\u00d7{h} px",
-    lost_title: "Element not found — the design was re-laid out, the point stays where it was",
+    lost_title: "Element not found: the design was re-laid out. The point stays where it was",
     in_file: "in the file",
-    not_written: "{sel} — not written to the file: {why}",
+    not_written: "{sel}: not written to the file. {why}",
     no_comments: "No comments yet. Choose “Comment” on the canvas toolbar and click the place you mean.",
     show_on_canvas: "Show on the canvas: {path}",
     no_talk: "No conversation with {name} yet.",
@@ -70,7 +70,7 @@ const STR = {
     open_in: "Открыть в Hub Design: разговор этой сессии и набранный текст",
     local_only: "Hub Design работает только на этом компьютере: откройте хаб по localhost.",
     no_proc: "Процесс плагина не отвечает на {origin}. Перезапустите плагин: hub restart ext:{id}",
-    write_fail: "Правки в файл не записались — уйдут дизайнеру словами",
+    write_fail: "Правки не записались в файл. Они уйдут дизайнеру текстом",
     not_sent: "Не ушло: {err}",
     pdf_fail: "PDF не вышел: {why}",
     del_edit: "Убрать правку",
@@ -83,7 +83,7 @@ const STR = {
     add_html: "Добавить HTML на холст",
     placeholder: "Опишите, что нужно изменить…",
     who_title: "Кому уходят правки",
-    exit_title: "Выйти из Hub Design в чат: {name}",
+    exit: "Выйти из Hub Design", exit_title: "Выйти из Hub Design в чат: {name}",
     q_failed: "Не убрано",
     q_removed: "Убрано из очереди",
     q_retry: "Повторить",
@@ -98,20 +98,20 @@ const STR = {
     layout: "Раскладка",
     to_flex: "Во flex",
     to_grid: "В grid",
-    flex_title: "display: flex — дети в ряд",
-    grid_title: "display: grid — две колонки",
+    flex_title: "display: flex, дети в ряд",
+    grid_title: "display: grid, две колонки",
     tweaks: "Крутилки",
     bi_title: "Поля и шрифты",
-    bi_pad: "Поля", bi_fs: "Шрифт", bi_ls: "Между буквами", bi_lh: "Между строк",
+    bi_pad: "Поля", bi_fs: "Шрифт", bi_ls: "Трекинг", bi_lh: "Интерлиньяж",
     own_color: "Свой цвет",
     note_chip: "Заметка: {text}",
     design_errors: "Ошибки макета: {n}",
     remove: "Убрать",
     lost_prefix: "⚠ элемент не найден · ",
     area_title: "Область x {x}, y {y}, {w}\u00d7{h} px",
-    lost_title: "Элемент не найден — макет перевёрстан, точка на прежнем месте",
+    lost_title: "Элемент не найден: макет перевёрстан. Точка осталась на прежнем месте",
     in_file: "в файле",
-    not_written: "{sel} — в файл не записана: {why}",
+    not_written: "{sel}: не записано в файл. {why}",
     no_comments: "Комментариев пока нет. Выберите «Комментарий» на панели холста и нажмите на нужное место.",
     show_on_canvas: "Показать на холсте: {path}",
     no_talk: "С {name} ещё не говорили.",
@@ -150,7 +150,7 @@ export default function register(h) {
   hub.addStyle("card.css");
   addEventListener("message", onFrame);
   // cards of designs and videos in the chat feed of any session; a click on a card opens the file here
-  mountCards({ origin, local, open: openFile, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
+  mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
   // the address before Hub Design: "✕" returns there (none — to the home page)
   let prev = location.hash;
   addEventListener("hashchange", (e) => {
@@ -188,7 +188,7 @@ export default function register(h) {
   }
 }
 
-const PALETTE = '<svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Zm-5 9a1.4 1.4 0 1 1 0-2.800A1.400 1.400 0 0 1 7 12Zm3-4a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 10 8Zm5 0a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 15 8Z"/></svg>';
+const PALETTE = '<svg viewBox="0 0 24 24" class="icon" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.3923906 18.001891 7.0056406 22 12.306641 22 L 13 22 C 14.105 22 15 21.105 15 20 L 15 17 C 15 15.895 15.895 15 17 15 L 20 15 C 21.105 15 22 14.105 22 13 L 22 12.306641 C 22 7.0056406 18.002844 2.3923906 12.714844 2.0253906 C 12.474844 2.0083906 12.236 2 12 2 z M 12 4 C 12.19 4 12.381219 4.0065313 12.574219 4.0195312 C 16.738219 4.3085313 20 7.9486406 20 12.306641 L 20 13 L 17 13 C 14.794 13 13 14.794 13 17 L 13 20 L 12.306641 20 C 7.9486406 20 4.3075312 16.737219 4.0195312 12.574219 C 3.8635312 10.324219 4.6194375 8.1839219 6.1484375 6.5449219 C 7.6794375 4.9039219 9.758 4 12 4 z M 12.5 5 A 1.5 1.5 0 0 0 11 6.5 A 1.5 1.5 0 0 0 12.5 8 A 1.5 1.5 0 0 0 14 6.5 A 1.5 1.5 0 0 0 12.5 5 z M 8.5 6 A 1.5 1.5 0 0 0 7 7.5 A 1.5 1.5 0 0 0 8.5 9 A 1.5 1.5 0 0 0 10 7.5 A 1.5 1.5 0 0 0 8.5 6 z M 16.5 7 A 1.5 1.5 0 0 0 15 8.5 A 1.5 1.5 0 0 0 16.5 10 A 1.5 1.5 0 0 0 18 8.5 A 1.5 1.5 0 0 0 16.5 7 z M 6.5 10 A 1.5 1.5 0 0 0 5 11.5 A 1.5 1.5 0 0 0 6.5 13 A 1.5 1.5 0 0 0 8 11.5 A 1.5 1.5 0 0 0 6.5 10 z M 10 14 A 2 2 0 0 0 8 16 A 2 2 0 0 0 10 18 A 2 2 0 0 0 12 16 A 2 2 0 0 0 10 14 z"/></svg>';
 
 // a handoff from a session chat: what is typed in the input moves to Hub Design (the session's input is cleared — the text is not lost, it is in the designer's input).
 // The recipient is not this session but the design's specialist: the designer or the author of the open file; the session only hints which design to open
@@ -329,6 +329,12 @@ function saveFolder() {
   return saveDirOf(P.origin, snap.sessions, snap.directions);
 }
 const withSave = (text) => { const l = saveLine(saveFolder()); return l ? text + "\n\n" + l : text; };
+
+// a file in the hub's Files (the same address a path link in a reply leads to)
+const filesUrl = (path) => {
+  const s = decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "");
+  return `${location.protocol}//${location.hostname}:${(hub.snapshot() || {}).files_port || 8788}/open?path=${encodeURIComponent(abs(path))}` + (s ? `&session=${encodeURIComponent(s)}` : "");
+};
 
 // a file from a card in the feed: open the view and put the file on the canvas (the view is not drawn yet - wait for render)
 function openFile(path) {
@@ -1141,7 +1147,7 @@ function build(root) {
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });
-  const exitB = button("hd-exit", "Exit Hub Design", tr("exit_title", { name: P.session }), () => app.exit());
+  const exitB = button("hd-exit", tr("exit"), tr("exit_title", { name: P.session }), () => app.exit());
   right.append(cv.node, props, dash.node, exitB);
 
   wrap.append(left, right);
@@ -1444,6 +1450,7 @@ function builtinRow(file, b) {
   const out = el("span", "hd-tout wide", builtinShow(b.id, cur));
   const seg = el("div", "hd-seg");
   const r = el("input"); r.type = "range"; Object.assign(r, { min: b.min, max: b.max, step: b.step, value: cur });
+  r.setAttribute("aria-label", tr(b.str));
   const chips = b.presets.map((v) => button("hd-segb" + (v === cur ? " on" : ""), builtinShow(b.id, v), null, () => { if (setBuiltin(file, b, v)) show(v); }));
   seg.append(...chips);
   const show = (v) => { out.textContent = builtinShow(b.id, v); r.value = v; chips.forEach((c, i) => c.classList.toggle("on", b.presets[i] === Number(v))); };
@@ -1484,7 +1491,7 @@ function tweakRow(file, t, cur) {
   } else if (t.editor === "enum") {
     if (t.options.length <= 3) {
       const seg = el("div", "hd-seg");
-      for (const o of t.options) seg.append(button("hd-segb" + (o === cur ? " on" : ""), o, null, () => { if (set(o)) for (const x of seg.children) x.classList.toggle("on", x.textContent === o); }));
+      for (const o of t.options) seg.append(button("hd-segb" + (o === cur ? " on" : ""), o, o, () => { if (set(o)) for (const x of seg.children) x.classList.toggle("on", x.textContent === o); }));
       row.append(label, seg);
     } else {
       const sel = el("select");
@@ -1497,16 +1504,19 @@ function tweakRow(file, t, cur) {
     }
   } else if (t.editor === "boolean") {
     const box = el("input"); box.type = "checkbox"; box.checked = !!cur;
+    box.setAttribute("aria-label", label.textContent);
     box.addEventListener("change", () => set(box.checked));
     row.append(label, box);
   } else if (t.editor === "range" || t.editor === "int" || t.editor === "float") {
     const out = el("span", "hd-tout", `${cur}${t.unit || ""}`);
     const r = el("input"); r.type = "range"; Object.assign(r, { min: t.min, max: t.max, step: t.step, value: cur });
+    r.setAttribute("aria-label", label.textContent);
     r.addEventListener("input", () => { if (set(r.value)) out.textContent = `${r.value}${t.unit || ""}`; });
     row.append(label, r, out);
   } else {
     const f = el("label", "hd-field wide");
     const input = el("input"); input.value = cur;
+    input.setAttribute("aria-label", label.textContent);
     input.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") input.blur(); });
     input.addEventListener("change", () => set(input.value));
     f.append(input);
@@ -1539,6 +1549,7 @@ function field(f) {
   const el = hub.el;
   const wrap = el("label", "hd-field" + (f.wide ? " wide" : ""));
   wrap.append(el("span", "hd-flabel", f.label));
+  wrap.title = `${f.label}: ${f.p}`;   // short labels (P, B, Weight) - the full CSS property on hover
   const cur = (P.sel.css || {})[f.p] ?? "";
   const apply = (v) => { const val = cssValue(f, v); if (val != null) setStyle(f.p, val); };
   let input;

@@ -13,14 +13,16 @@ const frames = new Map();     // video -> dataURL of the frame | "none"
 const nodes = new Map();      // "reply key|path" -> the card node
 const MAX_NODES = 300;
 
-const SVG = (body) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const SVG = (d) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
+const PALETTE_D = "M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.3923906 18.001891 7.0056406 22 12.306641 22 L 13 22 C 14.105 22 15 21.105 15 20 L 15 17 C 15 15.895 15.895 15 17 15 L 20 15 C 21.105 15 22 14.105 22 13 L 22 12.306641 C 22 7.0056406 18.002844 2.3923906 12.714844 2.0253906 C 12.474844 2.0083906 12.236 2 12 2 z M 12 4 C 12.19 4 12.381219 4.0065313 12.574219 4.0195312 C 16.738219 4.3085313 20 7.9486406 20 12.306641 L 20 13 L 17 13 C 14.794 13 13 14.794 13 17 L 13 20 L 12.306641 20 C 7.9486406 20 4.3075312 16.737219 4.0195312 12.574219 C 3.8635312 10.324219 4.6194375 8.1839219 6.1484375 6.5449219 C 7.6794375 4.9039219 9.758 4 12 4 z M 12.5 5 A 1.5 1.5 0 0 0 11 6.5 A 1.5 1.5 0 0 0 12.5 8 A 1.5 1.5 0 0 0 14 6.5 A 1.5 1.5 0 0 0 12.5 5 z M 8.5 6 A 1.5 1.5 0 0 0 7 7.5 A 1.5 1.5 0 0 0 8.5 9 A 1.5 1.5 0 0 0 10 7.5 A 1.5 1.5 0 0 0 8.5 6 z M 16.5 7 A 1.5 1.5 0 0 0 15 8.5 A 1.5 1.5 0 0 0 16.5 10 A 1.5 1.5 0 0 0 18 8.5 A 1.5 1.5 0 0 0 16.5 7 z M 6.5 10 A 1.5 1.5 0 0 0 5 11.5 A 1.5 1.5 0 0 0 6.5 13 A 1.5 1.5 0 0 0 8 11.5 A 1.5 1.5 0 0 0 6.5 10 z M 10 14 A 2 2 0 0 0 8 16 A 2 2 0 0 0 10 18 A 2 2 0 0 0 12 16 A 2 2 0 0 0 10 14 z";
 const ICONS = {
-  design: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.600 17 3 12 3Zm-5 9a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 7 12Zm3-4a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 10 8Zm5 0a1.400 1.400 0 1 1 0-2.800A1.400 1.400 0 0 1 15 8Z"/></svg>',
-  pdf: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.400a1 1 0 0 0-.3-.7l-4.400-4.400a1 1 0 0 0-.7-.3H7Zm6.500 1.800L18.200 9.500H14.500a1 1 0 0 1-1-1V4.800ZM8 14h1.500a1.600 1.600 0 0 1 0 3.200H9V18H8v-4Zm1 .9v1.400h.5a.7.700 0 0 0 0-1.400H9Zm2.800-.9h1.200a2 2 0 0 1 0 4h-1.200v-4Zm1 .9v2.200h.2a1.100 1.100 0 0 0 0-2.200h-.2ZM16 14h2.200v.9H17v.7h1v.9h-1V18h-1v-4Z"/></svg>',
-  doc: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M7 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.400a1 1 0 0 0-.3-.7l-4.400-4.400a1 1 0 0 0-.7-.3H7Zm6.500 1.800L18.200 9.500H14.500a1 1 0 0 1-1-1V4.800ZM8 12.500h8v1.200H8v-1.200Zm0 3h8v1.200H8v-1.200Zm0-6h4v1.200H8V9.500Z"/></svg>',
-  video: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M8 5.500v13a1 1 0 0 0 1.500.9l10.500-6.500a1 1 0 0 0 0-1.800L9.500 4.600A1 1 0 0 0 8 5.500Z"/></svg>',
-  share: SVG('<path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/>'),
-  check: SVG('<path d="M5 12.500l4.500 4.500L19 7.500"/>'),
+  design: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.3923906 18.001891 7.0056406 22 12.306641 22 L 13 22 C 14.105 22 15 21.105 15 20 L 15 17 C 15 15.895 15.895 15 17 15 L 20 15 C 21.105 15 22 14.105 22 13 L 22 12.306641 C 22 7.0056406 18.002844 2.3923906 12.714844 2.0253906 C 12.474844 2.0083906 12.236 2 12 2 z M 12 4 C 12.19 4 12.381219 4.0065313 12.574219 4.0195312 C 16.738219 4.3085313 20 7.9486406 20 12.306641 L 20 13 L 17 13 C 14.794 13 13 14.794 13 17 L 13 20 L 12.306641 20 C 7.9486406 20 4.3075312 16.737219 4.0195312 12.574219 C 3.8635312 10.324219 4.6194375 8.1839219 6.1484375 6.5449219 C 7.6794375 4.9039219 9.758 4 12 4 z M 12.5 5 A 1.5 1.5 0 0 0 11 6.5 A 1.5 1.5 0 0 0 12.5 8 A 1.5 1.5 0 0 0 14 6.5 A 1.5 1.5 0 0 0 12.5 5 z M 8.5 6 A 1.5 1.5 0 0 0 7 7.5 A 1.5 1.5 0 0 0 8.5 9 A 1.5 1.5 0 0 0 10 7.5 A 1.5 1.5 0 0 0 8.5 6 z M 16.5 7 A 1.5 1.5 0 0 0 15 8.5 A 1.5 1.5 0 0 0 16.5 10 A 1.5 1.5 0 0 0 18 8.5 A 1.5 1.5 0 0 0 16.5 7 z M 6.5 10 A 1.5 1.5 0 0 0 5 11.5 A 1.5 1.5 0 0 0 6.5 13 A 1.5 1.5 0 0 0 8 11.5 A 1.5 1.5 0 0 0 6.5 10 z M 10 14 A 2 2 0 0 0 8 16 A 2 2 0 0 0 10 18 A 2 2 0 0 0 12 16 A 2 2 0 0 0 10 14 z"/></svg>',
+  pdf: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 6 2 C 4.9057453 2 4 2.9057453 4 4 L 4 20 C 4 21.094255 4.9057453 22 6 22 L 18 22 C 19.094255 22 20 21.094255 20 20 L 20 8 L 14 2 L 6 2 z M 6 4 L 13 4 L 13 9 L 18 9 L 18 20 L 6 20 L 6 4 z M 11.832031 9 C 11.282031 9 10.870062 9.3734375 10.789062 10.023438 C 10.709062 10.672438 11.030797 11.807328 11.591797 12.861328 C 11.350797 13.591328 11.110062 14.239672 10.789062 14.888672 C 9.7460625 15.212672 8.7838125 15.698547 8.3828125 16.185547 C 7.7418125 16.914547 8.0626562 17.401531 8.2226562 17.644531 C 8.3836563 17.887531 8.6243125 18 8.9453125 18 C 9.1063125 18 9.2667344 17.967719 9.4277344 17.886719 C 10.069734 17.643719 10.709563 16.670156 11.351562 15.535156 C 11.912563 15.373156 12.474156 15.211859 13.035156 15.130859 C 13.596156 15.778859 14.159625 16.185656 14.640625 16.347656 C 15.201625 16.509656 15.682828 16.265266 15.923828 15.697266 C 16.083828 15.210266 16.002562 14.8065 15.601562 14.5625 C 15.119562 14.2385 14.317469 14.237359 13.355469 14.318359 C 13.034469 13.832359 12.715609 13.346375 12.474609 12.859375 C 12.875609 11.643375 13.035 10.590406 12.875 9.9414062 C 12.714 9.3734063 12.382031 9 11.832031 9 z"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 6 2 C 4.9057453 2 4 2.9057453 4 4 L 4 20 C 4 21.094255 4.9057453 22 6 22 L 18 22 C 19.094255 22 20 21.094255 20 20 L 20 8 L 14 2 L 6 2 z M 6 4 L 13 4 L 13 9 L 18 9 L 18 20 L 6 20 L 6 4 z M 8 12 L 8 14 L 16 14 L 16 12 L 8 12 z M 8 16 L 8 18 L 16 18 L 16 16 L 8 16 z"/></svg>',
+  video: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.477 2 2 6.477 2 12 C 2 17.523 6.477 22 12 22 C 17.523 22 22 17.523 22 12 C 22 6.477 17.523 2 12 2 z M 12 4 C 16.411 4 20 7.589 20 12 C 20 16.411 16.411 20 12 20 C 7.589 20 4 16.411 4 12 C 4 7.589 7.589 4 12 4 z M 10 7.5 L 10 16.5 L 16 12 L 10 7.5 z"/></svg>',
+  palette: SVG(PALETTE_D).replace('width="18" height="18"', 'width="16" height="16"'),
+  share: SVG("M 12 2 L 8 6 L 11 6 L 11 18 L 13 18 L 13 6 L 16 6 L 12 2 z M 6 7 C 4.9069372 7 4 7.9069372 4 9 L 4 20 C 4 21.093063 4.9069372 22 6 22 L 18 22 C 19.093063 22 20 21.093063 20 20 L 20 9 C 20 7.9069372 19.093063 7 18 7 L 17 7 L 17 9 L 18 9 L 18 20 L 6 20 L 6 9 L 7 9 L 7 7 L 6 7 z"),
+  check: SVG("M 20.292969 5.2929688 L 9 16.585938 L 4.7070312 12.292969 L 3.2929688 13.707031 L 9 19.414062 L 21.707031 6.7070312 L 20.292969 5.2929688 z"),
 };
 
 let cfg = null;   // {origin, local, open, lang, session, abs}
@@ -116,8 +118,11 @@ function paint(card, m) {
 
 function hideLabel(card) {
   const T = cardText(cfg.lang()), off = card.classList.contains("off"), b = card.querySelector(".hdcard-hide");
-  card.querySelector(".hdcard-open").textContent = T.open;
+  card.querySelector(".hdcard-file").textContent = T.open_file;
+  card.querySelector(".hdcard-open").innerHTML = ICONS.palette;
+  card.querySelector(".hdcard-open").append(T.hd);
   b.textContent = off ? T.show : T.hide;
+  b.title = off ? T.show_title : T.hide_title;
   b.setAttribute("aria-expanded", off ? "false" : "true");
 }
 
@@ -134,6 +139,9 @@ async function copy(text) {
   return ok;
 }
 
+// the file as a link in the reply opens it: in the hub's Files, in a new tab
+const openPlain = (path) => window.open(cfg.files(path), "_blank", "noopener");
+
 function build(path, kind, who) {
   const T = cardText(cfg.lang());
   const card = el("div", "hdcard" + (isHidden(path) ? " off" : ""));
@@ -142,15 +150,22 @@ function build(path, kind, who) {
   card.dataset.who = who || "";
   card.tabIndex = 0;
   card.setAttribute("role", "link");
-  card.setAttribute("aria-label", T.open);
+  card.setAttribute("aria-label", T.open_file_title);
   const tile = el("div", "hdcard-tile");
   tile.innerHTML = ICONS[kind];
   const text = el("div", "hdcard-text");
   text.append(el("div", "hdcard-title", cardName(path)), el("div", "hdcard-sub", [T.by, who || null].filter(Boolean).join(" · ")));
-  const open = el("button", "hdcard-open", T.open);
+  const head = el("div", "hdcard-head");
+  head.append(tile, text);
+  // "Open" - the file as is, in the hub's Files (the same as a click on the card); "Hub Design" - on the canvas
+  const file = el("button", "hdcard-btn hdcard-file", T.open_file);
+  file.type = "button";
+  file.title = T.open_file_title;
+  file.addEventListener("click", (e) => { e.stopPropagation(); openPlain(path); });
+  const open = el("button", "hdcard-btn hdcard-open", T.hd);
   open.type = "button";
+  open.title = T.open;
   open.addEventListener("click", (e) => { e.stopPropagation(); cfg.open(path); });
-  text.append(open);
   const acts = el("div", "hdcard-acts");
   const share = el("button", "hdcard-btn hdcard-share");
   share.type = "button";
@@ -173,11 +188,11 @@ function build(path, kind, who) {
     setHidden(path, card.classList.contains("off"));
     hideLabel(card);
   });
-  acts.append(share, hide);
-  card.append(tile, text, acts);
+  acts.append(file, open, share, hide);
+  card.append(head, acts);
   hideLabel(card);
-  card.addEventListener("click", (e) => { if (!e.target.closest("button")) cfg.open(path); });
-  card.addEventListener("keydown", (e) => { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); cfg.open(path); } });
+  card.addEventListener("click", (e) => { if (!e.target.closest("button")) openPlain(path); });
+  card.addEventListener("keydown", (e) => { if (e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openPlain(path); } });
   return card;
 }
 

@@ -23,12 +23,12 @@ export const STR = {
     open_by_path: "Open a design by path",
     path_ph: "Open by path: /…/index.html",
     empty_found: "Nothing found.",
-    empty_none: "No designs yet. Pick a kind above or write on the left what you need — a specialist will make a new file.",
+    empty_none: "No designs yet. Pick a kind above or write on the left what you need: a specialist will make a new file.",
     no_specialist: "no specialist {name}",
     crumb_all: "All folders",
     folder_none: "No direction",
     folder_count: "Designs: {n}",
-    empty_folder: "No designs in this folder yet. Write on the left what you need — the designer will save it here.",
+    empty_folder: "No designs in this folder yet. Write on the left what you need: the designer will save it here.",
   },
   ru: {
     preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Дизайн в коде", preset_system: "Дизайн-система", preset_motion: "Анимация",
@@ -36,7 +36,7 @@ export const STR = {
     tab_all: "Все", tab_mine: "Мои", tab_others: "Чужие",
     sort_recent: "Сначала новые", sort_name: "По названию",
     edited: "изменён {ago}",
-    asked: "Попросила хаб, ждём",
+    asked: "Запрос у хаба, ждём",
     install: "Поставить",
     title: "Дизайн",
     search_ph: "Поиск по макетам",
@@ -47,12 +47,12 @@ export const STR = {
     open_by_path: "Открыть макет по пути",
     path_ph: "Открыть по пути: /…/index.html",
     empty_found: "Ничего не нашлось.",
-    empty_none: "Макетов пока нет. Выберите вид выше или напишите слева, что нужно, — специалист сделает новый файл.",
+    empty_none: "Макетов пока нет. Выберите вид выше или напишите слева, что нужно: специалист сделает новый файл.",
     no_specialist: "нет специалиста {name}",
     crumb_all: "Все папки",
     folder_none: "Без направления",
     folder_count: "Макетов: {n}",
-    empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно, — дизайнер сохранит его сюда.",
+    empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно: дизайнер сохранит его сюда.",
   },
 };
 export const t = makeT(STR);
@@ -262,7 +262,7 @@ export function createDashboard(app) {
     node.title = f.path;
     const { shot, frame } = shotOf(f.path, "hdd-shot");
     const tile = el("span", "hdd-tile");
-    tile.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18c1.4 0 2.2-.9 2.2-2 0-.6-.3-1.1-.3-1.7 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3Zm-5 9a1.4 1.4 0 1 1 0-2.8A1.4 1.4 0 0 1 7 12Zm3-4a1.4 1.4 0 1 1 0-2.8A1.4 1.4 0 0 1 10 8Zm5 0a1.4 1.4 0 1 1 0-2.8A1.4 1.4 0 0 1 15 8Z"/></svg>';
+    tile.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.3923906 18.001891 7.0056406 22 12.306641 22 L 13 22 C 14.105 22 15 21.105 15 20 L 15 17 C 15 15.895 15.895 15 17 15 L 20 15 C 21.105 15 22 14.105 22 13 L 22 12.306641 C 22 7.0056406 18.002844 2.3923906 12.714844 2.0253906 C 12.474844 2.0083906 12.236 2 12 2 z M 12 4 C 12.19 4 12.381219 4.0065313 12.574219 4.0195312 C 16.738219 4.3085313 20 7.9486406 20 12.306641 L 20 13 L 17 13 C 14.794 13 13 14.794 13 17 L 13 20 L 12.306641 20 C 7.9486406 20 4.3075312 16.737219 4.0195312 12.574219 C 3.8635312 10.324219 4.6194375 8.1839219 6.1484375 6.5449219 C 7.6794375 4.9039219 9.758 4 12 4 z M 12.5 5 A 1.5 1.5 0 0 0 11 6.5 A 1.5 1.5 0 0 0 12.5 8 A 1.5 1.5 0 0 0 14 6.5 A 1.5 1.5 0 0 0 12.5 5 z M 8.5 6 A 1.5 1.5 0 0 0 7 7.5 A 1.5 1.5 0 0 0 8.5 9 A 1.5 1.5 0 0 0 10 7.5 A 1.5 1.5 0 0 0 8.5 6 z M 16.5 7 A 1.5 1.5 0 0 0 15 8.5 A 1.5 1.5 0 0 0 16.5 10 A 1.5 1.5 0 0 0 18 8.5 A 1.5 1.5 0 0 0 16.5 7 z M 6.5 10 A 1.5 1.5 0 0 0 5 11.5 A 1.5 1.5 0 0 0 6.5 13 A 1.5 1.5 0 0 0 8 11.5 A 1.5 1.5 0 0 0 6.5 10 z M 10 14 A 2 2 0 0 0 8 16 A 2 2 0 0 0 10 18 A 2 2 0 0 0 12 16 A 2 2 0 0 0 10 14 z"/></svg>';
     const name = el("span", "hdd-name", nameOf(f.path));
     const meta = el("span", "hdd-meta");
     const lock = el("span", "hdd-lock");
@@ -281,7 +281,7 @@ export function createDashboard(app) {
   }
   // a folder tile: up to PREVIEWS of the newest designs (2x2) and the name of the direction
   const tiles = new Map();   // folder key -> {node, cells, name, count}
-  const FOLDER = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3 6.5A2.5 2.5 0 0 1 5.5 4h3.6c.6 0 1.2.3 1.6.8l.9 1.2h6.9A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z"/></svg>';
+  const FOLDER = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M 4 4 C 2.9057453 4 2 4.9057453 2 6 L 2 18 C 2 19.094255 2.9057453 20 4 20 L 20 20 C 21.094255 20 22 19.094255 22 18 L 22 8 C 22 6.9057453 21.094255 6 20 6 L 12 6 L 10 4 L 4 4 z M 4 6 L 9.171875 6 L 11.171875 8 L 20 8 L 20 18 L 4 18 L 4 6 z"/></svg>';
   function tile(key) {
     let tl = tiles.get(key);
     if (tl) return tl;

@@ -2,7 +2,7 @@
 .hd{display:flex;height:100%;min-height:0;background:var(--background);color:var(--foreground);font-family:var(--font);font-size:var(--text-sm);line-height:1.45}
 .hd [hidden]{display:none!important}
 /* accent fill: the text on it is always white (in the dark hub theme --primary is light and --primary-foreground is dark), the background is a bit darker so white stays readable */
-.hd,.hdd{--hd-acc:color-mix(in oklab,var(--primary) 72%,#1d2a9c);--hd-on:#fff}
+.hd,.hdd{--hd-acc:color-mix(in oklab,var(--primary) 52%,#1d2a9c);--hd-on:#fff}
 .hd button,.hd select,.hd input,.hd textarea{font:inherit;color:inherit}
 .hd button{cursor:pointer}
 .hd-ic{display:inline-flex;align-items:center;gap:5px;vertical-align:middle}

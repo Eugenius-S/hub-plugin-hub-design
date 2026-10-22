@@ -973,7 +973,7 @@ export function hideToggle(list, path, hidden) {
 
 // card strings: the language is hub.lang (read at use time), any other - English
 export const CARD_STR = {
-  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", design: "design", video: "video", pdf: "PDF", doc: "document", gone: "file unavailable" },
-  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", design: "макет", video: "видео", pdf: "PDF", doc: "документ", gone: "файл недоступен" },
+  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Fold the card into one line", show_title: "Unfold the card", design: "design", video: "video", pdf: "PDF", doc: "document", gone: "file unavailable" },
+  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", doc: "документ", gone: "файл недоступен" },
 };
 export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;
