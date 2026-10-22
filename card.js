@@ -1,4 +1,4 @@
-// Cards of designs, documents and videos in the chat feed. A design (.html), a document (.pdf, .md) or a video (mp4/mov/webm/gif) that a session
+// Cards of designs, documents and videos in the chat feed. A design (.html), a document (.pdf, .svg) or a video (mp4/mov/webm/gif) that a session
 // sent as a file (hub send-file) or named by a full path in its reply becomes a card in the feed: a tile with a preview, a name, "Hub Design · agent",
 // the "Open in Hub Design" button, "share" and "Hide". A click on a card opens the file in Hub Design. Pictures are not cards. The feed is rebuilt from core snapshots, so the card nodes and everything asynchronous
 // (title, shot, video frame - failures too) are kept in the page memory: a repaint takes the ready result, with no flicker and no requests.
@@ -18,7 +18,7 @@ const PALETTE_D = "M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.
 const ICONS = {
   design: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.3923906 18.001891 7.0056406 22 12.306641 22 L 13 22 C 14.105 22 15 21.105 15 20 L 15 17 C 15 15.895 15.895 15 17 15 L 20 15 C 21.105 15 22 14.105 22 13 L 22 12.306641 C 22 7.0056406 18.002844 2.3923906 12.714844 2.0253906 C 12.474844 2.0083906 12.236 2 12 2 z M 12 4 C 12.19 4 12.381219 4.0065313 12.574219 4.0195312 C 16.738219 4.3085313 20 7.9486406 20 12.306641 L 20 13 L 17 13 C 14.794 13 13 14.794 13 17 L 13 20 L 12.306641 20 C 7.9486406 20 4.3075312 16.737219 4.0195312 12.574219 C 3.8635312 10.324219 4.6194375 8.1839219 6.1484375 6.5449219 C 7.6794375 4.9039219 9.758 4 12 4 z M 12.5 5 A 1.5 1.5 0 0 0 11 6.5 A 1.5 1.5 0 0 0 12.5 8 A 1.5 1.5 0 0 0 14 6.5 A 1.5 1.5 0 0 0 12.5 5 z M 8.5 6 A 1.5 1.5 0 0 0 7 7.5 A 1.5 1.5 0 0 0 8.5 9 A 1.5 1.5 0 0 0 10 7.5 A 1.5 1.5 0 0 0 8.5 6 z M 16.5 7 A 1.5 1.5 0 0 0 15 8.5 A 1.5 1.5 0 0 0 16.5 10 A 1.5 1.5 0 0 0 18 8.5 A 1.5 1.5 0 0 0 16.5 7 z M 6.5 10 A 1.5 1.5 0 0 0 5 11.5 A 1.5 1.5 0 0 0 6.5 13 A 1.5 1.5 0 0 0 8 11.5 A 1.5 1.5 0 0 0 6.5 10 z M 10 14 A 2 2 0 0 0 8 16 A 2 2 0 0 0 10 18 A 2 2 0 0 0 12 16 A 2 2 0 0 0 10 14 z"/></svg>',
   pdf: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 6 2 C 4.9057453 2 4 2.9057453 4 4 L 4 20 C 4 21.094255 4.9057453 22 6 22 L 18 22 C 19.094255 22 20 21.094255 20 20 L 20 8 L 14 2 L 6 2 z M 6 4 L 13 4 L 13 9 L 18 9 L 18 20 L 6 20 L 6 4 z M 11.832031 9 C 11.282031 9 10.870062 9.3734375 10.789062 10.023438 C 10.709062 10.672438 11.030797 11.807328 11.591797 12.861328 C 11.350797 13.591328 11.110062 14.239672 10.789062 14.888672 C 9.7460625 15.212672 8.7838125 15.698547 8.3828125 16.185547 C 7.7418125 16.914547 8.0626562 17.401531 8.2226562 17.644531 C 8.3836563 17.887531 8.6243125 18 8.9453125 18 C 9.1063125 18 9.2667344 17.967719 9.4277344 17.886719 C 10.069734 17.643719 10.709563 16.670156 11.351562 15.535156 C 11.912563 15.373156 12.474156 15.211859 13.035156 15.130859 C 13.596156 15.778859 14.159625 16.185656 14.640625 16.347656 C 15.201625 16.509656 15.682828 16.265266 15.923828 15.697266 C 16.083828 15.210266 16.002562 14.8065 15.601562 14.5625 C 15.119562 14.2385 14.317469 14.237359 13.355469 14.318359 C 13.034469 13.832359 12.715609 13.346375 12.474609 12.859375 C 12.875609 11.643375 13.035 10.590406 12.875 9.9414062 C 12.714 9.3734063 12.382031 9 11.832031 9 z"/></svg>',
-  doc: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 6 2 C 4.9057453 2 4 2.9057453 4 4 L 4 20 C 4 21.094255 4.9057453 22 6 22 L 18 22 C 19.094255 22 20 21.094255 20 20 L 20 8 L 14 2 L 6 2 z M 6 4 L 13 4 L 13 9 L 18 9 L 18 20 L 6 20 L 6 4 z M 8 12 L 8 14 L 16 14 L 16 12 L 8 12 z M 8 16 L 8 18 L 16 18 L 16 16 L 8 16 z"/></svg>',
+  svg: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 5 3 C 3.9 3 3 3.9 3 5 L 3 19 C 3 20.1 3.9 21 5 21 L 19 21 C 20.1 21 21 20.1 21 19 L 21 5 C 21 3.9 20.1 3 19 3 L 5 3 z M 5 5 L 19 5 L 19 19 L 5 19 L 5 5 z M 8.5 7.5 A 1.5 1.5 0 0 0 7 9 A 1.5 1.5 0 0 0 8.5 10.5 A 1.5 1.5 0 0 0 10 9 A 1.5 1.5 0 0 0 8.5 7.5 z M 14 11 L 10.5 15.5 L 8.5 13.5 L 6.5 17 L 17.5 17 L 14 11 z"/></svg>',
   video: '<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.477 2 2 6.477 2 12 C 2 17.523 6.477 22 12 22 C 17.523 22 22 17.523 22 12 C 22 6.477 17.523 2 12 2 z M 12 4 C 16.411 4 20 7.589 20 12 C 20 16.411 16.411 20 12 20 C 7.589 20 4 16.411 4 12 C 4 7.589 7.589 4 12 4 z M 10 7.5 L 10 16.5 L 16 12 L 10 7.5 z"/></svg>',
   palette: SVG(PALETTE_D).replace('width="18" height="18"', 'width="16" height="16"'),
   share: SVG("M 12 2 L 8 6 L 11 6 L 11 18 L 13 18 L 13 6 L 16 6 L 12 2 z M 6 7 C 4.9069372 7 4 7.9069372 4 9 L 4 20 C 4 21.093063 4.9069372 22 6 22 L 18 22 C 19.093063 22 20 21.093063 20 20 L 20 9 C 20 7.9069372 19.093063 7 18 7 L 17 7 L 17 9 L 18 9 L 18 20 L 6 20 L 6 9 L 7 9 L 7 7 L 6 7 z"),
@@ -84,12 +84,12 @@ function showPicture(card, src) {
   img.src = src;
 }
 
-// the preview - when the card comes into view: a design, a PDF and a document are a shot (the plugin process Chrome, cached on disk), a video is a frame, a gif is itself
+// the preview - when the card comes into view: a design, a PDF and an SVG are a shot (the plugin process Chrome, cached on disk), a video is a frame, a gif is itself
 function preview(card) {
   const path = card.dataset.hdPath, kind = card.dataset.kind, m = meta.get(path);
   if (!m || m.state !== "ok" || card.dataset.pv === String(m.mtime)) return;
   card.dataset.pv = String(m.mtime);
-  if (kind === "design" || kind === "pdf" || kind === "doc") {
+  if (kind === "design" || kind === "pdf" || kind === "svg") {
     const src = `${cfg.origin()}/__canvas/thumb?path=${q(path)}&m=${m.mtime}`;
     const bad = thumbs.get(src);
     if (bad && bad !== "ok" && Date.now() - bad < FAIL_TTL) return;

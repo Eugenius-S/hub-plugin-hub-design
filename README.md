@@ -42,11 +42,11 @@ The "Download PDF" button in the frame header prints the design at screen size (
 
 ### Cards in the chat feed
 
-When a session sends an `.html` design, a `.pdf`, a Markdown document (`.md`) or a video (mp4, mov, webm, gif) as a file (`hub send-file`) or names its full path in a reply, the feed of any session shows a card instead of a bare link: a tile (a shot of the design, the first page of a PDF, a rendered document, a video frame or an icon), a name (the design `<title>`, the first heading of a document or the file name), "Hub Design · agent", and a row of buttons under it: **Open** (the file as is, in the hub's Files), **Hub Design** (on the canvas), "Copy path" and "Hide". Pictures get no card. A click or Enter on the card opens the file in Files. All icons are outline icons that follow the hub theme. Hidden cards are remembered by the browser. Shots are made by the plugin process with its own Chrome and cached on disk; only on the computer the hub runs on. The first page of a PDF is rasterized by the system (macOS `sips`); elsewhere a PDF card keeps its icon.
+When a session sends an `.html` design, a `.pdf`, an `.svg` or a video (mp4, mov, webm, gif) as a file (`hub send-file`) or names its full path in a reply, the feed of any session shows a card instead of a bare link: a tile (a shot of the design, the first page of a PDF, an SVG, a video frame or an icon), a name (the design `<title>`, or the file name), "Hub Design · agent", and a row of buttons under it: **Open** (the file as is, in the hub's Files), **Hub Design** (on the canvas), "Copy path" and "Hide". Other pictures and Markdown files get no card (cards and "Open in Hub Design" are only for `.html`/`.htm`, `.pdf` and `.svg`). A click or Enter on the card opens the file in Files. All icons are outline icons that follow the hub theme. Hidden cards are remembered by the browser. Shots are made by the plugin process with its own Chrome and cached on disk; only on the computer the hub runs on. The first page of a PDF is rasterized by the system (macOS `sips`); elsewhere a PDF card keeps its icon.
 
 ### Documents on the canvas
 
-A PDF opens in the browser's built-in viewer and a Markdown file is rendered to a page (headings, lists, tables, code, quotes; raw HTML in the source is shown as text, so a document cannot run anything), so pins and comments work on it. The frame's label has **Make a design based on this**: the designer gets a request to make a layout based on the document's path (in the hub language). Documents are read-only on the canvas: hand edits, tweaks and "Download PDF" are for designs.
+A PDF opens in the browser's built-in viewer and an SVG is shown as a picture (in an `<img>`, so its scripts do not run). The frame's label has **Make a design based on this**: the designer gets a request to make a layout based on the document's path (in the hub language). Documents are read-only on the canvas: hand edits, tweaks and "Download PDF" are for designs.
 
 ### Who gets the edits
 
@@ -62,7 +62,7 @@ The author of a design is the session that wrote the file (Write/Edit), then the
 
 ### Designs in Telegram
 
-Off by default. A design (HTML, PDF, Markdown) that the designer or the animator (or their executors) sends with `hub send-file` comes to Telegram as a post: a shot of its first screen, its name and author, and ❤️ / 👎 buttons. A press goes back to the author as a message; after 👎 a "Why?" with reason buttons follows (or reply in your own words). A reply to the post goes to the author as an edit. The design does not come a second time as a document.
+Off by default. A design (HTML, PDF, SVG) that the designer or the animator (or their executors) sends with `hub send-file` comes to Telegram as a post: a shot of its first screen, its name and author, and ❤️ / 👎 buttons. A press goes back to the author as a message; after 👎 a "Why?" with reason buttons follows (or reply in your own words). A reply to the post goes to the author as an edit. The design does not come a second time as a document.
 
 It needs a hub whose Telegram bot knows the `telegram.post` fact and the `telegram.design_posts` setting; without them nothing is sent. Turn it on in hub.json: `"telegram": {"design_posts": true}`; your own lists: `{"sessions": ["designer", "animator"], "types": [".html", ".pdf", ".md"]}`, `"sessions": "*"` is any session.
 

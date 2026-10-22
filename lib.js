@@ -754,7 +754,7 @@ export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
 // one design name everywhere: index.html is named by its folder - "demo", not "index"
 export const nameOf = (path) => {
   const parts = String(path).split(/[\\/]/).filter(Boolean);
-  const name = frameTitle(path).replace(/\.(html?|md|markdown|pdf)$/i, "");
+  const name = frameTitle(path).replace(/\.(html?|pdf|svg)$/i, "");
   return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
 };
 
@@ -848,7 +848,7 @@ export function ago(ts, now = Date.now() / 1000) {
 
 // the owner's words before the text when there is no design yet: the designer makes a new one instead of editing an open one
 export const newDesignPrefix = () => tr("new_design");
-// "Design from this": the message to the designer for a document (md, pdf) taken as the basis
+// "Design from this": the message to the designer for a document (pdf, svg) taken as the basis
 export const basedOnText = (path) => tr("based_on", { f: path });
 
 // --- designs by session timelines: by events, without a timer ------------------------------------------------------------
@@ -944,10 +944,11 @@ export function scrollsRight({ scrollLeft, clientWidth, scrollWidth }) {
 
 // --- cards in the chat feed: a design or a video the session sent as a file or named by a full path -----------------------
 export const CARD_MAX = 4;   // cards in one reply; the other paths stay links
-// design - HTML; pdf and doc (markdown) - documents: opened on the canvas and taken as the basis of a new design; video - in a player. Pictures are not cards
-export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.pdf$/i.test(path || "") ? "pdf" : /\.(md|markdown)$/i.test(path || "") ? "doc"
+// design - HTML; pdf and svg - documents: opened on the canvas and taken as the basis of a new design; video - in a player. Other pictures are not cards.
+// The one list of file types a card offers: .html/.htm, .pdf, .svg (Markdown is not offered)
+export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.pdf$/i.test(path || "") ? "pdf" : /\.svg$/i.test(path || "") ? "svg"
   : /\.(mp4|mov|m4v|webm|gif)$/i.test(path || "") ? "video" : null);
-export const isDocument = (path) => ["pdf", "doc"].includes(cardKind(path));
+export const isDocument = (path) => ["pdf", "svg"].includes(cardKind(path));
 export const isAbsPath = (p) => /^(~[\\/]|\/|[A-Za-z]:[\\/])/.test(p || "");
 
 // a human name: "hero-v2_final.html" -> "Hero v2 final"; a design with a <title> is named by it, index.html - by its folder
@@ -973,7 +974,7 @@ export function hideToggle(list, path, hidden) {
 
 // card strings: the language is hub.lang (read at use time), any other - English
 export const CARD_STR = {
-  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Fold the card into one line", show_title: "Unfold the card", design: "design", video: "video", pdf: "PDF", doc: "document", gone: "file unavailable" },
-  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", doc: "документ", gone: "файл недоступен" },
+  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Fold the card into one line", show_title: "Unfold the card", design: "design", video: "video", pdf: "PDF", svg: "SVG", gone: "file unavailable" },
+  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", svg: "SVG", gone: "файл недоступен" },
 };
 export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;
