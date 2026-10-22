@@ -7,6 +7,8 @@ import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, cha
   goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
+import { styleLine } from "./lib.js";
+import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
@@ -133,7 +135,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false,
+  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
 };
 
 globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
@@ -148,6 +150,7 @@ export default function register(h) {
   hub.addStyle("style.css");
   hub.addStyle("dashboard.css");
   hub.addStyle("card.css");
+  hub.addStyle("styles.css");
   addEventListener("message", onFrame);
   // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
@@ -271,6 +274,7 @@ function load() {
   P.writers = b.writers || {};
   P.round = b.round || 1;
   try { P.asked = JSON.parse(localStorage.getItem(STORE + "asked") || "{}") || {}; } catch { P.asked = {}; }
+  try { P.style = chosen(JSON.parse(localStorage.getItem(STORE + "style") || "null")); } catch { P.style = null; }
   if (b.cv) P.cv = { x: 56, y: 84, k: 1, auto: true, ...b.cv };
   if (b.shapes) P.shapes = { ...P.shapes, ...b.shapes };
   P.seq = [...P.pins, ...P.drawings, ...P.notes].reduce((m, p) => Math.max(m, Number(String(p.id).slice(1)) || 0), 0);
@@ -302,8 +306,16 @@ const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h:
 // the selected element goes into the chat message and together with the batch; a lone selection without edits does not start auto-send
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
-  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), ...extra }));
+  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), style: "", ...extra }));
 const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
+// the style reference chosen in the picker goes with the next message to the designer (once): the line "Style reference: <path>", see message() in lib.js
+const styleNow = () => (P.style ? styleLine(P.style.path) : "");
+const withStyle = (b) => { const l = styleNow(); return l && !(b || "").includes(l) ? (b ? b + "\n\n" + l : l) : b; };
+function attachStyle(x) {
+  P.style = chosen(x);
+  try { localStorage.setItem(STORE + "style", JSON.stringify(P.style)); } catch { /* the choice is just not kept */ }
+  paint();
+}
 
 // the recipient is not remembered between openings: the open design drives it (wanted); a handoff from a chat overrides
 function fromAddress() {
@@ -362,7 +374,7 @@ async function ping() {
     P.note = tr("no_proc", { origin: origin(), id: ID });
   }
   paint();
-  if (P.alive) verifyAll();
+  if (P.alive) { verifyAll(); if (ui) ui.st.probe(); }
   if (P.alive && was === false) reloadAll();
 }
 
@@ -915,9 +927,10 @@ async function basedOn(path) {
   if (!to) { P.note = tr("pick_to"); return paint(); }
   P.busy = true;
   paint();
-  const r = await hub.post("/api/send", { session: to, text: withSave(basedOnText(path)) });
+  const r = await hub.post("/api/send", { session: to, text: withSave(withStyle(basedOnText(path))) });
   P.busy = false;
   P.note = r.error ? tr("not_sent", { err: r.error }) : "";
+  if (!r.error && P.style) return attachStyle(null);
   paint();
 }
 // the start screen: a chat with the specialist of the chosen kind (preset) or chosen by hand, otherwise with the designer
@@ -1115,8 +1128,9 @@ function build(root) {
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: tr("placeholder"),
-    prefix: (text) => { if (home()) return withSave(newDesignPrefix() + text); const b = batchText() || selText(); return b ? b + "\n\n" + text : text; },
+    prefix: (text) => { if (home()) return withStyle(withSave(newDesignPrefix() + text)); const b = batchText() || selText(); return withStyle(b ? b + "\n\n" + text : text); },   // the style line is the last line of the message
     onSent: () => {
+      if (P.style) attachStyle(null);
       if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // on the start screen they wrote — this is a task for a new design
       else if (drafts() > 0) markSent();
     },
@@ -1124,6 +1138,7 @@ function build(root) {
   const strip = el("div", "strip-host");
   strip.hidden = true;
   const foot = el("div", "hd-foot");
+  const st = createStyles({ hub, base: origin, get: () => P.style, set: (x) => attachStyle(x), onChange: () => paint() });
   const who = el("select", "hd-who");
   who.title = tr("who_title");
   who.addEventListener("change", () => {
@@ -1132,7 +1147,9 @@ function build(root) {
     paint();
   });
   const note = el("div", "hd-note");
-  foot.append(icon("gear"), who);
+  const styleBtn = button("hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => st.open());
+  styleBtn.hidden = true;
+  foot.append(icon("gear"), who, styleBtn);
   card.append(need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card);
 
@@ -1148,11 +1165,11 @@ function build(root) {
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });
   const exitB = button("hd-exit", tr("exit"), tr("exit_title", { name: P.session }), () => app.exit());
-  right.append(cv.node, props, dash.node, exitB);
+  right.append(cv.node, props, dash.node, st.node, exitB);
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, chips, strip, input, who, note, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
+  return { root, wrap, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, chips, strip, input, who, note, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
 }
 
 function render(root, snap) {
@@ -1172,6 +1189,9 @@ function relang() {
   ui.tabPlus.replaceChildren(icon("file", tr("add_design")));
   ui.tabPlus.title = tr("add_html");
   ui.who.title = tr("who_title");
+  ui.styleBtn.title = ts("btn_title");
+  ui.styleBtn.querySelector(".hd-style-t").textContent = ts("btn");
+  ui.st.repaint();
   ui.input.set({ placeholder: tr("placeholder") });
 }
 
@@ -1590,7 +1610,9 @@ function paintCard() {
     ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: tr("note_chip", { text: d.text }), ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
     ...draftErrs().map((e) => ({ text: tr("design_errors", { n: normErrors(e.items).length }), ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
+    ...(P.style ? [{ text: ts("chip", { name: P.style.name }), ic: "palette", del: () => { P.style = null; try { localStorage.setItem(STORE + "style", "null"); } catch { /* ignore */ } } }] : []),
   ];
+  ui.styleBtn.hidden = !ui.st.avail();
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
   ui.last.card = sig;

@@ -750,3 +750,130 @@ class AutoSend(unittest.TestCase):
         for word in ("dropEdit.change", "dropEdit.tweak", "dropEdit.drawing"):
             self.assertIn(word, comments, word)   # the × of a hand edit lives in the Comments tab
 
+
+
+class StyleLibrary(unittest.TestCase):
+    """/__canvas/styles, /style, /style-preview, /style-md: only what the library index lists, only inside its folder; no folder - the feature is off."""
+    ORIGIN = {"Origin": f"http://localhost:{server.WEB_PORT}"}
+
+    @classmethod
+    def setUpClass(cls):
+        from test_styles import make_library
+        cls.srv = server.serve(0)
+        cls.port = cls.srv.server_address[1]
+        server.PORT = cls.port
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.root = os.path.join(TMP, "styles")
+        os.makedirs(cls.root)
+        make_library(cls.root)
+        with open(os.path.join(TMP, "outside", "secret.md"), "w") as f:
+            f.write("# secret")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        patch = unittest.mock.patch.dict(os.environ, {"HUB_DESIGN_STYLES": self.root})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def get(self, path, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", path, headers={"Host": f"localhost:{self.port}", **(headers or {})})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r, body
+
+    def ask(self, path, headers=None):
+        r, body = self.get(path, self.ORIGIN if headers is None else headers)
+        return r, (json.loads(body) if r.getheader("Content-Type", "").startswith("application/json") else body)
+
+    def test_list_search_and_categories(self):
+        r, d = self.ask("/__canvas/styles?q=&cat=&offset=0&limit=2")
+        self.assertEqual((r.status, d["ok"], d["count"], d["total"], [i["name"] for i in d["items"]]), (200, True, 3, 3, ["Marlin", "Night Owl"]))
+        self.assertEqual([c["name"] for c in d["cats"]], ["Editorial", "Dark"])
+        _, d = self.ask("/__canvas/styles?q=neon")
+        self.assertEqual([i["id"] for i in d["items"]], ["b2"])
+        _, d = self.ask("/__canvas/styles?limit=0")   # the probe of the page: is there a library
+        self.assertEqual((d["ok"], d["items"], d["count"]), (True, [], 3))
+        _, d = self.ask("/__canvas/styles?offset=junk&limit=junk")
+        self.assertEqual(len(d["items"]), 3)
+        for q in ("offset=inf&limit=1e400", "offset=nan", "offset=-5"):   # odd numbers fall back, the connection does not drop
+            r, d = self.ask("/__canvas/styles?" + q)
+            self.assertEqual((r.status, d["ok"]), (200, True), q)
+
+    def test_a_huge_preview_is_not_served(self):
+        import styles
+        big = os.path.join(self.root, "previews", "marlin.png")
+        with open(big, "rb") as f:
+            keep = f.read()
+        self.addCleanup(lambda: open(big, "wb").write(keep))
+        with open(big, "wb") as f:
+            f.write(b"\0" * (styles.PREVIEW_MAX + 1))
+        r, _ = self.get("/__canvas/style-preview?id=a1")
+        self.assertEqual(r.status, 404)
+
+    def test_the_data_answers_only_to_the_hub_page(self):
+        r, _ = self.ask("/__canvas/styles", headers={})
+        self.assertEqual(r.status, 403)
+        r, _ = self.ask("/__canvas/styles", headers={"Origin": "https://evil.example"})
+        self.assertEqual(r.status, 403)
+        r, _ = self.ask("/__canvas/style?id=a1", headers={"Origin": "https://evil.example"})
+        self.assertEqual(r.status, 403)
+        r, _ = self.ask("/__canvas/styles", headers={**self.ORIGIN, "Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)
+        r, _ = self.get("/__canvas/style-preview?id=a1", {"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)   # a picture embedded by a foreign site is refused as well
+        r, _ = self.get("/__canvas/style-md?id=a1", {"Host": "evil.example"})
+        self.assertEqual(r.status, 403)
+
+    def test_card_has_the_path_to_hand_to_the_designer(self):
+        r, d = self.ask("/__canvas/style?id=a1")
+        self.assertEqual(r.status, 200)
+        self.assertEqual(d["path"], os.path.join(os.path.realpath(self.root), "marlin__a1.md"))
+        self.assertEqual(d["fonts"], ["Space Grotesk", "Inter"])
+        self.assertEqual(d["palette"][0]["hex"], "#0b3c5d")
+        r, _ = self.ask("/__canvas/style?id=nope")
+        self.assertEqual(r.status, 404)
+
+    def test_preview_and_file_come_from_the_index_only(self):
+        r, body = self.get("/__canvas/style-preview?id=a1")
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "image/png"))
+        self.assertTrue(body.startswith(b"\x89PNG"))
+        self.assertIn("max-age", r.getheader("Cache-Control"))
+        r, _ = self.get("/__canvas/style-preview?id=b2")   # listed, but without a picture
+        self.assertEqual(r.status, 404)
+        r, body = self.get("/__canvas/style-md?id=a1")
+        self.assertEqual((r.status, r.getheader("Content-Type")), (200, "text/plain; charset=utf-8"))
+        self.assertIn(b"Marlin", body)
+        for bad in ("../index", "..%2Findex", "index.json", "marlin__a1.md", "previews/marlin.png", os.path.join(TMP, "outside", "secret.md"), ""):
+            for route in ("style-md", "style-preview", "style"):
+                r, body = self.get(f"/__canvas/{route}?id={bad}", self.ORIGIN)
+                self.assertEqual(r.status, 404, (route, bad))
+                self.assertNotIn(b"secret", body)
+
+    def test_no_folder_no_feature(self):
+        with unittest.mock.patch.dict(os.environ, {"HUB_DESIGN_STYLES": os.path.join(TMP, "none")}):
+            r, d = self.ask("/__canvas/styles")
+            self.assertEqual((r.status, d), (200, {"ok": False}))
+            for route in ("style?id=a1", "style-preview?id=a1", "style-md?id=a1"):
+                r, _ = self.get("/__canvas/" + route, self.ORIGIN)
+                self.assertEqual(r.status, 404, route)
+
+    def test_the_folder_comes_from_hub_json_when_the_environment_is_not_set(self):
+        cfg = os.environ["HUB_CONFIG"]
+        with open(cfg, encoding="utf-8") as f:
+            old = f.read()
+        try:
+            with open(cfg, "w", encoding="utf-8") as f:
+                json.dump({"extensions": {"someone:hub-design": {"styles_dir": self.root}}}, f)
+            with unittest.mock.patch.dict(os.environ):
+                del os.environ["HUB_DESIGN_STYLES"]
+                _, d = self.ask("/__canvas/styles?limit=0")
+            self.assertEqual((d["ok"], d["count"]), (True, 3))
+        finally:
+            with open(cfg, "w", encoding="utf-8") as f:
+                f.write(old)

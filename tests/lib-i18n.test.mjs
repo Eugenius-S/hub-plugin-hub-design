@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { NEEDED, PROPS, STR, ago, bannerText, chatLines, describeChange, describeDrawing, describeErrors, describeTweak, goneText, gridTitle, installText,
-  message, newDesignPrefix, selectedLine } from "../lib.js";
+  message, newDesignPrefix, selectedLine, styleLine } from "../lib.js";
 import { currentLang, setLangSource } from "../i18n.js";
 
 let lang = "en";
@@ -83,4 +83,23 @@ test("getters follow the language: panel groups and specialists are read at use 
   assert.deepEqual(as("ru", () => PROPS.map((g) => g.title)), ["Текст", "Размер", "Раскладка", "Сетка", "Блок"]);
   assert.deepEqual(NEEDED.map((n) => n.title), ["designer", "animator"]);
   assert.deepEqual(as("ru", () => NEEDED.map((n) => n.title)), ["дизайнер", "аниматор"]);
+});
+
+test("the style reference line is the same in every language: the designer's skill looks for it", () => {
+  assert.equal(styleLine("/lib/marlin__a1.md"), "Style reference: /lib/marlin__a1.md");
+  assert.equal(as("ru", () => styleLine("/lib/marlin__a1.md")), "Style reference: /lib/marlin__a1.md");
+  assert.equal(styleLine(""), "");
+  assert.equal(styleLine(null), "");
+});
+
+test("a style goes at the end of the batch, before the auto-send mark; no batch - no message; none chosen - the message is as before", () => {
+  const base = { path: "/d/a/index.html", round: 2, view: { w: 1280, h: 800 }, comments: [{ sel: "p", label: "P", text: "bigger", x: 1, y: 2, w: 3, h: 4, ex: 0, ey: 0 }], changes: [] };
+  const plain = message(base);
+  const withStyle = message({ ...base, style: "/lib/marlin__a1.md" });
+  assert.equal(withStyle, plain + "\n\nStyle reference: /lib/marlin__a1.md");
+  assert.equal(as("ru", () => message({ ...base, style: "/lib/marlin__a1.md" })).split("\n").pop(), "Style reference: /lib/marlin__a1.md");
+  assert.equal(message({ ...base, style: "" }), plain);
+  assert.equal(message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [], changes: [], style: "/lib/x.md" }), "");
+  const auto = message({ ...base, style: "/lib/marlin__a1.md", auto: true }).split("\n\n");
+  assert.equal(auto[auto.length - 2], "Style reference: /lib/marlin__a1.md");
 });

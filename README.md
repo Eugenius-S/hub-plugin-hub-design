@@ -66,6 +66,14 @@ Off by default. A design (HTML, PDF, SVG) that the designer or the animator (or 
 
 It needs a hub whose Telegram bot knows the `telegram.post` and `telegram.unpost` facts and the `telegram.design_posts` setting; without them nothing is sent. Turn it on in hub.json: `"telegram": {"design_posts": true}`; your own lists: `{"sessions": ["designer", "animator"], "types": [".html", ".pdf", ".svg"]}`, `"sessions": "*"` is any session.
 
+### Style reference library
+
+Optional, and hidden until you point it at a folder. A style reference is a short Markdown file (the look of a site or product: colors, type, spacing) with a preview picture. When the library exists, a "Style" button appears in the design input. It opens a searchable grid of previews (by name, category and tags, 24 per page, pictures load lazily) and a card with the description and the palette read from the file. "Use" attaches the style to the next message to the designer as a chip above the input; the message then ends with a line `Style reference: <full path to the .md file>`, and the attachment is dropped once the message is sent. Hand-edit auto-sends never carry a style.
+
+The library is a folder with `index.json` next to the `.md` files and previews. `index.json` is either an object `{id: entry}` or a list of entries; an entry is `{"id": "…", "name": "…", "file": "style.md", "category": "…", "tags": ["…"], "preview": "previews/style.png", "site": "https://…", "description": "…"}`; only `name` and `file` are required. The folder is `extensions.<account>:hub-design.styles_dir` in hub.json (or the `HUB_DESIGN_STYLES` environment variable of the plugin process); by default `<hub state>/style-library`. No folder, no button.
+
+The plugin process serves a file only by the id from the index, only from inside that folder (a path with `..`, a drive, a backslash or a link leading out is refused), previews only as png, jpg, webp or avif; the JSON routes answer only to the hub page's origin.
+
 ### Specialists
 
 Hub Design installs the designer specialist from the specialists catalog (a button on the start screen). The specialists the plugin needs are designer (required) and animator (for the "Animation" preset, desirable); the list is `NEEDED` in `lib.js`. If there is no designer in the hub, the start screen shows a banner "Hub Design needs the designer" with an "Install" button: it sends the hub, in your name, "Install the specialist for Hub Design: specialists install designer" (the hub installs it); after the click it reads "Asked the hub, waiting", and the banner disappears by itself when the session appears. If there is no animator, a quiet line "no specialist animator" appears by the "Animation" preset. If you write in the chat of a specialist who is not in the hub, the same banner shows above the input.
