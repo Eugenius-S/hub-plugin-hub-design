@@ -21,6 +21,10 @@ os.environ["HUB_DESIGN_PORT"] = "0"
 sys.path.insert(0, HERE)
 import server  # noqa: E402
 
+def furl(path):
+    return "/f/" + path.replace("\\", "/").lstrip("/")   # /f/Users/me/a.html, on Windows /f/C:/a.html
+
+
 SITE = os.path.join(TMP, "site")
 OUT = os.path.join(TMP, "outside")
 
@@ -40,6 +44,8 @@ def setUpModule():
         f.write("KEY=1")
     with open(os.path.join(SITE, "notes.md"), "w", encoding="utf-8") as f:
         f.write("# Launch notes\n\nA **bold** line <script>alert(1)</script> and [link](javascript:x)\n\n- one\n- two\n")
+    with open(os.path.join(SITE, "logo.svg"), "w", encoding="utf-8") as f:
+        f.write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>alert(1)</script><circle cx="5" cy="5" r="4"/></svg>')
     with open(os.path.join(SITE, "doc.pdf"), "wb") as f:
         f.write(b"%PDF-1.4\n%%EOF\n")
     with open(os.path.join(OUT, "x.html"), "w") as f:
@@ -77,7 +83,7 @@ class Server(unittest.TestCase):
         return r, body
 
     def url(self, path):
-        return "/f" + path
+        return furl(path)
 
     def test_html_gets_agent_before_body_end(self):
         r, body = self.get(self.url(os.path.join(os.path.realpath(SITE), "index.html")))
@@ -100,22 +106,24 @@ class Server(unittest.TestCase):
         self.assertIn("index.html", r.getheader("Content-Disposition"))
         self.assertNotIn(b"__canvas", body)
 
-    def test_markdown_is_a_rendered_page_pdf_is_the_viewer(self):
-        md = self.url(os.path.join(os.path.realpath(SITE), "notes.md"))
-        r, body = self.get(md)
-        self.assertEqual(r.status, 200)
+    def test_pdf_is_the_viewer_svg_is_a_picture_markdown_is_no_design(self):
+        from urllib.parse import urlencode
+        svg = self.url(os.path.join(os.path.realpath(SITE), "logo.svg"))
+        r, body = self.get(svg + "?player=1")   # on the canvas: a picture in <img> (the scripts of the svg do not run), not the svg itself
         self.assertIn("text/html", r.getheader("Content-Type"))
-        text = body.decode()
-        self.assertIn("<h1>Launch notes</h1>", text)
-        self.assertIn("<strong>bold</strong>", text)
-        self.assertNotIn("<script>alert", text)   # raw HTML of the source is text
-        self.assertNotIn("javascript:", text)
-        self.assertIn("/__canvas/agent.js", text)   # on the canvas: with pins
-        r, body = self.get(md + "?raw=1")
+        self.assertIn(b"<img", body)
+        r, body = self.get(svg)
+        self.assertEqual(r.getheader("Content-Type"), "image/svg+xml")
+        self.assertTrue(body.startswith(b"<svg"))
+        md = os.path.join(os.path.realpath(SITE), "notes.md")
+        r, body = self.get(self.url(md))   # Markdown is no design: not served at all (neither a page nor raw text)
+        self.assertEqual(r.status, 404)
         self.assertNotIn(b"__canvas", body)
-        r, body = self.get(md + "?dl=1")   # the download is the source
-        self.assertIn("attachment", r.getheader("Content-Disposition"))
-        self.assertTrue(body.startswith(b"# Launch notes"))
+        with unittest.mock.patch.object(server, "chrome_path", return_value=None):
+            r, _ = self.get("/__canvas/thumb?" + urlencode({"path": md}))
+            self.assertEqual(r.status, 404)   # Markdown is no card: no shot
+            r, _ = self.get("/__canvas/thumb?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "logo.svg")}))
+            self.assertEqual(r.status, 501)   # an svg is shot (here - no Chrome)
         pdf = self.url(os.path.join(os.path.realpath(SITE), "doc.pdf"))
         r, body = self.get(pdf)
         self.assertEqual(r.getheader("Content-Type"), "application/pdf")
@@ -283,8 +291,8 @@ class Server(unittest.TestCase):
         self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))
         r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(OUT, "x.html")}))
         self.assertEqual(json.loads(body)["state"], "denied")
-        r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "notes.md")}))   # a document: its first heading
-        self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", "Launch notes"))
+        r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "notes.md")}))   # Markdown is no design: not served, no title
+        self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("denied", ""))
         r, body = self.get("/__canvas/card?" + urlencode({"path": os.path.join(os.path.realpath(SITE), "doc.pdf")}))
         self.assertEqual((json.loads(body)["state"], json.loads(body)["title"]), ("ok", ""))
 
@@ -411,7 +419,7 @@ class Pdf(unittest.TestCase):
         server.PORT = cls.port
         server._roots["at"] = 0
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
-        cls.page = "/f" + os.path.join(os.path.realpath(SITE), "index.html")
+        cls.page = furl(os.path.join(os.path.realpath(SITE), "index.html"))
         cls.fake = os.path.join(TMP, "fake-chrome")
         with open(cls.fake, "w") as f:
             f.write(FAKE % sys.executable)
@@ -483,9 +491,9 @@ class Pdf(unittest.TestCase):
             os.kill(pid, 0)
 
     def test_outside_files_and_non_html_are_not_printed(self):
-        r, _ = self.get("/f" + os.path.join(os.path.realpath(OUT), "x.html") + "?pdf=1")
+        r, _ = self.get(furl(os.path.join(os.path.realpath(OUT), "x.html")) + "?pdf=1")
         self.assertEqual(r.status, 404)
-        r, _ = self.get("/f" + os.path.join(os.path.realpath(SITE), "assets", "clip.mp4") + "?pdf=1")
+        r, _ = self.get(furl(os.path.join(os.path.realpath(SITE), "assets", "clip.mp4")) + "?pdf=1")
         self.assertNotEqual(r.getheader("Content-Type"), "application/pdf")
 
     def test_print_version_is_raw_document_with_page_size_and_no_agent(self):
@@ -500,7 +508,7 @@ class Pdf(unittest.TestCase):
         path = os.path.join(os.path.realpath(SITE), "poster.html")
         with open(path, "w", encoding="utf-8") as f:
             f.write('<meta name="hub-frame" content="1080x1350"><style>@page{size:1080px 1350px;margin:0}body{margin:0}</style><p>x</p>')
-        r, body = self.get("/f" + path + "?pdf=1&w=1440&h=900")
+        r, body = self.get(furl(path) + "?pdf=1&w=1440&h=900")
         self.assertEqual(r.status, 200)
         args = open(self.log).read().split("\n")
         self.assertIn("--window-size=1080,1350", args)
@@ -535,7 +543,7 @@ class Pdf(unittest.TestCase):
     def pdf_of(self, name, html, query="w=1000&h=600"):
         with open(os.path.join(SITE, name), "w", encoding="utf-8") as f:
             f.write(html)
-        r, body = self.get("/f" + os.path.join(os.path.realpath(SITE), name) + "?pdf=1&" + query, timeout=60)
+        r, body = self.get(furl(os.path.join(os.path.realpath(SITE), name)) + "?pdf=1&" + query, timeout=60)
         self.assertEqual(r.status, 200, body[:200])
         return body
 

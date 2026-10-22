@@ -20,7 +20,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import handwrite
-import mdrender
 import tgpost
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,11 +32,11 @@ TYPES = {
     ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif", ".ico": "image/x-icon",
     ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf", ".mp4": "video/mp4",
     ".webm": "video/webm", ".mov": "video/quicktime", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".txt": "text/plain; charset=utf-8",
-    ".lottie": "application/zip", ".pdf": "application/pdf", ".md": "text/markdown; charset=utf-8", ".markdown": "text/markdown; charset=utf-8",
+    ".lottie": "application/zip", ".pdf": "application/pdf",
 }
 HTML = (".html", ".htm")
-MD = (".md", ".markdown")   # shown as a rendered page: a document is a design too
-PAGES = HTML + MD + (".pdf",)   # what a frame and a card open: a human page instead of JSON when the file is gone
+DOCS = (".pdf", ".svg")   # documents: opened on the canvas read-only, as a basis for a new design (the one list of non-HTML file types)
+PAGES = HTML + DOCS   # what a frame and a card open: a human page instead of JSON when the file is gone
 ROOTS_TTL = 15
 WATCH_FILES = 2000   # files in the design folder whose modification time /__canvas/stat watches
 CHUNK = 256 * 1024
@@ -311,14 +310,12 @@ def size_of(real):
 
 
 def title_of(real):
-    """The design <title> (a document: its first heading) for a card in the feed; none - an empty string."""
+    """The design <title> for a card in the feed; none - an empty string."""
     try:
         with open(real, "rb") as f:
             head = f.read(TITLE_READ).decode("utf-8", "replace")
     except OSError:
         return ""
-    if real.lower().endswith(MD):
-        return mdrender.title_of(head)
     m = re.search(r"<title[^>]*>(.*?)</title>", head, re.S | re.I)
     return re.sub(r"\s+", " ", html.unescape(m.group(1))).strip() if m else ""
 
@@ -352,8 +349,8 @@ def thumb(real, big=False):
     chrome = chrome_path()
     if not chrome:
         return None
-    doc = not real.lower().endswith(HTML)   # a document (md, pdf): a narrow window - its column fills the tile
-    url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "raw=1&player=1" if real.lower().endswith(".pdf") else "raw=1")
+    doc = not real.lower().endswith(HTML)   # a document (pdf, svg): a narrow window - its column fills the tile
+    url = "http://127.0.0.1:%d/f/%s?%s" % (PORT, "/".join(quote(x) for x in real.replace("\\", "/").lstrip("/").split("/")), "raw=1&player=1" if real.lower().endswith(DOCS) else "raw=1")
     size = None if doc else size_of(real)
     win = DOC_SIZE if doc else THUMB_SIZE if not size else (size[0], size[1] or THUMB_SIZE[1])   # a design with a set size is shot whole
     scale = THUMB_SCALE * THUMB_SIZE[0] / win[0] if doc else THUMB_SCALE
@@ -650,11 +647,11 @@ class Handler(BaseHTTPRequestHandler):
             out = {"state": file_state(real), "title": "", "mtime": 0}
             if out["state"] == "ok":
                 out["mtime"] = newest(real) if real.lower().endswith(HTML) else os.path.getmtime(real)
-                out["title"] = title_of(real) if real.lower().endswith(HTML + MD) else ""
+                out["title"] = title_of(real) if real.lower().endswith(HTML) else ""
             return self.say(200, out, self.cors())
         if url.path == "/__canvas/thumb":
             real = os.path.realpath(os.path.expanduser(q.get("path", "")))
-            if not real.lower().endswith(HTML + MD + (".pdf",)) or not allowed(real):
+            if not real.lower().endswith(PAGES) or not allowed(real):
                 return self.say(404, {"error": "no file"}, self.cors())
             try:
                 data = thumb(real)
@@ -679,22 +676,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.say(404, {"error": "no file"})
             if q.get("pdf") and real.lower().endswith(HTML):
                 return self.pdf(real, q)
-            if q.get("player") and not real.lower().endswith(HTML + MD):
+            if q.get("player") and not real.lower().endswith(HTML):
                 return self.player(real)
-            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")), src=bool(q.get("src")))
+            return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")))
         self.say(404, {"error": "no page"})
 
     def player(self, real):
-        """?player=1 - a video and a gif on the canvas: a simple player over the whole frame instead of the clip at its natural size; a PDF - its pages."""
+        """?player=1 - a video and a gif on the canvas: a simple player over the whole frame instead of the clip at its natural size; a PDF - its pages; an SVG - a picture in an <img> (its scripts do not run)."""
         src = html.escape(quote(os.path.basename(real)) + "?v=1")
         if real.lower().endswith(".pdf"):   # pages: the browser's own viewer over the whole frame
             body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;height:100vh;background:#525659">'
                     '<embed src="%s" type="application/pdf" style="width:100%%;height:100%%;border:0"></body>' % (html.escape(os.path.basename(real)), src)).encode()
             self.head(200, TYPES[".html"], len(body))
             return self.wfile.write(body) if self.command != "HEAD" else None
-        tag = "img" if real.lower().endswith(".gif") else "video controls autoplay muted loop playsinline"
-        body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;height:100vh;background:#000;display:flex">'
-                '<%s src="%s" style="width:100%%;height:100%%;object-fit:contain"></body>' % (html.escape(os.path.basename(real)), tag, src)).encode()
+        svg = real.lower().endswith(".svg")
+        tag = "img" if svg or real.lower().endswith(".gif") else "video controls autoplay muted loop playsinline"
+        body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;height:100vh;background:%s;display:flex">'
+                '<%s src="%s" style="width:100%%;height:100%%;object-fit:contain"></body>' % (html.escape(os.path.basename(real)), "#f4f4f6" if svg else "#000", tag, src)).encode()
         self.head(200, TYPES[".html"], len(body))
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -720,15 +718,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(data)
 
-    def file(self, real, raw=False, download=False, printing=False, src=False):
+    def file(self, real, raw=False, download=False, printing=False):
         """raw: the HTML as on disk, without agent.js (show fullscreen, download); download: also as an attachment;
         printing: like raw, plus the page size for printing to PDF."""
         kind = TYPES[os.path.splitext(real)[1].lower()]
-        if real.lower().endswith(MD) and not download and not src:   # a document is a rendered page; the source is ?src=1 or the download
-            with open(real, "rb") as f:
-                body = mdrender.page(f.read().decode("utf-8", "replace"), os.path.splitext(os.path.basename(real))[0])
-            self.head(200, TYPES[".html"], len(body if raw else (body := inject(body))))
-            return self.wfile.write(body) if self.command != "HEAD" else None
         if real.lower().endswith(HTML):
             with open(real, "rb") as f:
                 body = printable(f.read()) if printing else f.read() if raw else inject(f.read())
@@ -769,7 +762,7 @@ class Handler(BaseHTTPRequestHandler):
 def tg_shot(path):
     """The shot of a design for a Telegram post: only a file we may serve (the shot opens it from our own address); None - no shot."""
     real = os.path.realpath(path)
-    if not allowed(real):   # said aloud: a post without a picture must have a reason in the log
+    if not real.lower().endswith(PAGES) or not allowed(real):   # said aloud: a post without a picture must have a reason in the log
         print(f"hub-design: telegram: no shot of {real}: not a design in the hub's folders", file=sys.stderr, flush=True)
         return None
     try:

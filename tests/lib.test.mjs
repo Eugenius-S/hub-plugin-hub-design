@@ -686,14 +686,17 @@ test("writable: an edit that went to the designer in words (handed) is not writt
 });
 
 test("cards: file kind, name, path from the address, Hide, strings by language", async () => {
-  const { cardKind, cardName, pathFromHref, hideToggle, cardText, HIDDEN_MAX, isAbsPath } = await import("../lib.js");
+  const { cardKind, cardName, pathFromHref, hideToggle, cardText, HIDDEN_MAX, isAbsPath, isDocument } = await import("../lib.js");
   assert.equal(cardKind("/a/p.html"), "design");
   for (const f of ["a.mp4", "a.MOV", "a.webm", "a.gif", "a.m4v"]) assert.equal(cardKind("/x/" + f), "video", f);
   assert.equal(cardKind("/a/p.png"), null);   // pictures are not cards
   assert.equal(cardKind("/a/p.PDF"), "pdf");
-  for (const f of ["a.md", "A.MARKDOWN"]) assert.equal(cardKind("/x/" + f), "doc", f);
-  assert.equal(cardName("/d/launch-notes.md"), "Launch notes");
-  assert.equal(cardText("ru").doc, "документ");
+  for (const f of ["a.svg", "A.SVG"]) assert.equal(cardKind("/x/" + f), "svg", f);
+  for (const f of ["a.md", "A.MARKDOWN"]) assert.equal(cardKind("/x/" + f), null, f);   // Markdown is not offered to open
+  assert.equal(cardName("/d/launch-notes.svg"), "Launch notes");
+  assert.equal(cardText("ru").svg, "SVG");
+  assert.equal(isDocument("/x/a.svg"), true);
+  assert.equal(isDocument("/x/a.md"), false);
   assert.equal(isAbsPath("/a/b.html"), true);
   assert.equal(isAbsPath("C:\\a\\b.html"), true);
   assert.equal(isAbsPath("a/b.html"), false);

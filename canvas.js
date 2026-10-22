@@ -298,7 +298,7 @@ export function createCanvas(app) {
     const play = bind(own, btn("hdc-lb", svg("play12"), "", () => app.play(f.path)), "play");
     const err = btn("hdc-err", "", "", () => app.askFix(f.path));
     err.hidden = true;
-    // a document (md, pdf) is a basis, not a design to edit: no PDF printing, instead - "Make a design based on this"
+    // a document (pdf, svg) is a basis, not a design to edit: no PDF printing, instead - "Make a design based on this"
     const doc = isDocument(f.path);
     const based = bind(own, btn("hdc-lb hdc-based", svg("palette"), "", () => app.basedOn(f.path)), "based");
     if (doc) { pdf.hidden = true; tweak.hidden = true; }

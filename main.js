@@ -804,9 +804,9 @@ const app = {
   errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme(), lang: currentLang() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
-  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["video", "pdf"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1" }),
+  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["video", "pdf", "svg"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1" }),
   pdf: (path) => savePdf(path),
-  play: (path) => { if (path) window.open(fileUrl(origin(), path) + (cardKind(path) === "doc" ? "?v=1" : ""), "_blank", "noopener"); },
+  play: (path) => { if (path) window.open(fileUrl(origin(), path) + (cardKind(path) === "svg" ? "?player=1&v=1" : ""), "_blank", "noopener"); },
   basedOn,
   focusFrame: (path) => { if (P.focus !== path) { P.focus = path; paint(); } },
   addFrame: openChecked, fileState, verify, goHome, removeFrame, sizeFrame, setTool, deselect, undo,
@@ -908,7 +908,7 @@ async function autoSend() {
 // the design's recipient is whoever wrote the file: in the live feed, then in the session history (the feed gives only the tail), then whoever named it; nobody —
 // the owner chooses (the list in the comment window), the "designer" is not silently substituted
 const authorOf = (file) => recipient(file).session;
-// "Design from this": a document (md, pdf) on the canvas becomes the basis of a new design - the designer gets the words and the path
+// "Design from this": a document (pdf, svg) on the canvas becomes the basis of a new design - the designer gets the words and the path
 async function basedOn(path) {
   if (P.busy) return;
   const to = P.ok.has(DEFAULT_SESSION) ? DEFAULT_SESSION : P.session;   // a design is the designer's job
