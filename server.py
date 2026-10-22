@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import handwrite
+import registry
 import styles
 import tgpost
 
@@ -77,6 +78,7 @@ def config():
 
 
 _roots = {"at": 0.0, "list": [], "seen": set()}
+REG = None   # registry.Registry of the designs ever made (set in main)
 
 
 def roots():
@@ -93,6 +95,8 @@ def roots():
     except Exception:   # no hub nearby (tests, an old version) or the journal was not read: what we saw before, and projects
         pass
     extra = {os.path.expanduser(p["path"]) for p in (config().get("projects") or {}).values() if isinstance(p, dict) and p.get("path")}
+    # the folders of the designs ever made: a session that made one may be gone, the design must still open (not a wide folder - registry.broad)
+    extra |= set(REG.folders() if REG else [])
     out = []
     for r in found | extra:
         real = os.path.realpath(r)
@@ -618,6 +622,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps({p: file_state(p) for p in paths}, ensure_ascii=False).encode()
             self.head(200, "application/json; charset=utf-8", len(body), extra)
             return self.wfile.write(body) if self.command != "HEAD" else None
+        if url.path == "/__canvas/registry":
+            # the designs ever made on this machine (registry.py) with the state of each file: the start screen lists them whatever sessions exist now
+            rows = REG.listing() if REG else []
+            out = [{**r, "state": file_state(os.path.expanduser(r["path"]))} for r in rows]
+            return self.say(200, {"ready": bool(REG and REG.ready), "items": out}, self.cors())
         if url.path == "/__canvas/times":
             # when the design files were edited (for the start screen cards): only those that can be shown
             paths = parse_qs(url.query).get("path", [])[:HAVE_MAX]
@@ -862,6 +871,10 @@ def main():
     print(f"hub-design: http://localhost:{PORT}/", file=sys.stderr, flush=True)
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
+    global REG
+    if os.environ.get("HUB_STATE_DIR"):   # under a hub: the registry of designs (the journal is read in the background)
+        REG = registry.Registry(state_dir())
+        threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
         threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p))), daemon=True).start()
     try:

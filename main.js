@@ -135,7 +135,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
+  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], regAt: 0, regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
 };
 
 globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
@@ -415,7 +415,35 @@ async function loadTimes(paths) {
   }
   if (changed) paint();
 }
-const verifyAll = () => verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);
+// the registry of the plugin process: every design the journal ever held (sessions that are gone, the archive, other browsers). The state of
+// the files comes with it, so the start screen hides the missing ones without asking for each path
+let regTimer = 0;
+async function loadRegistry(force = false) {
+  if (P.alive !== true || !local()) return;
+  if (!force && Date.now() - P.regAt < 30000) return;
+  P.regAt = Date.now();
+  let r = null;
+  try {
+    const res = await fetch(origin() + "/__canvas/registry", { cache: "no-store" });
+    r = res.ok ? await res.json() : null;
+  } catch { /* the process does not answer — ping will show it */ }
+  if (!r || !Array.isArray(r.items)) return;
+  let changed = r.items.length !== P.registry.length || P.regReady !== !!r.ready;
+  for (const it of r.items) {
+    const k = abs(it.path);
+    if (it.state && P.have[k] !== it.state) { P.have[k] = it.state; changed = true; }
+  }
+  P.registry = r.items.map(({ state, ...rest }) => rest);
+  P.regAuthors = P.registry.map((x) => ({ path: x.path, session: x.session, wrote: x.rank === 2, sent: x.rank === 1 }));
+  P.regReady = !!r.ready;
+  clearTimeout(regTimer);
+  if (!r.ready) regTimer = setTimeout(() => loadRegistry(true), 5000);   // the first pass over the archive is still running
+  if (changed) { recompute(); paint(); }
+}
+const verifyAll = () => {
+  loadRegistry();
+  return verify([...P.frames.map((f) => f.path), ...P.authors.map((a) => a.path)], true);
+};
 // came back to the tab or the window — the files could have been changed behind the hub's back
 window.addEventListener("focus", () => { if (P.shown) verifyAll(); });
 document.addEventListener("visibilitychange", () => { if (P.shown && !document.hidden) verifyAll(); });
@@ -809,7 +837,7 @@ function printFrame(url, f) {
   return true;
 }
 
-const recipient = (file) => recipientOf(file, { picked: P.picked, authors: P.authors, found: P.found, frames: P.frames });
+const recipient = (file) => recipientOf(file, { picked: P.picked, authors: [...P.authors, ...P.regAuthors], found: P.found, frames: P.frames });
 const app = {
   get P() { return P; },
   get hub() { return hub; },
@@ -997,7 +1025,9 @@ function recompute() {
 }
 async function scanDesigns(snap) {
   P.ok = new Set((snap.sessions || []).filter((x) => x.kind !== "hub" && x.role !== "executor").map((x) => x.name));
+  P.hubs = new Set((snap.sessions || []).filter((x) => x.kind === "hub").map((x) => x.name));
   if (!P.shown) return;
+  loadRegistry();
   backfill();   // does not wait for the feed pass: a slow feed must not keep the history from being read
   if (scanning) return;
   const revs = snap.timeline_rev || {};
@@ -1160,7 +1190,7 @@ function build(root) {
   const tw = el("div", "hd-tw"), pbody = el("div", "hd-pbody");
   props.append(tw, pbody);
   const dash = createDashboard({
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { registry: P.registry, skip: (n) => P.hubs.has(n), who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install,
   });

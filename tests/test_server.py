@@ -877,3 +877,84 @@ class StyleLibrary(unittest.TestCase):
         finally:
             with open(cfg, "w", encoding="utf-8") as f:
                 f.write(old)
+
+
+class DesignRegistry(unittest.TestCase):
+    """/__canvas/registry: the designs ever made, with the state of each file; their folders are served though no session works there any more."""
+    ORIGIN = {"Origin": f"http://localhost:{server.WEB_PORT}"}
+
+    @classmethod
+    def setUpClass(cls):
+        import registry
+        cls.registry = registry
+        cls.srv = server.serve(0)
+        cls.port = cls.srv.server_address[1]
+        server.PORT = cls.port
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.old = os.path.join(TMP, "old-project", "design", "v1")   # no session, no project of hub.json
+        os.makedirs(cls.old)
+        with open(os.path.join(cls.old, "a.html"), "w") as f:
+            f.write("<p>an old design</p>")
+        with open(os.path.join(cls.old, "style.css"), "w") as f:
+            f.write("p{color:red}")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        self.reg = self.registry.Registry(os.path.join(TMP, "reg-state"))
+        self.reg.ready = True
+        patch = unittest.mock.patch.object(server, "REG", self.reg)
+        patch.start()
+        self.addCleanup(patch.stop)
+        server._roots["at"] = 0
+        self.addCleanup(server._roots.update, at=0)
+
+    def put(self, path, session="designer"):
+        self.reg.items[self.registry.key_of(path)] = {"path": path, "session": session, "ts": 5, "last": 7, "rank": 2}
+
+    def get(self, path, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", path, headers={"Host": f"localhost:{self.port}", **(headers or {})})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r, body
+
+    def test_a_design_outside_the_folders_is_denied_until_the_registry_knows_it(self):
+        path = os.path.join(os.path.realpath(self.old), "a.html")
+        self.assertEqual(server.file_state(path), "denied")   # no session works in that folder any more
+        self.put(path)
+        server._roots["at"] = 0
+        self.assertEqual(server.file_state(path), "ok")
+        r, body = self.get(furl(os.path.join(os.path.realpath(self.old), "style.css")))   # the styles beside the design come too
+        self.assertEqual((r.status, body), (200, b"p{color:red}"))
+
+    def test_a_wide_folder_is_not_opened_by_a_design_lying_in_it(self):
+        loose = os.path.join(os.path.expanduser("~"), "loose-design-for-test.html")
+        self.put(loose)
+        self.assertNotIn(os.path.realpath(os.path.expanduser("~")), server.roots())
+
+    def test_the_answer_lists_every_design_with_the_state_of_its_file_for_the_hub_page(self):
+        here = os.path.join(os.path.realpath(self.old), "a.html")
+        self.put(here)
+        self.put(os.path.join(os.path.realpath(self.old), "gone.html"), "x1")
+        r, body = self.get("/__canvas/registry", self.ORIGIN)
+        self.assertEqual(r.status, 200)
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), self.ORIGIN["Origin"])
+        d = json.loads(body)
+        self.assertTrue(d["ready"])
+        got = {os.path.basename(x["path"]): x for x in d["items"]}
+        self.assertEqual((got["a.html"]["state"], got["gone.html"]["state"]), ("ok", "missing"))
+        self.assertEqual((got["gone.html"]["session"], got["gone.html"]["last"]), ("x1", 7))
+        r, _ = self.get("/__canvas/registry", {"Origin": "http://evil.example"})
+        self.assertIsNone(r.getheader("Access-Control-Allow-Origin"))
+        r, _ = self.get("/__canvas/registry", {"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)
+
+    def test_no_registry_means_an_empty_not_ready_list(self):
+        with unittest.mock.patch.object(server, "REG", None):
+            _, body = self.get("/__canvas/registry", self.ORIGIN)
+        self.assertEqual(json.loads(body), {"ready": False, "items": []})
