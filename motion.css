@@ -106,7 +106,7 @@
   -webkit-mask:url("icon-filled.svg") center/20px 20px no-repeat;mask:url("icon-filled.svg") center/20px 20px no-repeat;
   transition:opacity 100ms ease;
 }
-.hd-style .hd-ic .icon{transition:opacity 100ms ease}
+.hd-style .hd-ic svg{transition:opacity 100ms ease}
 @media (hover:hover) and (pointer:fine){
   .hd .hd-style-w:hover .hd-style{color:#fff;border-color:transparent;transition:color 120ms ease 90ms,border-color var(--hd-hover) ease,transform var(--hd-press) var(--hd-ease-out)}
   .hd-style-w:hover .hd-style::before{
@@ -115,7 +115,7 @@
     transition:clip-path 380ms var(--hd-ease-out);
   }
   .hd-style-w:hover .hd-style .hd-ic::after{opacity:1;transition-delay:40ms}
-  .hd-style-w:hover .hd-style .hd-ic .icon{opacity:0;transition-delay:40ms}
+  .hd-style-w:hover .hd-style .hd-ic svg{opacity:0;transition-delay:40ms}
   .hd .hd-style-w:hover .hd-style-x{color:#fff}
   .hd .hd-style-w:hover .hd-style-x:hover{background:rgb(255 255 255 / .2)}
 }
