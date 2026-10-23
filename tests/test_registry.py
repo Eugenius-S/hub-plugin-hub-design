@@ -32,6 +32,16 @@ def sent(seq, session, path, copy=None):
                                    "channel": "session", "owner": False})
 
 
+def raised(seq, executor, raiser, title=None, context="Сверстай баннер для ролика"):
+    """delegation.created: task d<seq> goes to `executor`, raised by the session `raiser`."""
+    return ev(seq, "delegation.created", {"session": executor, "for": None, "for_session": raiser, "context": context,
+                                          **({"title": title} if title else {})})
+
+
+def turn(seq, session, marker=None, head=None):
+    return ev(seq, "turn.started", {"marker": marker or f"m{seq}", "prompt_head": head or f"[hub:{marker or 'm%d' % seq} от x] go"}, session)
+
+
 class Registry(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="reg-test-")
@@ -182,6 +192,71 @@ class Registry(unittest.TestCase):
             rows = registry.report(self.tmp)
         self.assertEqual(len(rows), 2)
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "hub-design")))
+
+
+class Tasks(Registry):
+    """A design belongs to the task it was made for: the root of the chain of tasks, found in the journal."""
+
+    def of(self, events):
+        self.live(events)
+        r = self.reg()
+        return r, {k: v.get("task") for k, v in self.paths(r).items()}
+
+    def test_a_design_written_in_the_turn_of_a_task_belongs_to_it(self):
+        r, got = self.of([raised(10, "designer", "hub-core", title="Баннер Ouch"), turn(11, "designer", "m10"),
+                          wrote(12, "designer", p("d", "a.html")), sent(13, "designer", p("d", "b.pdf"))])
+        self.assertEqual(got, {"a.html": "d10", "b.pdf": "d10"})
+        self.assertEqual([(t["id"], t["title"], t["by"], t["who"]) for t in r.task_rows()], [("d10", "Баннер Ouch", "hub-core", "designer")])
+
+    def test_a_subtask_belongs_to_the_root_of_the_chain_and_every_round_stays_in_it(self):
+        _, got = self.of([raised(10, "rewarded", "hub-core", title="Ролик Ouch"), turn(11, "rewarded", "m10"),
+                          raised(12, "designer", "rewarded"), turn(13, "designer", "m12"), wrote(14, "designer", p("d", "r1.html")),
+                          # the result comes back to the director in a turn that names the subtask, the next round goes through it
+                          turn(15, "rewarded", "m15", "[hub:m15 от designer, ответ на задачу d12] готово"),
+                          raised(16, "designer", "rewarded"), turn(17, "designer", "m16"), wrote(18, "designer", p("d", "r2.html"))])
+        self.assertEqual(got, {"r1.html": "d10", "r2.html": "d10"})
+
+    def test_a_turn_that_names_a_task_continues_it_and_another_message_ends_it_and_a_wake_up_keeps_it(self):
+        _, got = self.of([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10"), wrote(12, "designer", p("d", "a.html")),
+                          turn(13, "designer", "m13", "[hub:m13 от ядра] Задача d10 открыта, а ты свободна"), wrote(14, "designer", p("d", "b.html")),
+                          ev(15, "turn.started", {"marker": "m15", "prompt_head": "<task-notification>фон кончился</task-notification>"}, "designer"),
+                          wrote(16, "designer", p("d", "c.html")),
+                          turn(17, "designer", "m17", "[hub:m17 от владельца] нарисуй лого"), wrote(18, "designer", p("d", "d.html"))])
+        self.assertEqual(got, {"a.html": "d10", "b.html": "d10", "c.html": "d10", "d.html": None})
+
+    def test_a_design_without_a_task_is_just_a_design(self):
+        _, got = self.of([wrote(1, "designer", p("d", "free.html"))])
+        self.assertEqual(got, {"free.html": None})
+
+    def test_the_title_comes_from_the_task_or_its_words_and_a_later_title_wins(self):
+        r, _ = self.of([raised(10, "designer", "x", context="--title Ролик для Ouch. Сверстай три баннера и пришли"), turn(11, "designer", "m10"),
+                        wrote(12, "designer", p("d", "a.html")),
+                        raised(20, "designer", "x", context="Сделай лендинг для распродажи " + "очень " * 30), turn(21, "designer", "m20"),
+                        wrote(22, "designer", p("d", "b.html")),
+                        ev(23, "task.noted", {"text": "n", "title": "Лендинг BF"}, "d20")])
+        titles = {t["id"]: t["title"] for t in r.task_rows()}
+        self.assertEqual(titles["d10"], "Ролик для Ouch")
+        self.assertEqual(titles["d20"], "Лендинг BF")
+        self.assertTrue(len(registry.clean_title("слово " * 40)) <= registry.TITLE_MAX + 1)
+
+    def test_the_tasks_survive_a_restart_and_an_old_registry_is_read_again(self):
+        self.live([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10"), wrote(12, "designer", p("d", "a.html"))])
+        self.reg()
+        self.live([wrote(13, "designer", p("d", "b.html"))], "a")   # the turn of the task was before the restart
+        r = self.reg()
+        self.assertEqual({k: v.get("task") for k, v in self.paths(r).items()}, {"a.html": "d10", "b.html": "d10"})
+        with open(r.path, encoding="utf-8") as f:
+            saved = json.load(f)
+        saved["v"] = 1
+        saved["items"] = [{k: v for k, v in it.items() if k != "task"} for it in saved["items"]]
+        with open(r.path, "w", encoding="utf-8") as f:
+            json.dump(saved, f)
+        self.assertEqual({k: v.get("task") for k, v in self.paths(self.reg()).items()}, {"a.html": "d10", "b.html": "d10"})
+
+    def test_a_task_in_the_archive_is_found(self):
+        self.archive([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10")])
+        self.live([ev(30, "core.snapshot", {}), wrote(31, "designer", p("d", "a.html"))])
+        self.assertEqual(self.paths(self.reg())["a.html"].get("task"), "d10")
 
 
 if __name__ == "__main__":

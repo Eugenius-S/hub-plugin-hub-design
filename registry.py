@@ -9,6 +9,9 @@ no longer on the disk.
 
 What counts as a design: a file of a type the canvas opens (.html .htm .pdf .svg) that a session sent to the owner (owner.file, by
 its source path) or created with the Write tool. An Edit only refreshes the time of a design that is already there.
+Each design also carries the task it was made for (`task`: the id of the root of the chain, d123): the journal says which task a session works
+on (the turn of a delegation starts with its number, a reply says "ответ на задачу d123"), and a task raised by a session that works on a
+task is its subtask. The dashboard puts all designs of one root task into one folder.
 Paths of another OS (C:\\... on a Mac and the other way round) are not kept: this machine cannot show them.
 
 `python3 registry.py --report [state dir]` counts what the journal holds, without writing anything."""
@@ -31,7 +34,15 @@ COPY = re.compile(r"(?:^|/)attachments/[0-9a-f]{12}/[^/]+$", re.I)
 WIN_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 _EDIT_LINE = re.compile(rb'"name"\s*:\s*"(?:Write|Edit|MultiEdit)"')
 _KIND_LINE = re.compile(rb'\.(?:html?|pdf|svg)"', re.I)
+_LINE_KIND = re.compile(rb'"(?:delegation\.created|turn\.started)"|"task\.noted".*"title"')
 TICK = 3   # s between journal reads
+CUR_EVERY = 30   # s: the tasks the sessions work on are saved no oftener (they change with every turn)
+VERSION = 2   # 2: the task of a design; a registry of version 1 is read from the journal again
+KEEP_TASKS = 1500   # tasks kept besides the roots of the designs
+# the task a turn works on, named in the head of its prompt: a reply to a task, an addition, the task itself
+TASK_IN_HEAD = re.compile(r"(?:ответ на задачу|к задаче|задач[аеуи]|task)\s+(d\d+)", re.I)
+HEAD = re.compile(r"^\[hub:m\d+(?:x\d+)?\s+от\s")
+TITLE_MAX = 70
 
 
 def is_win():
@@ -68,11 +79,84 @@ def broad(directory):
     return os.path.dirname(real) == real or real == home or home.startswith(real.rstrip(os.sep) + os.sep)
 
 
-def fold(items, ev):
-    """Take one journal event into the entries {key: {path, session, ts, last, rank}}. True if something changed."""
+def clean_title(text, words=False):
+    """A short name of a task: its title, or (words) the first sentence of its words (`--title` sticks to the context of some)."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    if t.startswith("--title "):
+        t = t[8:].strip()
+    if words and (i := re.search(r"[.!?](?:\s|$)", t)) and i.start() >= 12:
+        t = t[:i.start()]
+    if len(t) > TITLE_MAX:
+        cut = t[:TITLE_MAX]
+        for sep in (". ", "! ", "? ", ": ", ", "):
+            i = cut.rfind(sep)
+            if i >= 25:
+                cut = cut[:i]
+                break
+        else:
+            cut = cut.rsplit(" ", 1)[0] if " " in cut else cut
+        t = cut.rstrip(" .,:;—-") + "…"
+    return t
+
+
+def new_state():
+    """What the fold keeps besides the designs: the tasks {id: {title, by, who, ts, root}} and the task each session works on now."""
+    return {"tasks": {}, "cur": {}}
+
+
+def root_of(state, did):
+    t = state["tasks"].get(did)
+    return (t or {}).get("root") or did
+
+
+def fold_task(state, ev):
+    """The events about tasks: a task is raised, gets a title, a turn starts on it. True if something changed."""
+    kind, data, ts = ev.get("type"), ev.get("data") or {}, float(ev.get("ts") or 0)
+    tasks, cur = state["tasks"], state["cur"]
+    if kind == "delegation.created":
+        did = f"d{ev.get('seq')}"
+        by, who = data.get("for_session") or "", data.get("session") or ""
+        parent = cur.get(by) if by else None
+        tasks[did] = {"title": clean_title(data.get("title")) or clean_title(data.get("context"), words=True), "by": by, "who": who, "ts": ts,
+                      "root": root_of(state, parent) if parent else did}
+        return True
+    if kind == "task.noted":
+        title = clean_title(data.get("title"))
+        t = tasks.get(ev.get("entity") or "")
+        if title and t and t["title"] != title:
+            t["title"] = title
+            return True
+        return False
+    if kind == "turn.started":
+        session = ev.get("entity") or ""
+        marker, head = str(data.get("marker") or ""), str(data.get("prompt_head") or "")
+        did = "d" + marker[1:] if re.fullmatch(r"m\d+", marker) else ""
+        if did not in tasks:
+            m = TASK_IN_HEAD.search(head)
+            did = m[1].lower() if m else ""
+        if did in tasks:
+            new = did
+        elif HEAD.match(head):   # some other message (the owner, the schedule, the core): not a task of this session
+            new = None
+        else:   # the session woke by itself (a background job ended): the same task goes on
+            return False
+        if new:
+            cur[session] = new
+        else:
+            cur.pop(session, None)
+        return False   # the designs did not change; the page does not need to know where a session works
+    return False
+
+
+def fold(items, ev, state=None):
+    """Take one journal event into the entries {key: {path, session, ts, last, rank, task}}. True if something changed."""
     if not isinstance(ev, dict):
         return False
     kind, data, ts = ev.get("type"), ev.get("data") or {}, float(ev.get("ts") or 0)
+    if state is None:
+        state = new_state()
+    if kind in ("delegation.created", "task.noted", "turn.started"):
+        return fold_task(state, ev)
     if kind == "owner.file":
         path, session, rank = design_path(data.get("source") or data.get("path")), data.get("sender"), 1
     elif kind == "turn.tool" and data.get("name") in WRITES + EDITS:
@@ -89,21 +173,24 @@ def fold(items, ev):
     if not path:
         return False
     k = key_of(path)
+    task = root_of(state, state["cur"][session]) if session in state["cur"] else None
     cur = items.get(k)
     if not cur:
-        items[k] = {"path": path, "session": session or "", "ts": ts, "last": ts, "rank": rank}
+        items[k] = {"path": path, "session": session or "", "ts": ts, "last": ts, "rank": rank, **({"task": task} if task else {})}
         return True
     before = dict(cur)
     cur["last"] = max(cur["last"], ts)
     if rank > cur["rank"] or rank == cur["rank"] and ts >= cur["ts"]:
         cur.update(session=session or cur["session"], ts=ts, rank=rank)
+    if task:   # the last task that made or sent the file
+        cur["task"] = task
     return cur != before
 
 
 def candidates(chunk):
     """Lines of the journal worth parsing: a cheap look at the bytes first (the archive is hundreds of megabytes of tool results)."""
     for line in chunk:
-        if b"owner.file" in line:
+        if b"owner.file" in line or _LINE_KIND.search(line):
             yield line
         elif b"turn.tool" in line and _EDIT_LINE.search(line) and _KIND_LINE.search(line):
             yield line
@@ -144,22 +231,40 @@ class Registry:
         self.lock = threading.Lock()
         self.ready = False
         self.items, self.seq, self.ino, self.offset = {}, 0, None, 0
+        self.state, self.saved_cur, self.saved_at = new_state(), {}, 0.0
         try:
             with open(self.path, encoding="utf-8") as f:
                 saved = json.load(f)
             self.items = {key_of(v["path"]): v for v in saved.get("items", [])
                           if isinstance(v, dict) and v.get("path") and not COPY.search(key_of(v["path"]))}
-            self.seq = int(saved.get("seq") or 0)
-        except (OSError, ValueError, TypeError, KeyError):
+            if saved.get("v") == VERSION:
+                self.seq = int(saved.get("seq") or 0)
+                self.state = {"tasks": {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)},
+                              "cur": {k: v for k, v in (saved.get("cur") or {}).items() if isinstance(v, str)}}
+            # an older registry knew no tasks: the journal is read once more from the very start, the designs stay
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
+
+    def pruned_tasks(self, keep):
+        """The tasks worth keeping: the roots of the designs kept, the tasks sessions work on now and the freshest ones."""
+        with self.lock:
+            tasks, cur = self.state["tasks"], self.state["cur"]
+            need = {v.get("task") for v in keep} | set(cur.values()) | {tasks[c]["root"] for c in cur.values() if c in tasks}
+            fresh = sorted(tasks, key=lambda k: tasks[k]["ts"], reverse=True)[:KEEP_TASKS]
+            return {k: tasks[k] for k in set(fresh) | need if k in tasks}
 
     def save(self):
         keep = sorted(self.items.values(), key=lambda v: v["last"], reverse=True)[:KEEP]
+        tasks = self.pruned_tasks(keep)
+        with self.lock:
+            self.state["tasks"] = tasks
+            cur = dict(self.state["cur"])
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"v": 1, "seq": self.seq, "items": keep}, f, ensure_ascii=False)
+            json.dump({"v": VERSION, "seq": self.seq, "items": keep, "tasks": tasks, "cur": cur}, f, ensure_ascii=False)
         os.replace(tmp, self.path)
+        self.saved_cur, self.saved_at = cur, time.time()
 
     def take(self, lines):
         """Fold the lines of a journal file: only events newer than what was folded. True if the entries changed."""
@@ -174,7 +279,7 @@ class Registry:
                 continue
             top = max(top, seq)
             with self.lock:
-                changed |= fold(self.items, ev)
+                changed |= fold(self.items, ev, self.state)
         return changed, top
 
     def pass_archives(self):
@@ -211,7 +316,7 @@ class Registry:
         changed |= c
         if first_look or top > self.seq:
             self.seq = max(self.seq, top)
-        if changed or first_look:
+        if changed or first_look or (self.state["cur"] != self.saved_cur and time.time() - self.saved_at > CUR_EVERY):
             self.save()
         self.ready = True
         return changed
@@ -219,6 +324,13 @@ class Registry:
     def listing(self):
         with self.lock:
             return sorted((dict(v) for v in self.items.values()), key=lambda v: v["last"], reverse=True)
+
+    def task_rows(self):
+        """The tasks the designs belong to: {id, title, by, who, ts} - the roots of the chains."""
+        with self.lock:
+            ids = {v.get("task") for v in self.items.values()}
+            return [{"id": k, "title": t.get("title") or "", "by": t.get("by") or "", "who": t.get("who") or "", "ts": t.get("ts") or 0}
+                    for k, t in self.state["tasks"].items() if k in ids]
 
     def folders(self):
         """Folders of the designs kept: the plugin serves their files (the design's pictures and styles lie beside it) even when no session works there any more."""
@@ -240,7 +352,7 @@ def run(registry):
 def report(state_dir):
     """What the journal and its archive hold: designs by author, how many are on the disk. Writes nothing."""
     reg = Registry.__new__(Registry)
-    reg.dir, reg.lock, reg.items, reg.seq = state_dir, threading.Lock(), {}, 0
+    reg.dir, reg.lock, reg.items, reg.seq, reg.state = state_dir, threading.Lock(), {}, 0, new_state()
     reg.journal = os.path.join(state_dir, "journal.jsonl")
     for _, _, path in archives(state_dir):
         with open(path, "rb") as f:
