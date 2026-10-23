@@ -1179,6 +1179,24 @@ class DesignRegistry(unittest.TestCase):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
         self.assertEqual(rows["lone.html"], "icons8-smm")
 
+    def test_a_design_of_a_folder_no_direction_owns_goes_to_the_task_folder_named_for_it_on_the_other_machine_too(self):
+        base = os.path.realpath(self.old)
+        for n in ("a.html", "b.html"):
+            self.put(os.path.join(base, n))
+            self.reg.items[self.registry.key_of(os.path.join(base, n))]["task"] = "d10"
+            with open(os.path.join(base, n), "w") as f:
+                f.write("<p>x</p>")
+        folder = os.path.join(base, "design", "ouch-templates")
+        os.makedirs(folder)
+        loose = os.path.join(folder, "c.html")
+        with open(loose, "w") as f:
+            f.write("<p>x</p>")
+        self.put(loose)
+        self.reg.state["tasks"] = {"d10": {"title": "Rewarded-ads Ouch, beat 8", "by": "rewarded", "who": "designer", "ts": 1, "root": "d10"}}
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
+            rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
+        self.assertEqual(rows["c.html"], "Rewarded-ads Ouch, beat 8")
+
     def test_no_registry_means_an_empty_not_ready_list(self):
         with unittest.mock.patch.object(server, "REG", None):
             _, body = self.get("/__canvas/registry", self.ORIGIN)

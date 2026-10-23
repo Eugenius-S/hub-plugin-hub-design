@@ -95,6 +95,32 @@ class Export(unittest.TestCase):
         self.assertEqual([it["file"] for it in self.doc()["items"]], ["a.html"])
         self.assertEqual(os.listdir(shots), [peers.item_id(self.a) + ".jpg"])
 
+    def test_a_process_that_sees_no_design_yet_does_not_empty_the_export(self):
+        # 23.10: after a restart of the process the files were "not served" for a while: an empty registry went to the other machine, its tile of the start screen vanished
+        peers.export(self.root, self.rows(self.a, self.b), Shooter(), me="mac-one", hub="Nexus-Mac")
+        shots = os.path.join(self.root, "mac-one", peers.SHOTS)
+        res = peers.export(self.root, [], Shooter(), me="mac-one", hub="", allow_empty=False)
+        self.assertFalse(res["written"])
+        self.assertEqual(len(self.doc()["items"]), 2)
+        self.assertEqual(len(os.listdir(shots)), 2)
+        peers.export(self.root, self.rows(self.a, self.b), Shooter(), me="mac-one", hub="")
+        self.assertEqual(self.doc()["hub"], "Nexus-Mac")   # no hub name read yet: the old one stays
+        peers.export(self.root, [], Shooter(), me="mac-one", allow_empty=True)   # really none for good: the export is emptied
+        self.assertEqual(self.doc()["items"], [])
+
+    def test_the_loop_empties_the_export_only_after_several_empty_passes_in_a_row(self):
+        peers.export(self.root, self.rows(self.a), Shooter(), me=peers.machine())
+        seen = []
+
+        def sleep(_):
+            seen.append(len(self.doc(peers.machine())["items"]))
+            if len(seen) >= peers.EMPTY_PASSES:
+                raise SystemExit
+        with unittest.mock.patch.object(peers.time, "sleep", sleep):
+            with self.assertRaises(SystemExit):
+                peers.run(lambda: self.root, lambda: [], Shooter(), None, None)
+        self.assertEqual(seen, [1] * (peers.EMPTY_PASSES - 1) + [0])
+
     def test_a_design_that_cannot_be_shot_is_not_retried_every_pass(self):
         peers.export(self.root, self.rows(self.a), Shooter(ok=False), me="mac-one")
         self.assertEqual(self.doc()["items"][0]["shot"], "")
@@ -306,6 +332,32 @@ class Projects(unittest.TestCase):
         self.assertEqual(peers.project_label("/home/o/design/ads/a.html", "", self.dirs, self.names), "")   # "ads" is in two directions: no guessing
         self.assertEqual(peers.project_label("/home/o/design/hub-digest/a.html", "", self.dirs, self.names), "")   # "hub" is no word
         self.assertEqual(peers.project_label("/home/o/design/ouch-templates/a.html", "", self.dirs, self.names), "")
+
+    def test_the_beginning_of_a_word_and_the_hub_sign(self):
+        dirs = peers.direction_dirs([{"name": "ai-animations", "cwd": "D:\\W\\AI animations", "role": "worker"}, {"name": "hub-work", "cwd": "D:\\W\\Agent-hub", "role": "worker"},
+                                     {"name": "rewarded-ads", "cwd": "D:\\W\\!Ads", "role": "worker"}], set())
+        win = lambda folder, title="": peers.project_label("C:\\Users\\o\\design\\%s\\v2\\x.html" % folder, title, dirs)
+        self.assertEqual(win("ai-anim-summary"), "ai-animations")
+        self.assertEqual(win("anim-dashboard"), "ai-animations")
+        self.assertEqual(win("ai-animations-report"), "ai-animations")
+        for folder in ("hd-motion", "hd-spacing", "hub-design-carpets", "hub-recap", "hub-spacing"):
+            self.assertEqual(win(folder), "hub-work", folder)
+        self.assertEqual(win("hub"), "")                       # "hub" alone says nothing
+        self.assertEqual(win("motion-loader"), "")
+        self.assertEqual(win("style-previews", "Hub Design: style previews"), "hub-work")
+        self.assertEqual(win("ani-x"), "")                     # three signs are not a beginning
+        self.assertEqual(peers.project_label("/h/design/hub-recap/a.html", "", [("/p/A", "ads")]), "")   # no hub direction: none
+
+    def test_a_folder_no_direction_owns_goes_to_the_task_folder_named_for_it(self):
+        folders = [("d1", "Rewarded-ads Ouch, beat 8, EN"), ("d2", "Pulse landing, round 2")]
+        label = lambda path, title="": peers.project_label(path, title, self.dirs, self.names, folders)
+        self.assertEqual(label("/h/design/ouch-templates/a.html"), "Rewarded-ads Ouch, beat 8, EN")
+        self.assertEqual(label("/h/design/ouch-templates/tenner-post-a.html"), "Rewarded-ads Ouch, beat 8, EN")
+        self.assertEqual(label("/h/design/misc/a.html", "Ouch email"), "Rewarded-ads Ouch, beat 8, EN")
+        self.assertEqual(label("/h/design/misc/a.html"), "")
+        self.assertEqual(peers.task_near("ouch pulse", folders), "")   # two folders equally near - nothing
+        self.assertEqual(label("/h/design/rewarded-ads/a.html"), "rewarded-ads")   # a direction speaks before a task folder
+        self.assertEqual(peers.project_label("/h/design/ouch-templates/a.html", "", [], None, folders), "Rewarded-ads Ouch, beat 8, EN")
 
     def test_the_title_and_the_file_name_are_the_last_resort(self):
         self.assertEqual(peers.project_label("/home/o/x/a.html", "Black Friday, banner 2", self.dirs, self.names), "black-friday-2026")

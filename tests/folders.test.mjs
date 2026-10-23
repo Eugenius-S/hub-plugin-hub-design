@@ -213,3 +213,57 @@ test("a design saved to design/<project>/ goes to the direction of that name; th
   assert.equal(homeOf({ path: "/p/Rewarded-ads/design/ads-x/a.html" }, ds), "/p/Rewarded-ads");
   assert.equal(homeOf({ path: "/h/design/ads-x/a.html", session: "icons8-smm" }, ds), "/p/smm");
 });
+
+// the designer of a Windows machine saves to C:\Users\o\design\<folder>\: the folder names are not the names of the directions, the words and their beginnings decide
+const winDirs = () => directionDirs([
+  { name: "rewarded-ads", role: "worker", cwd: "D:\\Work\\Rewarded-ads Ouch, bit 8" },
+  { name: "ai-animations", role: "worker", cwd: "D:\\Work\\AI animations" },
+  { name: "ads-timetracker", role: "worker", cwd: "D:\\Work\\!Ads" },
+  { name: "icons8-smm", role: "worker", cwd: "D:\\Work\\icons8-smm" },
+  { name: "hub-work", role: "worker", cwd: "D:\\Work\\Agent-hub" },
+]);
+
+test("Windows folders of the designer: the table folder -> direction", async () => {
+  const { homeOf } = await import("../lib.js");
+  const ds = winDirs();
+  const where = (folder, title = "") => (ds.find((d) => d.key === homeOf({ path: `C:\\Users\\o\\design\\${folder}\\index.html`, title }, ds)) || {}).label || "";
+  const table = [
+    ["ouch-templates", "rewarded-ads"], ["ouch-sb", "rewarded-ads"],
+    ["ai-anim-summary", "ai-animations"], ["ai-animations-report", "ai-animations"], ["anim-dashboard", "ai-animations"],
+    ["hd-motion", "hub-work"], ["hd-spacing", "hub-work"], ["hub-design-carpets", "hub-work"], ["hub-recap", "hub-work"], ["hub-spacing", "hub-work"],
+    ["motion-loader", ""],      // no word of it is in a direction: nothing, the author or the task say more
+    ["sidekick-c", ""],
+    ["hub", ""],                // "hub" alone is no sign
+    ["style-previews", ""],
+  ];
+  for (const [folder, label] of table) assert.equal(where(folder), label, folder);
+  assert.equal(where("style-previews", "Hub Design: style previews"), "hub-work");   // the title says it
+  assert.equal(where("motion-loader", "Animation loader, A"), "ai-animations");
+});
+
+test("the beginning of a word matches only from four signs, the exact word wins, two equal directions - nothing", async () => {
+  const { nearestDir } = await import("../lib.js");
+  const ds = directionDirs([{ name: "ai-animations", role: "worker", cwd: "/p/AI animations" }, { name: "animals", role: "worker", cwd: "/p/animals" }]);
+  assert.equal(nearestDir("anim-x", ds), "");                // "anim" begins both: no guess
+  assert.equal(nearestDir("animation-x", ds), "/p/AI animations");
+  assert.equal(nearestDir("ani-x", ds), "");                 // three signs are not a beginning
+  assert.equal(nearestDir("animals-x", ds), "/p/animals");
+  assert.equal(nearestDir("hub-recap", ds), "");             // no hub direction: none
+});
+
+test("a folder no direction owns goes to the task folder named for it (ouch-templates - the task Rewarded-ads Ouch), the nearest alone", async () => {
+  const { folderKeyOf, taskNear, taskFolders } = await import("../lib.js");
+  const ds = directionDirs([{ name: "ai-animations", role: "worker", cwd: "/p/AI animations" }, { name: "icons8-smm", role: "worker", cwd: "/p/icons8-smm" }]);
+  const rows = [{ id: "d1", title: "Rewarded-ads Ouch, beat 8, EN", by: "designer", who: "writer" }, { id: "d2", title: "Pulse landing, round 2", by: "designer", who: "" }];
+  const own = [{ path: "C:\\o\\design\\pulse-landing\\a.html", task: "d2" }, { path: "C:\\o\\design\\pulse-landing\\b.html", task: "d2" },
+    { path: "C:\\o\\design\\x\\a.html", task: "d1" }, { path: "C:\\o\\design\\x\\b.html", task: "d1" }];
+  const tasks = taskFolders(own);
+  const key = (path, title = "") => folderKeyOf({ path, title }, ds, tasks, rows);
+  assert.equal(key("C:\\o\\design\\ouch-templates\\v3\\a.html"), "task:d1");
+  assert.equal(key("C:\\o\\design\\ouch-sb\\a.html"), "task:d1");
+  assert.equal(key("C:\\o\\design\\ouch-templates\\tenner-post-a.html"), "task:d1");   // the project folder speaks before the file name ("post" is a word of a direction)
+  assert.equal(key("C:\\o\\design\\misc\\a.html", "Ouch email"), "task:d1");
+  assert.equal(key("C:\\o\\design\\misc\\a.html"), "");
+  assert.equal(taskNear("ouch pulse", rows, tasks), "");                                  // two task folders equally near - nothing
+  assert.equal(key("C:\\o\\design\\ai-anim\\a.html"), "/p/AI animations");           // a direction speaks before a task folder
+});

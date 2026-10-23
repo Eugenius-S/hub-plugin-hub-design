@@ -124,7 +124,7 @@ def folder_label(path, dirs):
     return str(label)[:80]
 
 
-COMMON = {"design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub"}
+COMMON = {"design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub", "icons8"}
 
 
 def words_of(s):
@@ -139,21 +139,58 @@ def project_of(path):
     return parts[i + 1] if 0 <= i < len(parts) - 2 else ""
 
 
+STEM_MIN = 4
+HUBBY = {"hd", "hub"}
+
+
+def near(a, b):
+    """A word of the name against a word of a direction (the same rule as near of lib.js): the same word 100, one begins the other (four signs at least, no digits: icon is not icons8) 60."""
+    if a == b:
+        return 100
+    return 60 if len(a) >= STEM_MIN and len(b) >= STEM_MIN and not re.search(r"\d", a + b) and (a.startswith(b) or b.startswith(a)) else 0
+
+
+def _raw(s):
+    return re.findall(r"[^\W_]+", unicodedata.normalize("NFC", str(s or "")).lower())
+
+
+def says_hub(s):
+    """"hd" or "hub" among the words of a name: the sign of the hub itself."""
+    return any(w in HUBBY for w in _raw(s))
+
+
+def hubby(s):
+    """A design name about the hub: the sign and one more word ("hub" alone says nothing)."""
+    return says_hub(s) and len(_raw(s)) > 1
+
+
 def nearest_dir(name, dirs, names=None):
     """The label of the direction a name belongs to (the same rule as nearestDir of lib.js): the words of the name against the words of the direction
-    (its label, its folder, its sessions); more shared words win; two directions equally near - "" (no guessing). dirs: [(key, label)], names: {key: [sessions]}."""
-    w = set(words_of(name))
-    if not w:
+    (its label, its folder, its sessions), the same word or its beginning; more shared words win; two directions equally near - "" (no guessing).
+    A name with "hd" or "hub" goes to a direction with "hub" in its name only. dirs: [(key, label)], names: {key: [sessions]}."""
+    w = list(dict.fromkeys(words_of(name)))
+    hub = hubby(name)
+    if not w and not hub:
         return ""
     best, tie = None, False
     for key, label in dirs:
-        own = set()
-        for x in list((names or {}).get(key, [])) + [label, key.rsplit("/", 1)[-1]]:
-            own.update(words_of(x))
-        hit = len(w & own)
-        if not hit:
+        parts = list((names or {}).get(key, [])) + [label, key.rsplit("/", 1)[-1]]
+        if hub and not any(says_hub(x) for x in parts):
             continue
-        score = hit * 100 - (len(own) - hit) - (len(w) - hit)
+        own = list(dict.fromkeys(x for part in parts for x in words_of(part)))
+        points, hit, used = 0, 0, set()
+        for x in w:
+            top, at = 0, ""
+            for o in own:
+                n = near(x, o)
+                if n > top:
+                    top, at = n, o
+            if top:
+                points, hit = points + top, hit + 1
+                used.add(at)
+        if not hit and not hub:
+            continue
+        score = points - (len(own) - len(used)) - (len(w) - hit)
         if best is None or score > best[0]:
             best, tie = (score, key, label), False
         elif score == best[0] and best[1] != key:
@@ -161,15 +198,32 @@ def nearest_dir(name, dirs, names=None):
     return str(best[2])[:80] if best and not tie else ""
 
 
-def project_label(path, title, dirs, names=None):
+def task_near(name, folders):
+    """A name that no direction owns but a task folder does (the same rule as taskNear of lib.js): the words of the name against the titles of the task folders;
+    one folder nearest - its title (its name on the other machine), a tie or nothing in common - "". folders: [(task id, title)]."""
+    w = list(dict.fromkeys(words_of(name)))
+    best, tie = None, False
+    for tid, title in folders or ():
+        own = list(dict.fromkeys(words_of(title)))
+        points = sum(max([0] + [near(x, o) for o in own]) for x in w)
+        if not points:
+            continue
+        if best is None or points > best[0]:
+            best, tie = (points, tid, title), False
+        elif points == best[0]:
+            tie = True
+    return str(best[2]) if best and not tie else ""
+
+
+def project_label(path, title, dirs, names=None, folders=None):
     """The direction of a design that lies in no direction folder and was made by none: the project folder it was saved in (design/<project>/), else its
-    title, else its file name."""
+    title, else its file name; no direction owns the name - the task folder that does (folders: [(task id, title)])."""
     project = project_of(path)
-    label = nearest_dir(project, dirs, names) if project else ""
+    label = (nearest_dir(project, dirs, names) or task_near(project, folders)) if project else ""
     if label:
         return label
     base = os.path.splitext(os.path.basename(_key(path)))[0]
-    return nearest_dir(title, dirs, names) or nearest_dir(base, dirs, names)
+    return nearest_dir(title, dirs, names) or nearest_dir(base, dirs, names) or task_near(title, folders) or task_near(base, folders)
 
 
 def item_id(path):
@@ -202,14 +256,23 @@ def write_if_changed(path, text):
     return True
 
 
-def export(root, rows, shoot, title=None, stamp=None, me=None, limit=SHOTS_PER_PASS, hub=""):
+EMPTY_PASSES = 3          # passes in a row with no design at all before the export is emptied (a restart of the process sees none for a while)
+
+
+def export(root, rows, shoot, title=None, stamp=None, me=None, limit=SHOTS_PER_PASS, hub="", allow_empty=True):
     """One pass: rows - the registry listing of this machine (only designs whose file is here and may be shown);
     shoot(real, out) writes a JPEG to out (True - done); title(real) - the name of a design; stamp(real) - the edit time of the design.
-    Returns {"written": bool, "shot": n, "left": n} - left: designs still without a fresh shot (the next pass takes them)."""
+    Returns {"written": bool, "shot": n, "left": n} - left: designs still without a fresh shot (the next pass takes them).
+    No designs while the last export had some and allow_empty is off: nothing is touched - a process just started sees no files for a while, and an empty
+    registry would erase the shots and hide this machine on the start screen of the others. No hub name (hub.json not read yet): the old one stays."""
     me = me or machine()
     mine = os.path.join(root, me)
     shots = os.path.join(mine, SHOTS)
-    old = {it["id"]: it for it in (read_json(os.path.join(mine, FILE)) or {}).get("items", []) if isinstance(it, dict) and it.get("id")}
+    was = read_json(os.path.join(mine, FILE)) or {}
+    old = {it["id"]: it for it in was.get("items", []) if isinstance(it, dict) and it.get("id")}
+    if not rows and old and not allow_empty:
+        return {"written": False, "shot": 0, "left": 0}
+    hub = hub or was.get("hub") or ""
     items, shot, left = [], 0, 0
     for r in rows[:EXPORT_MAX]:
         real = os.path.expanduser(r["path"])
@@ -309,6 +372,7 @@ def shot_path(root, name, shot, me=None):
 
 def run(get_root, listing, shoot, title, stamp, ready=lambda: True, every=EVERY, hub=lambda: ""):
     """The loop of a thread of the process: a pass every `every` seconds, sooner while shots are left."""
+    empty = 0
     while True:
         wait = every
         try:
@@ -316,7 +380,9 @@ def run(get_root, listing, shoot, title, stamp, ready=lambda: True, every=EVERY,
             if root and not ready():
                 wait = 5   # the journal is still being read: look again soon, not in a minute
             elif root:
-                res = export(root, listing(), shoot, title, stamp, hub=hub())
+                rows = listing()
+                empty = 0 if rows else empty + 1
+                res = export(root, rows, shoot, title, stamp, hub=hub(), allow_empty=empty >= EMPTY_PASSES)
                 if res["left"]:
                     wait = 5
         except Exception as e:

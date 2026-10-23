@@ -1047,6 +1047,7 @@ def peer_rows():
     dirs = peer_dirs()
     titles = {t["id"]: t["title"] for t in REG.task_rows()} if REG else {}
     many = registry.task_folders(rows)   # the designs of one task go to one folder on the other machine too: its name is the title of the task
+    folders = [(t, titles[t]) for t in sorted(many) if titles.get(t)]
     homes = peer_homes()
     names = peer_names()
     asked = {t["id"]: (t["by"], t["who"]) for t in REG.task_rows()} if REG else {}
@@ -1055,13 +1056,13 @@ def peer_rows():
         label = peers.folder_label(os.path.expanduser(r["path"]), dirs) or homes.get(r.get("session"), "")
         for name in asked.get(r.get("task"), ()):
             label = label or homes.get(name, "")
-        if not label and dirs:   # the last rule: the project folder design/<project>/, the title, the file name (peers.project_label, as projectDirOf of lib.js)
+        if not label and (dirs or folders):   # the last rule: the project folder design/<project>/, the title, the file name (peers.project_label, as projectDirOf of lib.js)
             real = os.path.expanduser(r["path"])
             try:
                 title = head_of(os.path.realpath(real)) if real.lower().endswith(HTML) else ""
             except Exception:
                 title = ""
-            label = peers.project_label(real, title, dirs, names)
+            label = peers.project_label(real, title, dirs, names, folders)
         return label
     return [{**r, "dir": (titles.get(r.get("task")) if r.get("task") in many else "") or folder(r)} for r in rows]
 

@@ -971,15 +971,15 @@ export function taskFolders(files = [], min = TASK_MIN) {
 // the direction asked for the task the design was made for (taskRows: [{id, by, who}] of the registry). Nothing fits - "" (no direction).
 // Last rule: the design lies in a folder named for a project (<home>/design/<project>/file.html, how the designer saves) - the direction whose name says the same;
 // else the words of the title and of the file name. The list of directions is the one of the snapshot, nothing is hard-coded.
-export function homeOf(f, dirs = [], taskRows = []) {
+export function homeOf(f, dirs = [], taskRows = [], tasks = new Set()) {
   const byPath = folderOf(f.path, dirs);
   if (byPath) return byPath;
   const home = (name) => (name && (dirs.find((d) => d.names && d.names.includes(name)) || {}).key) || "";
   const task = f.task ? (taskRows || []).find((x) => x.id === f.task) : null;
-  return home(f.session) || (task ? home(task.by) || home(task.who) : "") || projectDirOf(f, dirs);
+  return home(f.session) || (task ? home(task.by) || home(task.who) : "") || projectDirOf(f, dirs, taskRows, tasks);
 }
 // the words of a name: lower case, letters and digits, three signs and more (a lone "b" or "a" is a label, not a word), without the words every design folder has
-const COMMON = new Set(["design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub"]);
+const COMMON = new Set(["design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub", "icons8"]);
 export const wordsOf = (s) => String(s || "").normalize("NFC").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2 && !COMMON.has(w));
 // the project name in <...>/design/<project>/<file>: the folder right under "design" (a file lying right in "design" has none)
 export function projectOf(path) {
@@ -987,28 +987,61 @@ export function projectOf(path) {
   const i = parts.lastIndexOf("design");
   return i >= 0 && i < parts.length - 2 ? parts[i + 1] : "";
 }
-// the direction a name belongs to: all its words are the words of the direction's name (best: the same set), or the direction's words are in the name;
-// two directions equally near - nothing (no guessing). Names of a direction: its sessions, its folder name.
+// a word of the name and a word of a direction: the same word (100), or one is the beginning of the other, four signs at least ("anim" - "animations"): 60
+const STEM_MIN = 4;
+const near = (a, b) => (a === b ? 100 : a.length >= STEM_MIN && b.length >= STEM_MIN && !/\d/.test(a + b) && (a.startsWith(b) || b.startsWith(a)) ? 60 : 0);
+// "hd" and "hub" are the hub's own sign: a design called hd-spacing or hub-recap (a lone "hub" is not enough) is about the hub - it belongs to a direction that says "hub" in its name, to none else
+const rawWords = (s) => String(s || "").normalize("NFC").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const HUBBY = new Set(["hd", "hub"]);
+const saysHub = (s) => rawWords(s).some((w) => HUBBY.has(w));
+const hubby = (s) => saysHub(s) && rawWords(s).length > 1;   // "hub" alone says nothing
+// the direction a name belongs to: its words are the words of the direction's name (or begin the same way), more shared words win, fewer foreign words next;
+// two directions equally near - nothing (no guessing). Names of a direction: its sessions, its label, its folder name.
+// A name with "hd" or "hub" is looked for among the directions with "hub" in their names only.
 export function nearestDir(name, dirs = []) {
-  const w = new Set(wordsOf(name));
-  if (!w.size) return "";
+  const w = [...new Set(wordsOf(name))];
+  const hub = hubby(name);
+  if (!w.length && !hub) return "";
+  const names = (d) => [...(d.names || []), d.label, lastPart(d.key)];
   let best = null, tie = false;
   for (const d of dirs) {
-    const own = new Set([...(d.names || []), d.label, lastPart(d.key)].flatMap(wordsOf));
-    const hit = [...w].filter((x) => own.has(x)).length;
-    if (!hit) continue;
-    const score = hit * 100 - (own.size - hit) - (w.size - hit);   // more shared words first, then fewer foreign words
+    if (hub && !names(d).some(saysHub)) continue;
+    const own = [...new Set(names(d).flatMap(wordsOf))];
+    let points = 0, hit = 0;
+    const used = new Set();
+    for (const x of w) {
+      let top = 0, at = "";
+      for (const o of own) { const n = near(x, o); if (n > top) { top = n; at = o; } }
+      if (top) { points += top; hit++; used.add(at); }
+    }
+    if (!hit && !hub) continue;
+    // hub names with no other word to compare (hd-motion against "hub-design"): the hub direction itself is the answer
+    const score = points - (own.length - used.size) - (w.length - hit);   // more shared words first, then fewer foreign words
     if (!best || score > best.score) { best = { key: d.key, score }; tie = false; } else if (score === best.score && best.key !== d.key) tie = true;
   }
   return best && !tie ? best.key : "";
 }
-export function projectDirOf(f, dirs = []) {
-  const project = projectOf(f.path);
-  if (project) { const k = nearestDir(project, dirs); if (k) return k; }
-  const file = String(f.path || "").split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
-  return nearestDir(f.title, dirs) || nearestDir(file, dirs);
+// a name that no direction owns but a task folder does ("ouch-templates" - "Rewarded-ads Ouch, beat 8"): the words of the name against the titles of the task folders;
+// one task folder nearest - its key, a tie or nothing in common - ""
+export function taskNear(name, taskRows = [], tasks = new Set()) {
+  const w = [...new Set(wordsOf(name))];
+  let best = null, tie = false;
+  for (const t of taskRows || []) {
+    if (!tasks.has(t.id)) continue;
+    const own = [...new Set(wordsOf(t.title))];
+    const points = w.reduce((s, x) => s + Math.max(0, ...own.map((o) => near(x, o))), 0);
+    if (!points) continue;
+    if (!best || points > best.points) { best = { id: t.id, points }; tie = false; } else if (points === best.points) tie = true;
+  }
+  return best && !tie ? TASK_PREFIX + best.id : "";
 }
-export const folderKeyOf = (f, dirs = [], tasks = new Set(), taskRows = []) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : homeOf(f, dirs, taskRows));
+export function projectDirOf(f, dirs = [], taskRows = [], tasks = new Set()) {
+  const project = projectOf(f.path);
+  if (project) { const k = nearestDir(project, dirs) || taskNear(project, taskRows, tasks); if (k) return k; }
+  const file = String(f.path || "").split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
+  return nearestDir(f.title, dirs) || nearestDir(file, dirs) || taskNear(f.title, taskRows, tasks) || taskNear(file, taskRows, tasks);
+}
+export const folderKeyOf = (f, dirs = [], tasks = new Set(), taskRows = []) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : homeOf(f, dirs, taskRows, tasks));
 // the name of a task folder: the title of the task (tasks: [{id, title}]); the same name for the folder on disk
 export const taskTitle = (id, tasks = []) => String(((tasks || []).find((x) => x.id === id) || {}).title || "").trim() || id;
 export function taskSlug(title) {
