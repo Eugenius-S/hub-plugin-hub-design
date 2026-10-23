@@ -916,3 +916,12 @@ test("dashboard: the task of a registry row stays on the file, also when the liv
   const authors = [{ path: "/u/o/a.html", session: "designer", ts: 5, last: 5, wrote: true }];
   assert.equal(dashboardFiles(authors, [], mac, { registry })[0].task, "d10");
 });
+
+test("hand edits: the designer is told to keep the owner's positions as they are, in both notes", () => {
+  const c = { file: "/a.html", sel: ".card", label: "Card", dx: 12, dy: -4, w: null, h: null, css: {}, x0: 0, y0: 0, w0: 10, h0: 10 };
+  for (const inFile of [false, true]) {
+    const text = message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [], changes: [{ ...c, inFile }] });
+    assert.match(text, /owner's manual positions as is|поставил руками, оставь как есть/, String(inFile));
+    assert.doesNotMatch(text, /ordinary layout|обычной вёрсткой|not a transform on top|не transform поверх/, String(inFile));
+  }
+});

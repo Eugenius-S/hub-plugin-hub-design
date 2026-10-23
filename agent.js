@@ -358,11 +358,17 @@
   }
 
   // --- hand edits -----------------------------------------------------------------------------------------------
+  // the shift the element already has (from the file: our earlier write, or the design's own): a new drag goes on from it, it never snaps back to 0
+  const parseShift = (v) => {
+    const m = /^(-?[\d.]+)px(?:\s+(-?[\d.]+)px)?(?:\s+0px)?$/.exec(String(v || "").trim());
+    return m ? [Number(m[1]), Number(m[2] || 0)] : [0, 0];
+  };
   function track(el) {
     let s = state.get(el);
     if (!s) {
       const r = pageRect(el);
-      s = { sel: selector(el), label: label(el), tag: el.tagName.toLowerCase(), x0: r.x, y0: r.y, w0: r.w, h0: r.h, t0: null, dx: 0, dy: 0, w: null, h: null, t: null, css: {},
+      const [sx, sy] = parseShift(el.style.translate || getComputedStyle(el).translate);
+      s = { sel: selector(el), label: label(el), tag: el.tagName.toLowerCase(), x0: r.x, y0: r.y, w0: r.w, h0: r.h, t0: null, dx: sx, dy: sy, w: null, h: null, t: null, css: {},
         attr: el.getAttribute("style") };
       state.set(el, s);
       touched.add(el);

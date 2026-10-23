@@ -78,3 +78,16 @@ test("early.js: English only, the error texts included", () => {
   assert.ok(!cyr.test(early));
   assert.match(early, /Unhandled promise rejection: /);
 });
+
+test("agent: a drag goes on from the shift the element already has (from the file), it does not snap back to 0", () => {
+  const a = src.indexOf("const parseShift");
+  assert.ok(a > 0, "parseShift found");
+  const parseShift = new Function(src.slice(a, src.indexOf("\n  };", a) + 5) + "\nreturn parseShift;")();
+  assert.deepEqual(parseShift("10px -5.5px"), [10, -5.5]);
+  assert.deepEqual(parseShift("12px"), [12, 0]);
+  assert.deepEqual(parseShift("-3px 0px"), [-3, 0]);
+  for (const v of ["none", "", null, undefined, "50% 0px", "1em 2em"]) assert.deepEqual(parseShift(v), [0, 0], String(v));
+  const track = src.slice(src.indexOf("function track(el)"), src.indexOf("const report = (el)"));
+  assert.match(track, /parseShift\(el\.style\.translate \|\| getComputedStyle\(el\)\.translate\)/);
+  assert.match(track, /dx: sx, dy: sy/);
+});
