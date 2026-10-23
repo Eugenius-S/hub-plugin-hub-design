@@ -978,7 +978,31 @@ def peer_shot(real, out):
 
 def peer_rows():
     """The designs of this machine that may go to the others: only files we serve (gone and hidden ones are not exported)."""
-    return [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok"]
+    rows = [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok"]
+    dirs = peer_dirs()
+    return [{**r, "dir": peers.folder_label(os.path.expanduser(r["path"]), dirs)} for r in rows]
+
+
+def peer_dirs():
+    """The direction folders of this machine for the grouping on the other machines: only names go out (peers.direction_dirs)."""
+    try:
+        from core import journal
+        from modules.directions import direction
+        from modules.directions.boards import Boards
+        sessions = list(journal.load_state(state_dir()).get("sessions", {}).values())
+        try:
+            names = set(Boards(direction.root(), state_dir=state_dir()).slugs())
+        except OSError:
+            names = set()
+        return peers.direction_dirs(sessions, names)
+    except Exception:   # no hub nearby (tests, an old version): no groups, the designs of this machine are listed flat
+        return []
+
+
+def peer_hub():
+    """The name of this hub (hub.json title) for the start screen of the other machines; none - they use the machine name."""
+    t = config().get("title")
+    return t.strip() if isinstance(t, str) else ""
 
 
 def peer_stamp(real):
@@ -1034,7 +1058,7 @@ def main():
         REG = registry.Registry(state_dir())
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
         # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
-        threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready), daemon=True).start()
+        threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready, peers.EVERY, peer_hub), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the links by default are put once, the first time they are downloaded (linkctl.py)
         threading.Thread(target=lambda: ctl().startup(auto=setting("auto_download_defaults")), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)

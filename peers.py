@@ -9,7 +9,9 @@ The folder: hub.json extensions.<account>:hub-design.peers_dir (the environment 
 turns it off). Not set: <hub code>/hub-sync/design, but only when the hub code has a hub-sync/sync.py next to it (a hub that already
 syncs itself between machines); otherwise the feature is off and nothing is written anywhere.
 
-<folder>/<machine>/registry.json: {"v": 1, "machine", "os", "items": [{id, name, file, session, ts, last, stamp, shot}]}; shots are
+<folder>/<machine>/registry.json: {"v": 1, "machine", "os", "hub", "items": [{id, name, file, session, ts, last, stamp, dir, shot}]}; hub - the
+name of the hub (hub.json title), dir - the direction the design belongs to (a name, never a path: the start screen of the other machine groups
+by it and must not learn the paths of another system); shots are
 <folder>/<machine>/shots/<id>.jpg, up to SHOT_WIDTH px wide. A file is rewritten only when its content changed; shots of designs that
 are gone are erased."""
 import hashlib
@@ -70,6 +72,38 @@ def folder(config, code=None):
     return os.path.realpath(os.path.expanduser(path)) if path else None
 
 
+def _key(p):
+    return str(p or "").replace("\\", "/").rstrip("/")
+
+
+def direction_dirs(sessions, directions):
+    """The folders of the directions: [(folder key, label)] - the same rule as directionDirs of lib.js (hub sessions are not directions; several
+    directions in one folder - the folder name). sessions: [{name, cwd, role, kind}]; directions: the names of the directions."""
+    by = {}
+    for s in sessions or []:
+        if not isinstance(s, dict) or not s.get("cwd") or s.get("kind") == "hub":
+            continue
+        if not (s.get("name") in (directions or ()) or s.get("role") == "worker"):
+            continue
+        by.setdefault(_key(s["cwd"]), []).append(s.get("name") or "")
+    out = []
+    for key, names in by.items():
+        out.append((key, names[0] if len(names) == 1 else (key.rsplit("/", 1)[-1] or names[0])))
+    return out
+
+
+def folder_label(path, dirs):
+    """The label of the deepest direction folder that holds the file, "" - no direction (the same rule as folderOf of lib.js)."""
+    p = _key(path)
+    win = len(p) > 1 and p[1] == ":"
+    norm = (lambda x: x.lower()) if win else (lambda x: x)
+    best, label = "", ""
+    for key, name in dirs:
+        if norm(p).startswith(norm(key) + "/") and len(key) > len(best):
+            best, label = key, name
+    return str(label)[:80]
+
+
 def item_id(path):
     return hashlib.sha1(str(path).replace("\\", "/").lower().encode("utf-8")).hexdigest()[:16]
 
@@ -100,7 +134,7 @@ def write_if_changed(path, text):
     return True
 
 
-def export(root, rows, shoot, title=None, stamp=None, me=None, limit=SHOTS_PER_PASS):
+def export(root, rows, shoot, title=None, stamp=None, me=None, limit=SHOTS_PER_PASS, hub=""):
     """One pass: rows - the registry listing of this machine (only designs whose file is here and may be shown);
     shoot(real, out) writes a JPEG to out (True - done); title(real) - the name of a design; stamp(real) - the edit time of the design.
     Returns {"written": bool, "shot": n, "left": n} - left: designs still without a fresh shot (the next pass takes them)."""
@@ -124,7 +158,7 @@ def export(root, rows, shoot, title=None, stamp=None, me=None, limit=SHOTS_PER_P
             except Exception:
                 name = ""
         it = {"id": iid, "name": name, "file": os.path.basename(real), "session": r.get("session") or "", "ts": r.get("ts") or 0,
-              "last": r.get("last") or 0, "stamp": st, "kind": os.path.splitext(real)[1].lower().lstrip("."), "shot": ""}
+              "last": r.get("last") or 0, "stamp": st, "dir": str(r.get("dir") or "")[:80], "kind": os.path.splitext(real)[1].lower().lstrip("."), "shot": ""}
         out = os.path.join(shots, iid + ".jpg")
         fresh = prev.get("stamp") == st and prev.get("shot") and os.path.isfile(out)
         if fresh:
@@ -159,7 +193,7 @@ def export(root, rows, shoot, title=None, stamp=None, me=None, limit=SHOTS_PER_P
                 os.remove(os.path.join(shots, n))
     except OSError:
         pass
-    doc = {"v": 1, "machine": me, "os": this_os(), "items": items}
+    doc = {"v": 1, "machine": me, "os": this_os(), "hub": str(hub or "")[:80], "items": items}
     written = write_if_changed(os.path.join(mine, FILE), json.dumps(doc, ensure_ascii=False, indent=0, sort_keys=True))
     return {"written": written, "shot": shot, "left": left}
 
@@ -187,9 +221,9 @@ def peers(root, me=None):
                 shot = ""
             items.append({"id": it["id"][:40], "name": str(it.get("name") or "")[:200], "file": str(it.get("file") or "")[:200],
                           "session": str(it.get("session") or "")[:80], "ts": _num(it.get("ts")), "last": _num(it.get("last")),
-                          "kind": str(it.get("kind") or "")[:8], "stamp": _num(it.get("stamp")), "shot": shot})
+                          "kind": str(it.get("kind") or "")[:8], "stamp": _num(it.get("stamp")), "dir": str(it.get("dir") or "")[:80], "shot": shot})
         items.sort(key=lambda x: x["last"] or x["ts"], reverse=True)
-        out.append({"machine": name, "os": str(doc.get("os") or "")[:20], "items": items})
+        out.append({"machine": name, "os": str(doc.get("os") or "")[:20], "hub": str(doc.get("hub") or "")[:80], "items": items})
     return out
 
 
@@ -205,7 +239,7 @@ def shot_path(root, name, shot, me=None):
     return real if os.path.isfile(real) else None
 
 
-def run(get_root, listing, shoot, title, stamp, ready=lambda: True, every=EVERY):
+def run(get_root, listing, shoot, title, stamp, ready=lambda: True, every=EVERY, hub=lambda: ""):
     """The loop of a thread of the process: a pass every `every` seconds, sooner while shots are left."""
     while True:
         wait = every
@@ -214,7 +248,7 @@ def run(get_root, listing, shoot, title, stamp, ready=lambda: True, every=EVERY)
             if root and not ready():
                 wait = 5   # the journal is still being read: look again soon, not in a minute
             elif root:
-                res = export(root, listing(), shoot, title, stamp)
+                res = export(root, listing(), shoot, title, stamp, hub=hub())
                 if res["left"]:
                     wait = 5
         except Exception as e:

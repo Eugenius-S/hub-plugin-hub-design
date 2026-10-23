@@ -114,6 +114,47 @@ class Export(unittest.TestCase):
         self.assertEqual([it["file"] for it in self.doc()["items"]], ["a.html"])
 
 
+class Groups(unittest.TestCase):
+    """The grouping of the designs of another machine: by the direction (a name), never by a path of its system."""
+    SESSIONS = [
+        {"name": "hub-core", "cwd": "C:/Hub", "kind": "hub"},
+        {"name": "ads", "cwd": "C:/Work/Ads", "role": ""},
+        {"name": "ads-b", "cwd": "C:/Work/Ads/sub", "role": "worker"},
+        {"name": "x", "cwd": "C:/Work/X", "role": "worker"}, {"name": "y", "cwd": "C:/Work/X", "role": "worker"},
+        {"name": "designer", "cwd": "C:/Work/D", "role": ""},
+    ]
+
+    def test_directions_and_the_deepest_folder_name_the_group(self):
+        dirs = peers.direction_dirs(self.SESSIONS, {"ads"})
+        self.assertEqual(sorted(n for _k, n in dirs), ["X", "ads", "ads-b"])   # two in one folder - the folder name; hub and specialists are none
+        self.assertEqual(peers.folder_label(r"C:\Work\Ads\sub\a\i.html", dirs), "ads-b")   # the deepest wins
+        self.assertEqual(peers.folder_label("c:/work/ads/design/i.html", dirs), "ads")             # Windows paths do not care for case
+        self.assertEqual(peers.folder_label("C:/Work/D/i.html", dirs), "")                          # a specialist's folder is no direction
+        self.assertEqual(peers.folder_label("C:/Elsewhere/i.html", dirs), "")
+
+    def test_the_export_carries_the_group_and_the_hub_name_and_the_read_gives_them_back(self):
+        root = tempfile.mkdtemp(dir=TMP)
+        site = tempfile.mkdtemp(dir=TMP)
+        path = os.path.join(site, "a.html")
+        with open(path, "w") as f:
+            f.write("<p>a</p>")
+        rows = [{"path": path, "session": "ads", "ts": 1, "last": 2, "dir": "ads"}]
+        peers.export(root, rows, Shooter(), me="pc-two", hub="Nexus-Win")
+        got = peers.peers(root, me="mac-one")
+        self.assertEqual((got[0]["hub"], got[0]["items"][0]["dir"]), ("Nexus-Win", "ads"))
+        with open(os.path.join(root, "pc-two", peers.FILE), encoding="utf-8") as f:
+            text = f.read()
+        self.assertNotIn(site.replace("\\", "/"), text.replace("\\\\", "/"))   # only the file name, no path of this system
+
+    def test_an_old_registry_without_the_fields_reads_as_no_group_and_no_hub_name(self):
+        root = tempfile.mkdtemp(dir=TMP)
+        os.makedirs(os.path.join(root, "old"))
+        with open(os.path.join(root, "old", peers.FILE), "w", encoding="utf-8") as f:
+            json.dump({"v": 1, "machine": "old", "os": "mac", "items": [{"id": "a" * 16, "name": "A", "last": 1}]}, f)
+        got = peers.peers(root, me="me")
+        self.assertEqual((got[0]["hub"], got[0]["items"][0]["dir"]), ("", ""))
+
+
 class Read(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp(dir=TMP)
