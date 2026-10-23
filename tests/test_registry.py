@@ -253,6 +253,56 @@ class Tasks(Registry):
             json.dump(saved, f)
         self.assertEqual({k: v.get("task") for k, v in self.paths(self.reg()).items()}, {"a.html": "d10", "b.html": "d10"})
 
+    def test_a_round_by_the_file_name_belongs_to_the_task_of_the_first_version(self):
+        # the owner's note / a dislike is not a task: the session has no task in that turn, the round is told by its name
+        _, got = self.of([raised(10, "designer", "hub-core", title="BF"), turn(11, "designer", "m10"),
+                          wrote(12, "designer", p("pack", "bf-post-01.html")), wrote(13, "designer", p("pack", "bf-poster-03.html")),
+                          turn(14, "designer", "m14", "[hub:m14 от владельца] крупнее иллюстрацию"),
+                          wrote(15, "designer", p("pack", "bf-post-01-2.html")), wrote(16, "designer", p("pack", "bf-post-01-3.html")),
+                          wrote(17, "designer", p("pack", "bf-poster-03-6.html")), wrote(18, "designer", p("pack", "bf-post-01-2a.html")),
+                          wrote(19, "designer", p("pack", "other.html")), wrote(20, "designer", p("pack", "bf-post-09-2.html"))])
+        self.assertEqual(got, {"bf-post-01.html": "d10", "bf-poster-03.html": "d10", "bf-post-01-2.html": "d10", "bf-post-01-3.html": "d10",
+                               "bf-poster-03-6.html": "d10", "bf-post-01-2a.html": "d10", "other.html": None, "bf-post-09-2.html": None})
+
+    def test_a_round_in_the_folder_of_a_design_and_a_copy_of_the_round_are_told_too(self):
+        r, got = self.of([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10"),
+                          wrote(12, "designer", p("kolo", "index.html")), wrote(13, "designer", p("pack", "land.html")),
+                          turn(14, "designer", "m14", "[hub:m14 от владельца] ещё раз"),
+                          wrote(15, "designer", p("kolo-2", "index.html")), wrote(16, "designer", p("pack", "land.r2.html"))])
+        self.assertEqual(got, {"index.html": "d10", "land.html": "d10", "land.r2.html": "d10"})
+        self.assertEqual({(os.path.basename(os.path.dirname(v["path"])), v.get("task")) for v in r.listing()},
+                         {("kolo", "d10"), ("pack", "d10"), ("kolo-2", "d10")})
+
+    def test_a_round_of_a_task_stays_in_its_own_task_and_a_name_does_not_cross_folders(self):
+        _, got = self.of([raised(10, "designer", "hub-core", title="A"), turn(11, "designer", "m10"), wrote(12, "designer", p("a", "x.html")),
+                          raised(20, "designer", "hub-core", title="B"), turn(21, "designer", "m20"), wrote(22, "designer", p("b", "x-2.html")),
+                          turn(23, "designer", "m23", "[hub:m23 от владельца] правка"), wrote(24, "designer", p("c", "x-2.html"))])
+        r = self.reg()
+        by = {(os.path.basename(os.path.dirname(v["path"])), os.path.basename(v["path"])): v.get("task") for v in r.listing()}
+        self.assertEqual(by, {("a", "x.html"): "d10", ("b", "x-2.html"): "d20", ("c", "x-2.html"): None})
+
+    def test_a_round_started_by_the_edit_message_names_the_design_in_it_even_when_the_file_is_called_otherwise(self):
+        # the plugin message names the path of the design the owner disliked; the author saves the new one under another name
+        old = p("pack", "poster.html")
+        _, got = self.of([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10"), wrote(12, "designer", old),
+                          turn(13, "designer", "m13", f"[hub:m13 от плагина hub-design] hub-design: why the owner disliked your design \"Poster\" ({old}): Not pretty."),
+                          wrote(14, "designer", p("pack", "poster-final.html")),
+                          turn(15, "designer", "m15", "[hub:m15 от владельца] совсем другое"), wrote(16, "designer", p("pack", "free.html"))])
+        self.assertEqual(got, {"poster.html": "d10", "poster-final.html": "d10", "free.html": None})
+
+    def test_the_rounds_of_an_old_registry_get_their_task_without_reading_the_journal_again(self):
+        self.live([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10"), wrote(12, "designer", p("pack", "a.html")),
+                   turn(13, "designer", "m13", "[hub:m13 от владельца] ещё"), wrote(14, "designer", p("pack", "a-2.html"))])
+        r = self.reg()
+        with open(r.path, encoding="utf-8") as f:
+            saved = json.load(f)
+        for it in saved["items"]:
+            it.pop("task", None) if it["path"].endswith("a-2.html") else None
+        with open(r.path, "w", encoding="utf-8") as f:
+            json.dump(saved, f)
+        again = registry.Registry(self.tmp)   # no poll: the loaded file is enough
+        self.assertEqual({os.path.basename(v["path"]): v.get("task") for v in again.listing()}, {"a.html": "d10", "a-2.html": "d10"})
+
     def test_a_task_in_the_archive_is_found(self):
         self.archive([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10")])
         self.live([ev(30, "core.snapshot", {}), wrote(31, "designer", p("d", "a.html"))])

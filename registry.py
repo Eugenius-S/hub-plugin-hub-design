@@ -12,6 +12,9 @@ its source path) or created with the Write tool. An Edit only refreshes the time
 Each design also carries the task it was made for (`task`: the id of the root of the chain, d123): the journal says which task a session works
 on (the turn of a delegation starts with its number, a reply says "ответ на задачу d123"), and a task raised by a session that works on a
 task is its subtask. The dashboard puts all designs of one root task into one folder.
+A round of the owner's fix (a note, a dislike) is not a task: the session has none in that turn. The round goes to the task of the design it
+fixes: the one the message of the turn names by its path, else the one the file name tells (<name>-2, -3, -2a, .r2, a folder <name>-2/index.html
+for <name>.html or <name>/index.html in the same folder).
 Paths of another OS (C:\\... on a Mac and the other way round) are not kept: this machine cannot show them.
 
 `python3 registry.py --report [state dir]` counts what the journal holds, without writing anything."""
@@ -42,6 +45,10 @@ KEEP_TASKS = 1500   # tasks kept besides the roots of the designs
 # the task a turn works on, named in the head of its prompt: a reply to a task, an addition, the task itself
 TASK_IN_HEAD = re.compile(r"(?:ответ на задачу|к задаче|задач[аеуи]|task)\s+(d\d+)", re.I)
 HEAD = re.compile(r"^\[hub:m\d+(?:x\d+)?\s+от\s")
+# a path of a design in the head of a message (no spaces: the head is cut short and a path with spaces is not told from the text)
+PATH_IN_HEAD = re.compile(r"(?:[A-Za-z]:[\\/]|/)[^\s\"'<>()]+\.(?:html?|pdf|svg)\b", re.I)
+# the end of a name that makes it a round of another file: -2, -12, -2a, _v2, -r2, .r2
+ROUND = re.compile(r"(?:[-_.]r|[-_]v|-)\d+[a-z]?$", re.I)
 TITLE_MAX = 70
 
 
@@ -111,9 +118,66 @@ def task_folders(rows, minimum=TASK_MIN):
     return {k for k, n in count.items() if n >= minimum}
 
 
+def round_parents(key):
+    """The keys a file could be a round of: its name without the round endings, the nearest first (bf-01-2 -> bf-01 -> bf).
+    A design in a folder (<dir>/index.html) is named by the folder: kolo-2/index.html is a round of kolo/index.html."""
+    where, _, base = key.rpartition("/")
+    stem, ext = os.path.splitext(base)
+    folder = stem.lower() == "index" and where.count("/") >= 1
+    unit, head = (where.rpartition("/")[2], where.rpartition("/")[0]) if folder else (stem, where)
+    out = []
+    while (m := ROUND.search(unit)) and m.start() > 0:
+        unit = unit[:m.start()]
+        out.append(f"{head}/{unit}/{base}" if folder else f"{head}/{unit}{ext}")
+    return out
+
+
+def round_task(items, key):
+    """The task of the first version of a round, told by the file name; None if the name is no round or its first version has no task."""
+    for parent in round_parents(key):
+        if (items.get(parent) or {}).get("task"):
+            return items[parent]["task"]
+    return None
+
+
+def inherit_rounds(items):
+    """A registry saved before rounds were told: the designs without a task take the one of the file they are a round of."""
+    changed = False
+    for k, v in items.items():
+        if not v.get("task") and (t := round_task(items, k)):
+            v["task"] = t
+            changed = True
+    return changed
+
+
+def note_edit(items, state, ev):
+    """A message (not a task) that names the path of a known design: the session fixes that design in this turn. Any other message ends it;
+    a wake-up of the session (a background job ended) keeps it."""
+    head = str((ev.get("data") or {}).get("prompt_head") or "")
+    session = ev.get("entity") or ""
+    if not HEAD.match(head):
+        return
+    edit = state.setdefault("edit", {})
+    for m in PATH_IN_HEAD.finditer(head):
+        k = key_of(m[0])
+        if k in items:
+            edit[session] = k
+            return
+    edit.pop(session, None)
+
+
+def edit_task(items, state, session):
+    """The task of the design the session fixes now (or of the file it is a round of)."""
+    k = state.get("edit", {}).get(session)
+    if not k:
+        return None
+    return (items.get(k) or {}).get("task") or round_task(items, k)
+
+
 def new_state():
-    """What the fold keeps besides the designs: the tasks {id: {title, by, who, ts, root}} and the task each session works on now."""
-    return {"tasks": {}, "cur": {}}
+    """What the fold keeps besides the designs: the tasks {id: {title, by, who, ts, root}}, the task each session works on now and the design
+    (key) each session fixes now - the one its last message named."""
+    return {"tasks": {}, "cur": {}, "edit": {}}
 
 
 def root_of(state, did):
@@ -168,6 +232,8 @@ def fold(items, ev, state=None):
     if state is None:
         state = new_state()
     if kind in ("delegation.created", "task.noted", "turn.started"):
+        if kind == "turn.started":
+            note_edit(items, state, ev)
         return fold_task(state, ev)
     if kind == "owner.file":
         path, session, rank = design_path(data.get("source") or data.get("path")), data.get("sender"), 1
@@ -187,6 +253,8 @@ def fold(items, ev, state=None):
     k = key_of(path)
     task = root_of(state, state["cur"][session]) if session in state["cur"] else None
     cur = items.get(k)
+    if not task and not (cur or {}).get("task"):   # no task of its own in this turn: a round of a design takes the task of that design
+        task = edit_task(items, state, session) or round_task(items, k)
     if not cur:
         items[k] = {"path": path, "session": session or "", "ts": ts, "last": ts, "rank": rank, **({"task": task} if task else {})}
         return True
@@ -252,8 +320,10 @@ class Registry:
             if saved.get("v") == VERSION:
                 self.seq = int(saved.get("seq") or 0)
                 self.state = {"tasks": {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)},
-                              "cur": {k: v for k, v in (saved.get("cur") or {}).items() if isinstance(v, str)}}
+                              "cur": {k: v for k, v in (saved.get("cur") or {}).items() if isinstance(v, str)},
+                              "edit": {k: v for k, v in (saved.get("edit") or {}).items() if isinstance(v, str)}}
             # an older registry knew no tasks: the journal is read once more from the very start, the designs stay
+            inherit_rounds(self.items)
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
             pass
 
@@ -270,11 +340,11 @@ class Registry:
         tasks = self.pruned_tasks(keep)
         with self.lock:
             self.state["tasks"] = tasks
-            cur = dict(self.state["cur"])
+            cur, edit = dict(self.state["cur"]), dict(self.state.get("edit") or {})
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"v": VERSION, "seq": self.seq, "items": keep, "tasks": tasks, "cur": cur}, f, ensure_ascii=False)
+            json.dump({"v": VERSION, "seq": self.seq, "items": keep, "tasks": tasks, "cur": cur, "edit": edit}, f, ensure_ascii=False)
         os.replace(tmp, self.path)
         self.saved_cur, self.saved_at = cur, time.time()
 
