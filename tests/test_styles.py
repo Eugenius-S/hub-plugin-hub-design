@@ -309,29 +309,28 @@ class Search(unittest.TestCase):
         self.assertEqual(items[0], {"id": "a1", "name": "Marlin", "category": "Editorial", "tags": ["calm", "blue", "serif"], "preview": True, "labels": []})
 
 
-def make_kinds_library(root):
-    """Refero-like web styles (no set, with labels), a set of slides and one of banners (a set, no labels), one odd category."""
+def make_segments_library(root):
+    """Labelled web styles (one with two style labels, one with a theme only) and imported sets that have no labels at all."""
     with open(os.path.join(root, "a.md"), "w", encoding="utf-8") as f:
         f.write("# a")
     index = {
         "w1": {"name": "Web One", "file": "a.md", "category": "Editorial"},
         "w2": {"name": "Web Two", "file": "a.md", "category": "Dark"},
+        "w3": {"name": "Web Three", "file": "a.md", "category": "Dark"},
         "s1": {"name": "Deck One", "file": "a.md", "category": "Слайды", "set": "decks"},
         "s2": {"name": "Deck Two", "file": "a.md", "category": "Раскладка слайда", "set": "decks"},
-        "b1": {"name": "Banner One", "file": "a.md", "category": "Баннер", "set": "ads"},
-        "x1": {"name": "Strange", "file": "a.md", "category": "Whatever", "set": "misc"},
     }
     with open(os.path.join(root, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)
     with open(os.path.join(root, "tags.json"), "w", encoding="utf-8") as f:
-        json.dump({"w1": {"theme": "light", "style": ["minimal"]}, "w2": {"theme": "dark", "style": ["minimal", "neon"]}}, f)
+        json.dump({"w1": {"theme": "light", "style": ["minimal"]}, "w2": {"theme": "dark", "style": ["minimal", "neon"]}, "w3": {"theme": "dark"}}, f)
 
 
-class Kinds(unittest.TestCase):
+class Segments(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = os.path.realpath(tempfile.mkdtemp(prefix="hd-styles-"))
-        make_kinds_library(cls.root)
+        make_segments_library(cls.root)
         cls.lib = styles.load(cls.root)
 
     @classmethod
@@ -342,44 +341,36 @@ class Kinds(unittest.TestCase):
         total, items = self.lib.search(**kw)
         return total, [i["name"] for i in items]
 
-    def test_a_style_outside_a_set_is_web_and_a_set_has_its_kind_by_the_category(self):
-        self.assertEqual(styles.kind_of("", "Слайды"), "web")
-        self.assertEqual(styles.kind_of("sets", "Слайды"), "slides")
-        self.assertEqual(styles.kind_of("sets", "iOS-приложение"), "apps")
-        self.assertEqual(styles.kind_of("sets", "Something new"), "other")
+    def test_the_segments_are_the_style_labels_by_frequency_then_the_styles_without_a_label(self):
+        self.assertEqual([(x["k"], x["n"]) for x in self.lib.segments()], [("minimal", 2), ("neon", 1), (styles.NONE, 3)])
+        self.assertEqual(self.lib.segments("ru")[0]["t"], "минимализм")
+        self.assertEqual((self.lib.count(), self.lib.count("minimal"), self.lib.count(styles.NONE)), (5, 2, 3))
 
-    def test_the_kinds_come_in_a_fixed_order_with_counts_and_empty_ones_are_not_there(self):
-        self.assertEqual(self.lib.kinds, [{"k": "web", "n": 2}, {"k": "slides", "n": 2}, {"k": "banner", "n": 1}, {"k": "other", "n": 1}])
-        self.assertEqual((self.lib.count(), self.lib.count("slides"), self.lib.count("apps")), (6, 2, 0))
+    def test_the_asked_segment_if_the_switch_has_it_else_all(self):
+        self.assertEqual((self.lib.scope("neon"), self.lib.scope(styles.NONE), self.lib.scope("brutalist"), self.lib.scope("")), ("neon", styles.NONE, "", ""))
 
-    def test_the_asked_kind_if_there_is_one_else_web_else_the_first(self):
-        self.assertEqual((self.lib.kind("banner"), self.lib.kind("apps"), self.lib.kind("")), ("banner", "web", "web"))
-        alone = styles.Library(self.root, [e for e in self.lib.entries if e["kind"] == "slides"])
-        self.assertEqual((alone.kinds, alone.kind("web")), ([], ""))   # one kind only: nothing to switch
-        no_web = styles.Library(self.root, [e for e in self.lib.entries if e["kind"] != "web"])
-        self.assertEqual(no_web.kind("web"), "slides")
-
-    def test_search_stays_inside_the_kind_and_so_do_the_categories(self):
-        self.assertEqual(self.names(kind="slides"), (2, ["Deck One", "Deck Two"]))
-        self.assertEqual(self.names(kind="web", q="deck"), (0, []))
+    def test_search_and_categories_stay_inside_the_segment(self):
+        self.assertEqual(self.names(scope="minimal"), (2, ["Web One", "Web Two"]))
+        self.assertEqual(self.names(scope="neon"), (1, ["Web Two"]))
+        self.assertEqual(self.names(scope=styles.NONE), (3, ["Deck One", "Deck Two", "Web Three"]))   # the sets and a web style the tagger gave no style
+        self.assertEqual(self.names(scope="minimal", q="deck"), (0, []))
         self.assertEqual(self.names(q="deck"), (2, ["Deck One", "Deck Two"]))
-        self.assertEqual(self.names(kind="web", cat="Слайды"), (0, []))
-        self.assertEqual(self.lib.cats_of("web"), [{"name": "Dark", "n": 1}, {"name": "Editorial", "n": 1}])
-        self.assertEqual([c["name"] for c in self.lib.cats_of("slides")], ["Раскладка слайда", "Слайды"])
-        self.assertEqual(len(self.lib.cats), 6)   # the whole library, as before
+        self.assertEqual([c["name"] for c in self.lib.cats_of(styles.NONE)], ["Dark", "Раскладка слайда", "Слайды"])
+        self.assertEqual(len(self.lib.cats), 4)   # the whole library, as before
 
-    def test_the_chips_are_counted_inside_the_kind_and_a_kind_with_no_labels_has_none(self):
-        web = self.lib.facets("en", kind="web")
-        self.assertEqual({k["k"]: k["n"] for k in web["style"]}, {"minimal": 2, "neon": 1})
-        self.assertEqual(self.lib.facets("en", kind="slides"), {})
-        self.assertEqual({k["k"]: k["n"] for k in self.lib.facets("en")["style"]}, {"minimal": 2, "neon": 1})
+    def test_the_other_chips_are_counted_inside_the_segment(self):
+        self.assertEqual({k["k"]: k["n"] for k in self.lib.facets("en", scope="neon")["theme"]}, {"dark": 1})
+        self.assertEqual({k["k"]: k["n"] for k in self.lib.facets("en", scope="minimal")["theme"]}, {"dark": 1, "light": 1})
+        self.assertEqual(self.lib.facets("en", scope="minimal")["style"][0], {"k": "minimal", "t": "minimal", "n": 2})
 
-    def test_a_library_without_sets_has_one_kind_and_nothing_to_switch(self):
+    def test_no_labels_or_nothing_to_switch_between_means_no_segments(self):
         root = os.path.realpath(tempfile.mkdtemp(prefix="hd-styles-"))
         try:
-            make_library(root)
+            make_library(root)   # no tags.json
             lib = styles.load(root)
-            self.assertEqual((lib.kinds, lib.kind("slides"), lib.search(kind="")[0], lib.count()), ([], "", 3, 3))
+            self.assertEqual((lib.segments(), lib.scope("minimal"), lib.search(scope="")[0], lib.count()), ([], "", 3, 3))
+            one = styles.Library(root, [{**e, "labels": {"style": ["minimal"]}} for e in lib.entries])   # every style has the one label: one segment is no switch
+            self.assertEqual(one.segments(), [])
         finally:
             shutil.rmtree(root, ignore_errors=True)
 

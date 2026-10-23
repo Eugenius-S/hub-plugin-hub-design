@@ -31,11 +31,10 @@ TAGS = "tags.json"
 LABELS_SHOWN = 3         # labels on a card of the list
 LABELS_PER_AXIS = 8
 FACETS_TOP = {"medium": 8, "theme": 3, "style": 10, "mood": 8, "industry": 8, "density": 3}   # chips of the panel: how many of the most frequent labels of each axis
-# The kinds of the picker (what a style is made for): the segments over the filters. Refero (no "set" in index.json) is web; a set of
-# import_sets.py has its kind by the category of its entries. A category not listed here is "other"; a kind with no entries is not shown.
-KINDS = ("web", "apps", "slides", "email", "banner", "systems", "other")
-KIND_OF_CATEGORY = {"iOS-приложение": "apps", "Мобильное приложение": "apps", "Слайды": "slides", "Раскладка слайда": "slides", "Email": "email",
-                    "Баннер": "banner", "Дизайн-система": "systems", "Направление стиля": "systems"}
+# The segments of the picker: the style of the design itself (the "style" axis of tags.json), as a switch above the other filters. The most frequent
+# labels get a segment; a style with no style label at all (every imported set, a Refero style the tagger has not seen) has the segment NONE.
+SEGMENTS = 10
+NONE = "_none"
 PAGE_MAX = 60            # entries in one answer, however many the page asks for
 TAGS_SHOWN = 6
 MD_MAX = 1024 * 1024     # a style file is read up to this size
@@ -97,7 +96,7 @@ def default_library(config):
     except OSError:
         return None
     name = next((ln[2:].strip() for ln in head.splitlines() if ln.startswith("# ") and ln[2:].strip()), "") or os.path.basename(root)
-    entry = {"id": DEFAULT_ID, "name": name[:120], "file": DEFAULT_FILE, "category": "", "tags": [], "preview": prev, "site": "", "description": "", "labels": {}, "kind": "web"}
+    entry = {"id": DEFAULT_ID, "name": name[:120], "file": DEFAULT_FILE, "category": "", "tags": [], "preview": prev, "site": "", "description": "", "labels": {}}
     lib = Library(root, [entry])
     _cache[("default", root)] = (sig, lib)
     return lib
@@ -120,11 +119,6 @@ def _inside(root, rel):
     return real if inside and os.path.isfile(real) else None
 
 
-def kind_of(raw_set, category):
-    """The kind of an entry: no set - a Refero style (web); in a set - by its category."""
-    return KIND_OF_CATEGORY.get(category, "other") if raw_set else "web"
-
-
 def _entry(root, key, raw):
     if not isinstance(raw, dict):
         return None
@@ -142,8 +136,7 @@ def _entry(root, key, raw):
         cover = ""
     site = _text(raw.get("site"), 300)
     return {"id": sid, "name": name, "file": file, "category": _text(raw.get("category"), 60), "tags": tags, "preview": prev.replace("\\", "/"), "cover": cover.replace("\\", "/"),
-            "site": site if re.match(r"https?://", site) else "", "description": _text(raw.get("description"), 600),
-            "kind": kind_of(_text(raw.get("set"), 80), _text(raw.get("category"), 60))}
+            "site": site if re.match(r"https?://", site) else "", "description": _text(raw.get("description"), 600)}
 
 
 def _labels(raw):
@@ -171,39 +164,56 @@ class Library:
         self.labelled = any(e.get("labels") for e in self.entries)
         self._rows = None
         self._count = {}
-        n = {}
-        for e in self.entries:
-            n[e["kind"]] = n.get(e["kind"], 0) + 1
-        self.kinds = [{"k": k, "n": n[k]} for k in KINDS if n.get(k)] if len(n) > 1 else []   # one kind only - nothing to switch between
+        self._seg = None
         self.cats = self.cats_of("")
 
-    def kind(self, want=""):
-        """The kind the list is about: the asked one if the library has it, else web (or the first one); "" when there is nothing to switch."""
-        ks = [x["k"] for x in self.kinds]
-        return want if want in ks else "web" if "web" in ks else ks[0] if ks else ""
+    def segments(self, lang="en"):
+        """The switch over the filters: [{k, t, n}] - the most frequent style labels, then NONE (the styles with no style label) when there are some; the
+        styles are counted by every label they have, so the numbers overlap. [] when the library has no labels or there is nothing to switch between."""
+        if not self.labelled:
+            return []
+        if self._seg is None:
+            n, none = {}, 0
+            for e in self.entries:
+                got = stylesearch.have(e.get("labels"), "style")
+                none += not got
+                for k in got:
+                    n[k] = n.get(k, 0) + 1
+            self._seg = (sorted(n.items(), key=lambda kv: (-kv[1], kv[0]))[:SEGMENTS], none)
+        top, none = self._seg
+        v = stylesearch.vocab()
+        out = [{"k": k, "t": v.name(k, lang), "n": c} for k, c in top] + ([{"k": NONE, "t": "", "n": none}] if none else [])
+        return out if len(out) > 1 else []
 
-    def has(self, e, kind):
-        return not kind or e["kind"] == kind
+    def scope(self, want=""):
+        """The segment the list is about: the asked one if the switch has it, else "" (all the styles)."""
+        return want if want and any(x["k"] == want for x in self.segments()) else ""
 
-    def count(self, kind=""):
-        return sum(1 for e in self.entries if self.has(e, kind))
+    def has(self, e, scope):
+        if not scope:
+            return True
+        got = stylesearch.have(e.get("labels"), "style")
+        return not got if scope == NONE else scope in got
 
-    def cats_of(self, kind=""):
+    def count(self, scope=""):
+        return sum(1 for e in self.entries if self.has(e, scope))
+
+    def cats_of(self, scope=""):
         cats = {}
         for e in self.entries:
-            if e["category"] and self.has(e, kind):
+            if e["category"] and self.has(e, scope):
                 cats[e["category"]] = cats.get(e["category"], 0) + 1
         return [{"name": k, "n": v} for k, v in sorted(cats.items(), key=lambda kv: (-kv[1], kv[0].lower()))]
 
-    def search(self, q="", cat="", offset=0, limit=24, filters=None, lang="en", kind=""):
+    def search(self, q="", cat="", offset=0, limit=24, filters=None, lang="en", scope=""):
         """-> (how many, one page of the list). Without labels (no tags.json): the entries whose name, category or tags contain every word of q
         (names first). With labels: ranked by stylesearch (labels, name, category, tags, description), then the entries that only contain the words.
-        cat - exactly this category; kind - only this kind (see KINDS); filters {axis: label} - only the entries that have all these labels; the list is alphabetical when q is empty."""
+        cat - exactly this category; scope - only this segment of the switch (a style label or NONE, see segments); filters {axis: label} - only the entries that have all these labels; the list is alphabetical when q is empty."""
         words = [w for w in re.split(r"\s+", (q or "").lower().strip()) if w]
         keep = {a: k for a, k in (filters or {}).items() if a in stylesearch.AXES and isinstance(k, str) and k}
 
         def ok(e):
-            return self.has(e, kind) and (not cat or e["category"] == cat) and all(k in stylesearch.have(e.get("labels"), a) for a, k in keep.items())
+            return self.has(e, scope) and (not cat or e["category"] == cat) and all(k in stylesearch.have(e.get("labels"), a) for a, k in keep.items())
 
         v = stylesearch.vocab()
         rows = []   # (entry, the labels that matched the query)
@@ -216,7 +226,7 @@ class Library:
         else:
             rows = [(e, []) for _, e in sorted(self._plain(words), key=lambda r: r[0]) if ok(e)]   # stable: names stay alphabetical inside a group
         offset, limit = max(0, int(offset)), max(0, min(int(limit), PAGE_MAX))
-        return len(rows), [brief(e, lang, hits + list(keep.values())) for e, hits in rows[offset:offset + limit]]
+        return len(rows), [brief(e, lang, hits + list(keep.values()) + ([scope] if scope != NONE else [])) for e, hits in rows[offset:offset + limit]]
 
     def _plain(self, words):
         """[(0 if every word is in the name else 1, entry)] of the entries that have every word in the name, category or tags."""
@@ -228,22 +238,22 @@ class Library:
                 out.append((0 if words and all(w in name for w in words) else 1, e))
         return out
 
-    def facets(self, lang="en", keep=(), kind=""):
-        """The chips of the panel {axis: [{k, t, n}]}: the most frequent labels of each axis (and those in `keep`) with the number of styles of this kind;
-        {} without labels (a kind with no labelled style gets no rows at all)."""
+    def facets(self, lang="en", keep=(), scope=""):
+        """The chips of the panel {axis: [{k, t, n}]}: the most frequent labels of each axis (and those in `keep`) with the number of styles of the segment;
+        {} without labels (a segment with no labelled style gets no rows at all)."""
         if not self.labelled:
             return {}
-        if kind not in self._count:
-            count = self._count[kind] = {a: {} for a in stylesearch.AXES}
+        if scope not in self._count:
+            count = self._count[scope] = {a: {} for a in stylesearch.AXES}
             for e in self.entries:
-                if self.has(e, kind):
+                if self.has(e, scope):
                     for a, n in count.items():
                         for k in stylesearch.have(e.get("labels"), a):
                             n[k] = n.get(k, 0) + 1
         v = stylesearch.vocab()
         out = {}
         for a, size in FACETS_TOP.items():
-            freq = sorted(self._count[kind][a].items(), key=lambda kv: (-kv[1], kv[0]))
+            freq = sorted(self._count[scope][a].items(), key=lambda kv: (-kv[1], kv[0]))
             top = freq[:size] + [kv for kv in freq[size:] if kv[0] in keep]
             if top:
                 out[a] = [{"k": k, "t": v.name(k, lang), "n": n} for k, n in top]

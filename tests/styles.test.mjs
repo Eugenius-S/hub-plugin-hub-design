@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { AXES, DEFAULT_ID, btnShown, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, filterRows, filtered, kindName, kindsShown, listQuery, pager, t, textOn, toggled } from "../styles.js";
+import { AXES, DEFAULT_ID, btnShown, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, NONE, filterRows, filtered, listQuery, segmentName, segmentsShown, pager, t, textOn, toggled } from "../styles.js";
 import { setLangSource } from "../i18n.js";
 
 const cyr = /[Ѐ-ӿ]/;
@@ -250,20 +250,22 @@ test("btnShown: the Style button is visible until the library is proven absent -
   assert.equal(btnShown(false, "1"), false);
 });
 
-test("the kind of the picker: sent only when chosen, the known ones named, the unknown shown by its key", () => {
-  assert.equal(listQuery({ kind: "slides" }), `q=&cat=&offset=0&limit=${PAGE}&kind=slides`);
-  assert.equal(listQuery({ kind: "" }), `q=&cat=&offset=0&limit=${PAGE}`);
-  assert.equal(kindName("web"), "Sites");
-  assert.equal(kindName("zine"), "zine");
+test("the style segment of the picker: sent only when chosen, never as a filter chip, the labelless one named by the page", () => {
+  assert.equal(listQuery({ style: "neon" }), `q=&cat=&offset=0&limit=${PAGE}&style=neon`);
+  assert.equal(listQuery({ style: "" }), `q=&cat=&offset=0&limit=${PAGE}`);
+  assert.equal(listQuery({ f: { style: "neon", theme: "dark" } }), `q=&cat=&offset=0&limit=${PAGE}&theme=dark`);
+  assert.equal(segmentName({ k: "neon", t: "neon" }), "neon");
+  assert.equal(segmentName({ k: NONE, t: "" }), "No label");
   setLangSource(() => "ru");
-  assert.equal(kindName("banner"), "Баннеры");
-  assert.deepEqual(kindsShown([{ k: "web", n: 3 }, { k: "apps", n: 0 }, { n: 2 }, null, { k: "email", n: 1 }]), [{ k: "web", n: 3 }, { k: "email", n: 1 }]);
-  assert.deepEqual(kindsShown(undefined), []);
+  assert.equal(segmentName({ k: NONE, t: "" }), "Без метки");
+  assert.equal(segmentName({ k: "neon", t: "неон" }), "неон");
+  assert.deepEqual(segmentsShown([{ k: "a", t: "A", n: 3 }, { k: "b", t: "B", n: 0 }, { n: 2 }, null, { k: NONE, t: "", n: 1 }, { k: "c", n: 4 }]), [{ k: "a", t: "A", n: 3 }, { k: NONE, t: "", n: 1 }]);
+  assert.deepEqual(segmentsShown(undefined), []);
 });
 
-test("the label rows: the axes with chips only, and never the medium (the segments took its place)", () => {
+test("the label rows: the axes with chips only, and never the medium or the style (the switch took their place)", () => {
   const row = [{ k: "a", t: "A", n: 1 }];
-  assert.deepEqual(filterRows({ medium: row, theme: row, style: [], industry: row }), ["theme", "industry"]);
+  assert.deepEqual(filterRows({ medium: row, theme: row, style: row, industry: row, mood: [] }), ["theme", "industry"]);
   assert.deepEqual(filterRows({}), []);
   assert.deepEqual(filterRows(null), []);
 });

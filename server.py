@@ -829,11 +829,11 @@ class Handler(BaseHTTPRequestHandler):
             extra_default = {"default": {**styles.brief(dflt.entries[0], lang), "path": dflt.path(styles.DEFAULT_ID)}} if dflt else {}
             if not lib:   # only the default style: the window shows it alone
                 return self.say(200, {"ok": True, "count": 0, "total": 0, "items": [], "cats": [], "facets": {}, **extra_default}, extra)
-            filters = {a: q.get(a, "") for a in stylesearch.AXES if q.get(a)}
-            kind = lib.kind(q.get("kind", ""))   # what the list is about: the count, the categories and the label rows are of this kind only
-            total, items = lib.search(q.get("q", ""), q.get("cat", ""), num("offset", 0), num("limit", 24), filters, lang, kind)
-            return self.say(200, {"ok": True, "count": lib.count(kind), "total": total, "items": items, "cats": lib.cats_of(kind), "kind": kind, "kinds": lib.kinds,
-                                  "facets": lib.facets(lang, list(filters.values()), kind), **extra_default}, extra)
+            filters = {a: q.get(a, "") for a in stylesearch.AXES if q.get(a) and a != "style"}
+            scope = lib.scope(q.get("style", ""))   # the segment of the switch: the count, the categories and the label rows are of this style only
+            total, items = lib.search(q.get("q", ""), q.get("cat", ""), num("offset", 0), num("limit", 24), filters, lang, scope)
+            return self.say(200, {"ok": True, "count": lib.count(scope), "total": total, "items": items, "cats": lib.cats_of(scope), "style": scope, "segments": lib.segments(lang), "all": lib.count(),
+                                  "facets": lib.facets(lang, list(filters.values()), scope), **extra_default}, extra)
         sid = q.get("id", "")
         if sid == styles.DEFAULT_ID:
             lib = dflt
