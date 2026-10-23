@@ -306,5 +306,11 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     foot.replaceChildren(prev, el("span", "hds-pages", t("page", { a: p.page, b: p.pages })), next);
   }
 
-  return { node, open, close, probe, avail: () => S.avail, def: () => S.def, state: S, repaint: () => { if (!node.hidden) paint(); } };
+  // the library grew (the download in the settings): the count and the button are asked again; an open list is read again
+  async function refresh() {
+    await probe();
+    if (!node.hidden && !S.detail && S.avail) load();
+  }
+
+  return { node, open, close, probe, refresh, avail: () => S.avail, def: () => S.def, state: S, repaint: () => { if (!node.hidden) paint(); } };
 }

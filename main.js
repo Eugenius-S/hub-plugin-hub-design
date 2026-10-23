@@ -11,6 +11,7 @@ import { styleLine } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
+import { createFetchUi, t as tf } from "./fetchui.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { currentLang, makeT, setLangSource } from "./i18n.js";
 
@@ -153,6 +154,9 @@ export default function register(h) {
   hub.addStyle("styles.css");
   hub.addStyle("navicon.css");
   addEventListener("message", onFrame);
+  // the settings tab "Hub Design: styles": a pasted link is downloaded into the local style library (fetcher.py of the plugin process)
+  const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); } });
+  hub.addSettings({ id: "styles", title: tf("title"), render: (root) => fetchUi.render(root) });
   // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
   // the address before Hub Design: "✕" returns there (none — to the home page)

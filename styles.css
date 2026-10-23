@@ -69,3 +69,21 @@
 .hd .hd-style-x:hover{background:var(--accent);color:var(--foreground)}
 .hd-style-x[hidden]{display:none}
 .hd-card:has(+ .hd-style-w:not([hidden])){margin-bottom:var(--space-2)}
+
+/* the settings tab "download styles" (fetchui.js) */
+.hdf{display:flex;flex-direction:column;gap:10px;max-width:640px}
+.hdf-lead,.hdf-terms{margin:0;color:var(--muted-foreground);font-size:var(--text-sm)}
+.hdf-lab{font-size:var(--text-sm);font-weight:500}
+.hdf-links{display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:64px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);color:var(--foreground);padding:8px 10px;outline:none;font:inherit;font-size:var(--text-sm)}
+.hdf-links:focus{border-color:var(--ring)}
+.hdf-links:disabled{opacity:.6}
+.hdf-hosts,.hdf-count,.hdf-now{color:var(--muted-foreground);font-size:var(--text-sm);min-height:0}
+.hdf-hosts:empty,.hdf-count:empty,.hdf-now:empty,.hdf-msg:empty{display:none}
+.hdf-row{display:flex;gap:8px;align-items:center}
+.hdf .hdf-go:disabled{opacity:.5}
+.hdf-bar{height:8px;border-radius:4px;background:var(--muted);overflow:hidden}
+.hdf-bar[hidden],.hdf-prog[hidden]{display:none}
+.hdf-fill{height:100%;background:var(--hd-acc,var(--primary));border-radius:4px;transition:width .4s}
+.hdf-prog{font-size:var(--text-sm)}
+.hdf-msg{font-size:var(--text-sm)}
+.hdf-msg.bad{color:var(--destructive,#d14343)}
