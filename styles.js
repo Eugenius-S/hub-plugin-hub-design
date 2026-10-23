@@ -47,37 +47,63 @@ export function pager(total, offset, size = PAGE) {
   const page = Math.min(pages, Math.floor(Math.max(0, offset) / size) + 1);
   return { page, pages, prev: page > 1 ? (page - 2) * size : null, next: page < pages ? page * size : null };
 }
-// a moving cover plays only under the pointer, one at a time, silent: the <video> is made after a short stay on the card and removed when the
+// the big picture of a style: a moving cover plays under the pointer, one at a time, silent: the <video> is made after a short stay on the card and removed when the
 // pointer leaves (a library of over a thousand covers is never loaded at once, as in the gallery of motion); no cover or a failing one - the still picture stays
 export const HOVER_MS = 150;
 let playing = null;   // the stop of the cover that plays now
+const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+// the one place that makes the silent looping <video> over the still picture; -> the stop (drops the download with the element)
+function mountCover(into, src, onFail) {
+  const v = into.ownerDocument.createElement("video");
+  let gone = false;
+  v.className = "hds-vid";
+  v.muted = true;
+  v.loop = true;
+  v.playsInline = true;
+  v.preload = "auto";
+  v.setAttribute("muted", "");
+  const stop = () => {
+    if (gone) return;
+    gone = true;
+    v.pause(); v.removeAttribute("src"); v.load(); v.remove();
+  };
+  v.addEventListener("loadeddata", () => v.classList.add("on"));   // fades in over the still picture once it has a frame
+  v.addEventListener("error", () => { stop(); onFail(); });
+  v.src = src();
+  into.append(v);
+  const p = v.play();
+  if (p && p.catch) p.catch(() => { stop(); onFail(); });
+  return stop;
+}
+// the covers of the list play all at once, but only the ones on the screen: the <video> is made when the card comes into view and removed when it
+// leaves (a page holds at most PAGE cards); reduced motion or no IntersectionObserver - the still picture (the hover plays it where it is allowed)
+export function coverInView(trigger, into, src, { Observer = globalThis.IntersectionObserver } = {}) {
+  let stopVideo = null, io = null;
+  const stop = () => { if (stopVideo) { stopVideo(); stopVideo = null; } };
+  if (typeof Observer !== "function" || reduced()) return () => {};
+  io = new Observer((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting && !stopVideo) stopVideo = mountCover(into, src, () => { stopVideo = null; if (io) io.disconnect(); });
+      else if (!e.isIntersecting) stop();
+    }
+  });
+  io.observe(trigger);
+  return () => { stop(); io.disconnect(); };
+}
 export function coverOnHover(trigger, into, src, { delay = HOVER_MS, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
   let timer = 0, video = null;
   const stop = () => {
     clearTimer(timer);
     timer = 0;
-    if (video) { video.pause(); video.removeAttribute("src"); video.load(); video.remove(); video = null; }
+    if (video) { video(); video = null; }
     if (playing === stop) playing = null;
   };
   const start = () => {
     timer = 0;
-    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;   // the still picture is enough
+    if (reduced()) return;   // the still picture is enough
     if (playing) playing();
     playing = stop;
-    const v = into.ownerDocument.createElement("video");
-    video = v;
-    v.className = "hds-vid";
-    v.muted = true;
-    v.loop = true;
-    v.playsInline = true;
-    v.preload = "auto";
-    v.setAttribute("muted", "");
-    v.addEventListener("loadeddata", () => v.classList.add("on"));   // fades in over the still picture once it has a frame
-    v.addEventListener("error", () => { if (video === v) stop(); });
-    v.src = src();
-    into.append(v);
-    const p = v.play();
-    if (p && p.catch) p.catch(() => { if (video === v) stop(); });
+    video = mountCover(into, src, () => stop());
   };
   trigger.addEventListener("pointerenter", (e) => {
     if (e && e.pointerType === "touch") return;
@@ -126,7 +152,7 @@ const initials = (name) => String(name || "?").split(/\s+/).map((w) => w[0]).joi
 // base: () => the address of the plugin process; get/set: the style attached now (the page keeps it); hub.el builds the nodes
 export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   const el = hub.el;
-  const S = { avail: false, def: null, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0 };
+  const S = { avail: false, def: null, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0, stops: [] };
   const node = el("div", "hds");
   node.hidden = true;
   node.setAttribute("role", "dialog");
@@ -209,7 +235,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     search.focus();
     await load();
   }
-  function close() { node.hidden = true; S.seq += 1; }
+  function close() { node.hidden = true; S.seq += 1; for (const s of S.stops.splice(0)) s(); }
   function back() { S.detail = null; paint(); }
   async function show(id) {
     const my = ++S.seq;
@@ -270,10 +296,10 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     } else {
       pic = el("span", "hds-img hds-none", initials(it.name));
     }
-    if (it.cover) {   // the video is not made here: only on hover
+    if (it.cover) {   // the video is not made here: when the card is in view (the pointer is not needed)
       const wrap = el("span", "hds-pic");
       wrap.append(pic);
-      coverOnHover(b, wrap, () => cover(it.id));
+      S.stops.push(coverInView(b, wrap, () => cover(it.id)));
       pic = wrap;
     }
     b.append(pic, el("span", "hds-name", it.name), it.isDefault ? el("span", "hds-def", t("def_badge")) : el("span", "hds-cat-name", it.category || ""));
@@ -345,6 +371,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   }
 
   function paintBody() {
+    for (const s of S.stops.splice(0)) s();   // the covers of the cards that go away stop with them
     if (S.detail) { body.replaceChildren(paintDetail(S.detail)); foot.hidden = true; return; }
     if (S.state === "failed") { body.replaceChildren(el("div", "hds-empty", t("failed"))); foot.hidden = true; return; }
     if (S.state === "loading" && !S.items.length && !S.def) { body.replaceChildren(el("div", "hds-empty", t("loading"))); foot.hidden = true; return; }

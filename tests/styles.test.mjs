@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { AXES, DEFAULT_ID, HOVER_MS, PAGE, STR, chosen, coverOnHover, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
+import { AXES, DEFAULT_ID, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
 import { setLangSource } from "../i18n.js";
 
 const cyr = /[Ѐ-ӿ]/;
@@ -193,6 +193,51 @@ test("cover: only one plays at a time, and a cover that fails to play goes away 
 
 test("cover: the card and the big picture make the video only through the hover (no <video> in the source of a card)", () => {
   const src = readFileSync(new URL("../styles.js", import.meta.url), "utf8");
-  assert.equal([...src.matchAll(/createElement\("video"\)/g)].length, 1);   // the one place: coverOnHover
+  assert.equal([...src.matchAll(/createElement\("video"\)/g)].length, 1);   // the one place: mountCover (the hover and the view both use it)
   assert.ok(!/el\("video"/.test(src));
+});
+
+// --- the covers of the list: all at once, only the ones in view ---
+function fakeObserver() {
+  const o = { made: [] };
+  o.Observer = class { constructor(cb) { this.cb = cb; this.watched = []; this.off = false; o.made.push(this); } observe(n) { this.watched.push(n); } disconnect() { this.off = true; } };
+  return o;
+}
+
+test("in view: many covers play at once, each only while its card is on the screen; leaving stops and drops the download", () => {
+  const o = fakeObserver(), a = fakeCard(), b = fakeCard();
+  coverInView(a.card, a.card, () => "/a", { Observer: o.Observer });
+  coverInView(b.card, b.card, () => "/b", { Observer: o.Observer });
+  assert.equal(a.doc.made.length + b.doc.made.length, 0);   // nothing is made for a card nobody sees
+  o.made[0].cb([{ isIntersecting: true }]);
+  o.made[1].cb([{ isIntersecting: true }]);
+  assert.deepEqual([a.doc.made[0].played, b.doc.made[0].played, a.doc.made[0].removed], [1, 1, false]);   // both play together
+  o.made[0].cb([{ isIntersecting: true }]);
+  assert.equal(a.doc.made.length, 1);   // still in view: not made again
+  o.made[0].cb([{ isIntersecting: false }]);
+  assert.deepEqual([a.doc.made[0].removed, a.doc.made[0].paused, a.doc.made[0].src, b.doc.made[0].removed], [true, 1, "", false]);
+  o.made[0].cb([{ isIntersecting: true }]);   // back in view: plays again
+  assert.equal(a.doc.made.length, 2);
+});
+
+test("in view: the stop frees the video and the observer; a failing cover leaves the still picture; reduced motion and no observer make nothing", () => {
+  const o = fakeObserver(), a = fakeCard();
+  const stop = coverInView(a.card, a.card, () => "/a", { Observer: o.Observer });
+  o.made[0].cb([{ isIntersecting: true }]);
+  stop();
+  assert.deepEqual([a.doc.made[0].removed, o.made[0].off], [true, true]);
+  const f = fakeCard(), o2 = fakeObserver();
+  coverInView(f.card, f.card, () => "/f", { Observer: o2.Observer });
+  o2.made[0].cb([{ isIntersecting: true }]);
+  f.doc.made[0].fire("error");
+  assert.deepEqual([f.card.children.length, o2.made[0].off], [0, true]);
+  const n = fakeCard();
+  coverInView(n.card, n.card, () => "/n", { Observer: undefined });
+  assert.equal(n.doc.made.length, 0);
+  globalThis.matchMedia = () => ({ matches: true });
+  try {
+    const r = fakeCard(), o3 = fakeObserver();
+    coverInView(r.card, r.card, () => "/r", { Observer: o3.Observer });
+    assert.equal(o3.made.length, 0);   // reduced motion: not even an observer
+  } finally { delete globalThis.matchMedia; }
 });
