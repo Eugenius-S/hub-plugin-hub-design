@@ -26,6 +26,8 @@ The start screen does not rely on what the page happened to see. The plugin proc
 
 A new design asked for from a direction (the view was opened from its chat, or its folder is open on the start screen) carries a line for the designer: save it in `<direction folder>/design/<design-name>/`, not in its own working folder. The folder comes from the hub snapshot (the cwd of the direction's session), never guessed. From the hub chat, a specialist's chat or outside any folder the line is not added.
 
+**Which direction a design belongs to.** By the first rule that fits: the file lies inside the direction's folder; the direction made it; the direction asked for its task; the design lies in a project folder, `<home>/design/<project>/file.html` (how the designer saves), and the direction's name says the same as the project's name (case, `!`, `-` and `_`, and the words every design folder has - design, template, page, hub - do not count; all the words of the name must be words of the direction, two directions equally near decide nothing); last, the words of the `<title>` and of the file name. The list of directions is the one of the hub snapshot, nothing is written into the plugin; a design that matches none stays under "No direction", and a design you moved by hand is not touched. The designs of the other machines are laid out by the same rule.
+
 **Folders of tasks.** The registry also knows the task each design was made for: the owner's task that started the chain (a subtask goes to the root of its chain), found in the journal by the mark of the turn (`dN`, `reply to task dN`). A task with two or more designs becomes one tile on the start screen, named by the title of the task, with every round of every session inside; designs without a task, and a task with a single design, stay in the direction folders as before. A design is counted once, so a search or a tab does not dissolve the folder. With a task folder open, a new design carries the line: save it in `<direction that asked>/design/<task-title>/`. `/__canvas/registry` answers `{ready, items, tasks}` (`items[].task` is the task id, `tasks[]` is `{id, title, by}`); a machine's folder for the peers is named by the title of the task.
 
 **Names of designs.** A card is signed `<kind>-<N>: <gist>` instead of the file name: `Email-1: Kyoto`, `Post-2: 50% off`. The kind (Email, Post, Story, Banner, Landing, Slides, Poster, Ad, Screen, else Design) is found in the `<title>` of the design, else in its file name; it is named in the hub language. The gist is the headline: the part of the `<title>` next to the kind (else the first `<h1>`, else the file name), up to three words and 26 characters. N counts the designs of one kind in one folder by the time they were made, so it does not change under a search or a tab. The search and the sort by name go by the label too. `/__canvas/registry` items carry `title` (an html design in a state `ok`); the designs of the other machines are labelled the same way from their name.
@@ -39,6 +41,14 @@ Move, resize, text and tweaks are written by Hub Design into the `.html` itself,
 - **The author is busy: no writing.** While the specialist editing the design is busy, the write waits and retries every 5 s; when the author finishes, it is written. If somebody else managed to edit the file, the write does not overwrite it: the frame is re-read and the item stays a draft.
 - **What you see.** In "Comments" a written edit carries the "in the file" mark. In the message to the designer such items are marked "already in the file", plus the path of the copy: the look is right, keep it, and do not touch the copy.
 - Writing goes only into HTML from the working folders of sessions and projects, only for a request from the hub page, at most 2 MiB.
+
+### Guides, undo, text colours
+
+- **Smart guides** while you drag or resize (as in Figma): pink lines where an edge or the centre of the element meets a neighbour or the frame, a snap within a few pixels, and the distances to the neighbours as labels. Alt (Cmd) held - no snapping. The colours come from the hub theme.
+- **Shift** while resizing keeps the proportions (a corner scales by the axis that moved most).
+- **Ctrl+Z / Cmd+Z** undoes hand edits and tweaks step by step. Before the auto-send they leave the queue; after it the file is rolled back and a new send follows. Ctrl+Shift+Z (Cmd+Shift+Z) redoes.
+- **Colour section of the right panel** lists the text colours too: a row per colour, for selected text its own first.
+- The interface is checked in a real browser for overlaps and cut-off text at 1440x900, 1700x620 and 2770 px (`tests/test_overlap_e2e.py`).
 
 ### Design size
 
