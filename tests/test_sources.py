@@ -72,8 +72,34 @@ class Links(unittest.TestCase):
         s = src()
         self.assertTrue(s.matches(f"https://{HOST}/style/{A}"))
         self.assertTrue(s.matches(f"https://{HOST.upper()}/"))
-        for bad in (f"http://{HOST}/", f"https://{HOST}.evil.example/", f"https://evil.example/{HOST}", "", "not a link", f"https://{IMG}/a.png"):
+        for bad in (f"https://{HOST}.evil.example/", f"https://evil.example/{HOST}", f"https://evil.{HOST}/", "", "not a link", f"https://{IMG}/a.png", f"ftp://{HOST}/"):
             self.assertFalse(s.matches(bad), bad)
+
+    def test_the_top_link_in_any_form_is_the_whole_site(self):
+        xml = f"<urlset><url><loc>https://{HOST}/style/{A}</loc></url><url><loc>https://{HOST}/style/{B}</loc></url></urlset>"
+        forms = (f"https://{HOST}/", f"https://{HOST}", f"http://{HOST}/", f"https://www.{HOST}/", f"HTTPS://{HOST.upper()}", f"https://{HOST}/?q=x",
+                 f"https://{HOST}/#top", f"https://{HOST}/sitemap.xml")
+        for url in forms:
+            with self.subTest(url=url):
+                self.assertTrue(src().matches(url))
+                asked = []
+                got = src().plan(url, lambda u: asked.append(u) or xml)
+                self.assertEqual([r["id"] for r in got], [A, B])
+                self.assertEqual(asked, [f"https://{HOST}/sitemap.xml"])   # always the canonical address, never the pasted form
+
+    def test_a_section_is_the_collections_under_it_and_an_index_page_is_all_of_them(self):
+        coll = f"<urlset><url><loc>https://{HOST}/design-styles/dark</loc></url><url><loc>https://{HOST}/design-styles/clean</loc></url>"                f"<url><loc>https://{HOST}/examples/pricing</loc></url><url><loc>https://{HOST}/</loc></url></urlset>"
+        pages = {f"https://{HOST}/sitemaps/collections.xml": coll,
+                 f"https://{HOST}/design-styles/dark": f'<a href="/style/{A}">a</a>', f"https://{HOST}/design-styles/clean": f'<a href="/style/{B}">b</a><a href="/style/{A}">a</a>',
+                 f"https://{HOST}/examples/pricing": f'<a href="/style/{C}">c</a>',
+                 f"https://{HOST}/resources": '<a href="/design-styles/dark">x</a><a href="/examples/pricing">y</a><a href="/">home</a>'}
+        get = pages.get   # a missing page (the section itself is 404) is None
+        self.assertEqual([r["id"] for r in src().plan(f"https://{HOST}/design-styles/", get)], [A, B])
+        self.assertEqual([r["id"] for r in src().plan(f"https://{HOST}/resources", get)], sorted({A, C}))   # a page of links, no styles of its own: the collections it links to
+        self.assertEqual([r["id"] for r in src().plan(f"https://{HOST}/sitemaps/collections.xml", get)], sorted({A, B, C}))
+        with self.assertRaises(SourceError) as e:
+            src().plan(f"https://{HOST}/nothing-here", get)
+        self.assertEqual(e.exception.code, "no_styles")
 
     def test_allowed_is_the_site_and_the_picture_host(self):
         s = src()

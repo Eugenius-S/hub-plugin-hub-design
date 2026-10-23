@@ -14,6 +14,7 @@ _LOC = re.compile(r"<loc>\s*([^<]*?)\s*</loc>")
 _LASTMOD = re.compile(r"<lastmod>\s*([^<]*?)\s*</lastmod>")
 _IMAGE = re.compile(r"<image:loc>\s*([^<]*?)\s*</image:loc>")
 _SITEMAP_LOC = re.compile(r"<sitemap>.*?<loc>\s*([^<]*?)\s*</loc>", re.S)
+PAGES_MAX = 80  # collection pages one link may stand for
 MD_MIN = 1000  # a style file shorter than this is not a style file (the real ones are 1500+)
 
 
@@ -86,11 +87,16 @@ class Refero:
         self.host_names = self.hosts
 
     def _parts(self, url):
+        """A link of the site -> (base, path) or None. http:// and www. are the same site; the base is the canonical https address."""
         try:
             u = urlparse(str(url).strip())
-            return u if u.scheme == self.scheme and (u.netloc or "").lower() in self.hosts else None
         except ValueError:
             return None
+        host = (u.netloc or "").lower()
+        host = host[4:] if host.startswith("www.") and host[4:] in self.hosts else host
+        if u.scheme not in ("http", "https") or host not in self.hosts:
+            return None
+        return f"{self.scheme}://{host}", u.path
 
     def matches(self, url):
         return self._parts(url) is not None
@@ -110,23 +116,54 @@ class Refero:
         return u.scheme == self.scheme and (u.netloc or "").lower() in self.image_hosts
 
     def plan(self, url, get):
-        u = self._parts(url)
-        base = f"{u.scheme}://{u.netloc}"
-        m = _STYLE_PATH.match(u.path)
+        base, path = self._parts(url)
+        m = _STYLE_PATH.match(path)
         if m:
             sid = m.group(1).lower()
             return [{"id": sid, "url": f"{base}/style/{sid}"}]
-        if u.path.strip("/") in ("", "sitemap.xml", "sitemaps/styles.xml"):
-            return self._from_sitemap(base, u.path, get)
+        if path.strip("/") in ("", "sitemap.xml", "sitemaps/styles.xml"):
+            return self._from_sitemap(base, path, get)
+        page = None
+        if path.strip("/") != "sitemaps/collections.xml":
+            page = get(base + path + (("?" + urlparse(url).query) if urlparse(url).query else "")) or ""
+            refs = self._linked(base, page)
+            if refs:
+                return refs
+        # No styles on the page itself: a section ("/design-styles"), or an index of the collections - the collection pages it stands for
         refs, seen = [], set()
-        for sid in _STYLE_LINK.findall(get(url) or ""):
+        for sub in self._pages(base, path, page or "", get)[:PAGES_MAX]:
+            for ref in self._linked(base, get(sub) or ""):
+                if ref["id"] not in seen:
+                    seen.add(ref["id"])
+                    refs.append(ref)
+        if not refs:
+            raise SourceError("no_styles")
+        return refs
+
+    def _linked(self, base, text):
+        refs, seen = [], set()
+        for sid in _STYLE_LINK.findall(text or ""):
             sid = sid.lower()
             if sid not in seen:
                 seen.add(sid)
                 refs.append({"id": sid, "url": f"{base}/style/{sid}"})
-        if not refs:
-            raise SourceError("no_styles")
         return refs
+
+    def _pages(self, base, path, page, get):
+        """The collection pages a section or an index page stands for: the pages of the collections sitemap under the path (all of them for
+        its own link), and the pages the index page links to."""
+        want = "/" + path.strip("/")
+        out = []
+        smap = get(base + "/sitemaps/collections.xml") or ""
+        for block in _URL_BLOCK.findall(smap):
+            loc = _LOC.search(block)
+            u = self._parts(loc.group(1)) if loc else None
+            if u and u[1].strip("/").count("/") >= 1 and (want == "/sitemaps/collections.xml" or u[1].startswith(want + "/")):
+                out.append(base + u[1])
+        for href in re.findall(r'href="(/[a-z0-9-]+/[a-z0-9-]+)"', page):
+            if base + href not in out and href != want:
+                out.append(base + href)
+        return list(dict.fromkeys(out))
 
     def _from_sitemap(self, base, path, get):
         text = get(base + (path if path.strip("/") else "/sitemap.xml")) or ""

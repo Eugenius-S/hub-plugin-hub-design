@@ -138,6 +138,51 @@ class Run(Base):
         self.assertEqual((st["state"], st["added"], st["skipped"]), ("done", 0, 3))
         self.assertEqual(Site.hits, ["/sitemap.xml"])
 
+    def old_library(self, with_entry=(1, 2), files=(1, 2, 3)):
+        """What the old script (hub-sync/refero/download.py) leaves: index.json is a dict {uuid: entry} with `uuid` and `file`, md files <slug>__<uuid>.md,
+        other entries (the sets: no uuid, a `set` field) and a tags.json beside."""
+        os.makedirs(os.path.join(self.lib, "previews"), exist_ok=True)
+        for n in files:
+            with open(os.path.join(self.lib, f"old-{n}__{uid(n)}.md"), "w", encoding="utf-8") as fh:
+                fh.write("# old\n" * 300)
+        idx = {uid(n): {"uuid": uid(n), "name": f"Old {n}", "file": f"old-{n}__{uid(n)}.md", "labels": ["kept"], "preview": ""} for n in with_entry}
+        idx["set:one"] = {"name": "A set style", "file": "set-one.md", "set": "one", "source": "https://github.com/a/b", "license": "MIT"}
+        with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:
+            json.dump(idx, fh)
+        with open(os.path.join(self.lib, "tags.json"), "w", encoding="utf-8") as fh:
+            fh.write('{"keep": 1}')
+        return idx
+
+    def test_what_the_old_script_downloaded_is_skipped_by_uuid_and_left_as_it_was(self):
+        idx = self.old_library(files=(1, 2))
+        st = self.run_to_end()
+        self.assertEqual((st["state"], st["added"], st["skipped"]), ("done", 1, 2))
+        self.assertEqual(Site.hits.count(f"/style/{uid(1)}") + Site.hits.count(f"/style/{uid(2)}"), 0)   # not asked for again
+        after = self.index()
+        for key in (uid(1), uid(2), "set:one"):
+            self.assertEqual(after[key], idx[key])   # the old fields (labels, set, license) stay
+        self.assertIn(uid(3), after)
+        self.assertEqual(sorted(f for f in os.listdir(self.lib) if f.endswith(".md")), sorted([f"old-1__{uid(1)}.md", f"old-2__{uid(2)}.md", f"cedar__{uid(3)}.md"]))   # no second copies
+        with open(os.path.join(self.lib, "tags.json"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), '{"keep": 1}')
+
+    def test_a_style_file_whose_entry_is_lost_from_the_index_is_still_skipped(self):
+        self.old_library(with_entry=(), files=(1, 2, 3))
+        st = self.run_to_end()
+        self.assertEqual((st["added"], st["skipped"]), (0, 3))
+        self.assertEqual([f for f in os.listdir(self.lib) if f.endswith(".md")], sorted(f"old-{n}__{uid(n)}.md" for n in (1, 2, 3)))
+
+    def test_an_old_entry_whose_md_is_gone_is_downloaded_again(self):
+        self.old_library(with_entry=(1, 2, 3), files=(1, 2))
+        st = self.run_to_end()
+        self.assertEqual((st["added"], st["skipped"]), (1, 2))
+
+    def test_the_link_without_a_scheme_is_https(self):
+        for pasted, want in (("styles.refero.design", "https://styles.refero.design"), ("www.styles.refero.design/", "https://www.styles.refero.design/"),
+                             ("styles.refero.design/ai-agents/x?a=1", "https://styles.refero.design/ai-agents/x?a=1"), ("http://a.b/", "http://a.b/"),
+                             ("not a link", "not a link"), ("localhost:8787", "localhost:8787")):
+            self.assertEqual(fetcher.with_scheme(pasted), want)
+
     def test_one_style_link_does_not_touch_the_sitemap(self):
         st = self.run_to_end([f"{self.root_url}/style/{uid(2)}"])
         self.assertEqual((st["total"], st["added"]), (1, 1))

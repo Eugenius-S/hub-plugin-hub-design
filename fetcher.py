@@ -68,6 +68,9 @@ def _opener(allowed, proxy):
     return urllib.request.build_opener(*handlers)
 
 
+_NO_PROXY = []   # not empty once the proxy of this machine proved broken for us
+
+
 def fetch(url, allowed, limit, binary=False):
     """The body of url -> (bytes, content type). 404/410 - Gone; 401/403/429 - Stop (the site refuses us); other 4xx - Gone; 5xx and the network - OSError.
     The corporate proxy that breaks Python's TLS is bypassed: if the first try fails on the network, the second goes straight."""
@@ -75,13 +78,15 @@ def fetch(url, allowed, limit, binary=False):
         raise Gone("address")
     direct = (urlparse(url).hostname or "") in LOCAL
     last = None
-    for proxy in ((False,) if direct else (True, False)):
+    for proxy in ((False,) if direct or _NO_PROXY else (True, False)):
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*" if binary else "text/html,application/xml,text/xml;q=0.9,*/*;q=0.5"})
         try:
             with _opener(allowed, proxy).open(req, timeout=TIMEOUT) as r:
                 data = r.read(limit + 1)
                 if len(data) > limit:
                     raise Gone("size")
+                if last is not None:   # the proxy failed on the network and the direct way worked: the next requests go straight
+                    _NO_PROXY.append(1)
                 return data, r.headers.get("Content-Type", "")
         except urllib.error.HTTPError as e:
             e.close()
@@ -99,6 +104,11 @@ def fetch(url, allowed, limit, binary=False):
                 raise Gone("address")
             last = e
     raise OSError(str(last))
+
+
+def with_scheme(u):
+    """A link pasted without the scheme ("styles.refero.design/") is an https one."""
+    return "https://" + u if re.match(r"(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?([/?#]\S*)?$", u, re.I) else u
 
 
 def slug(s):
@@ -135,6 +145,19 @@ def known(data, kind):
             sid = str(e.get("id") or e.get("uuid") or (key if kind == "dict" else "")).strip()
             if sid and isinstance(e.get("file"), str):
                 out[sid] = e["file"]
+    return out
+
+
+def on_disk(root):
+    """{id: file} of the style files in the folder by their names <slug>__<id>.md - a style whose entry is lost from index.json is still there."""
+    out = {}
+    try:
+        for name in os.listdir(root):
+            m = re.fullmatch(r".+__([0-9a-fA-F-]{36})\.md", name)
+            if m:
+                out[m.group(1).lower()] = name
+    except OSError:
+        pass
     return out
 
 
@@ -190,6 +213,7 @@ class Fetcher:
         links = []
         for u in urls if isinstance(urls, list) else []:
             u = u.strip() if isinstance(u, str) else ""
+            u = with_scheme(u)
             if u and u not in links:
                 links.append(u)
         if not links:
@@ -249,11 +273,12 @@ class Fetcher:
             self._set(total=len(refs))
             os.makedirs(os.path.join(root, "previews"), exist_ok=True)
             row = 0   # failures in a row
+            data, kind = read_index(root)
+            have = {**on_disk(root), **{k.lower(): v for k, v in known(data, kind).items() if os.path.isfile(os.path.join(root, v))}}   # id -> file
             for source, ref in refs:
                 if self.halt.is_set():
                     raise Stop("stopped", "stopped")
-                data, kind = read_index(root)
-                if ref["id"] in known(data, kind) and os.path.isfile(os.path.join(root, known(data, kind)[ref["id"]])):
+                if ref["id"].lower() in have:   # downloaded before, by this fetcher or by the old script: not a second copy
                     self._count("skipped")
                     continue
                 self.pause()
@@ -282,7 +307,12 @@ class Fetcher:
             if self.halt.is_set():
                 raise Stop("stopped", "stopped")
 
-            def get(u, source=source):
+            asked = []
+
+            def get(u, source=source, asked=asked):
+                if asked:
+                    self.pause(IMAGE_GAP)   # a link of a section asks several pages: politely
+                asked.append(u)
                 return self._page(source, u, MAP_MAX)
             for ref in source.plan(url, get):
                 if ref["id"] not in seen:
