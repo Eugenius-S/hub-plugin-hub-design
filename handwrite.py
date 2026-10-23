@@ -110,11 +110,29 @@ def fits(el, part):
     return True
 
 
+# why an edit was not written: code -> the English text (for logs and the designer). The page shows its own translation by the code (STR w_<code>)
+WHY = {
+    "selector": "the selector could not be read",
+    "absent": "the element is not in the file: a script builds it or the layout changed",
+    "several": "the file has several such elements",
+    "rawtext": "the text inside has markup",
+    "nested": "there are nested tags inside",
+    "textdiff": "the text in the file is not the same as on the canvas",
+    "tag": "the tag in the file is different",
+    "label": "the element in the file has different text",
+    "used": "this element is already being edited",
+    "style": "this style value cannot be used",
+    "nohtml": "the file has no <html>",
+    "tweak": "this tweak value cannot be used",
+    "check": "the file did not pass the check after writing",
+}
+
+
 def find(tree, sel):
-    """(element, "") when exactly one fits; otherwise (None, why)."""
+    """(element, "") when exactly one fits; otherwise (None, the code of why)."""
     parts = parse_sel(sel)
     if not parts:
-        return None, "selector not parsed"
+        return None, "selector"
     hits = []
     for el in tree.all:
         if not fits(el, parts[-1]):
@@ -128,9 +146,9 @@ def find(tree, sel):
         if ok:
             hits.append(el)
     if not hits:
-        return None, "the element is not in the file (a script builds it or the design was relaid out)"
+        return None, "absent"
     if len(hits) > 1:
-        return None, "several such elements in the file"
+        return None, "several"
     return hits[0], ""
 
 
@@ -260,12 +278,12 @@ def decls_of(c):
 def retext(tree, el, c):
     """New text instead of the old: only for a leaf without nested tags, and only if the file holds that very text."""
     if el.tag in RAW_TEXT or el.end_start is None:
-        return None, "the text inside is not plain"
+        return None, "rawtext"
     inner = tree.src[el.open_end:el.end_start]
     if "<" in re.sub(r"<br\s*/?>", "", inner, flags=re.I):
-        return None, "nested tags inside"
+        return None, "nested"
     if norm(html.unescape(re.sub(r"<br\s*/?>", "", inner, flags=re.I))) != norm(c.get("t0")):
-        return None, "the text in the file differs from the canvas"
+        return None, "textdiff"
     lead = re.match(r"\s*", inner).group(0)
     tail = re.search(r"\s*$", inner).group(0) if inner.strip() else ""
     return (el.open_end, el.end_start, lead + html.escape(str(c.get("t")), quote=False) + tail), ""
@@ -273,10 +291,10 @@ def retext(tree, el, c):
 
 def verify(tree, el, c):
     if c.get("tag") and el.tag != c["tag"]:
-        return "the tag in the file is different"
+        return "tag"
     a, b = norm(c.get("label")), norm(text_of(tree, el))
     if a and b and a[:30] != b[:30]:
-        return "the element in the file has different text"
+        return "label"
     return ""
 
 
@@ -290,22 +308,22 @@ def op_ok(o):
 
 
 def apply(src, changes, ops=()):
-    """(new text, [selectors written], [{sel, why}], result for the tweaks: "done"/"skipped"/"none", why).
+    """(new text, [selectors written], [{sel, code, why}], result for the tweaks: "done"/"skipped"/"none", the code of why).
     changes: [{sel, label, tag, dx, dy, w, h, t0, t, css}], ops: [{kind: var|attr, name, value}] for <html>."""
     tree = parse(src)
     done, skipped, edits, used = [], [], [], set()
     for c in changes:
         sel = c.get("sel")
         el, why = find(tree, sel)
-        why = why or ("the same element is already being edited" if id(el) in used else "") or (verify(tree, el, c) if el else "")
+        why = why or ("used" if id(el) in used else "") or (verify(tree, el, c) if el else "")
         decls = None if why else decls_of(c)
         if not why and decls is None:
-            why = "the style value is not acceptable"
+            why = "style"
         text = None
         if not why and c.get("t") is not None and c.get("t") != c.get("t0"):
             text, why = retext(tree, el, c)
         if why:
-            skipped.append({"sel": sel, "why": why})
+            skipped.append({"sel": sel, "code": why, "why": WHY[why]})
             continue
         used.add(id(el))
         if decls:
@@ -318,9 +336,9 @@ def apply(src, changes, ops=()):
         root = next((e for e in tree.all if e.tag == "html"), None)
         bad = [o for o in ops if not op_ok(o)]
         if root is None:
-            state, why = "skipped", "no <html> in the file"
+            state, why = "skipped", "nohtml"
         elif bad:
-            state, why = "skipped", "the tweak value is not acceptable"
+            state, why = "skipped", "tweak"
         else:
             sets = [(o["name"], str(o["value"])) for o in ops if o["kind"] == "var" and o.get("value") is not None]
             drop = [o["name"] for o in ops if o["kind"] == "var" and o.get("value") is None]
@@ -337,5 +355,5 @@ def apply(src, changes, ops=()):
     for a, b, new in sorted(edits, key=lambda e: -e[0]):
         out = out[:a] + new + out[b:]
     if out != src and len(parse(out).all) != len(tree.all):
-        return src, [], [{"sel": c.get("sel"), "why": "the check after writing failed"} for c in changes], "skipped", "the check after writing failed"
+        return src, [], [{"sel": c.get("sel"), "code": "check", "why": WHY["check"]} for c in changes], "skipped", "check"
     return out, done, skipped, state, why

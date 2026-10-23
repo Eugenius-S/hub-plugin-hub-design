@@ -41,7 +41,7 @@ test("shown does not change the source list", () => {
 });
 
 test("presets: Animation goes to the animator, the rest to the designer; each has a stub 'new ...: '", () => {
-  assert.deepEqual(PRESETS.map((p) => p.id), ["slides", "design", "codebase", "system", "motion"]);
+  assert.deepEqual(PRESETS.map((p) => p.id), ["slides", "design", "system", "motion", "codebase"]);
   assert.equal(PRESETS.find((p) => p.id === "motion").to, "animator");
   for (const p of PRESETS.filter((p) => p.id !== "motion")) assert.equal(p.to, "designer");
   for (const p of PRESETS) assert.match(p.lead, /: $/);

@@ -35,8 +35,8 @@ test("the batch message to the designer: English by default, Russian by hub lang
   const en = msg().split("\n");
   assert.equal(en[0], "Edits to the design `/d/a/index.html` (Hub Design, round 2; window 1280×800 px, coordinates from the top-left corner of the page).");
   assert.equal(en[1], "1. Comment on `.hero > h1` “Title”, point x 300, y 120 (element 600×80 at x 100, y 90): bigger");
-  assert.equal(en[2], "2. Edited by hand `.cta` “Start”: shift +16 px along Y (was x 10, y 20 → now x 10, y 36).");
-  assert.match(en[3], /move them into the code/);
+  assert.equal(en[2], "2. Hand edit `.cta` “Start”: shift +16 px along Y (was x 10, y 20 → now x 10, y 36).");
+  assert.match(en[3], /Move them into the code/);
   const ru = as("ru", () => msg()).split("\n");
   assert.match(ru[0], /^Правки к дизайну `\/d\/a\/index\.html` \(Hub Design, раунд 2; окно 1280×800 px/);
   assert.equal(ru.length, en.length);

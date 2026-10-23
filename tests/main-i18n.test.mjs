@@ -19,6 +19,19 @@ test("main: English texts contain no Cyrillic, Russian ones do", () => {
   for (const [k, v] of Object.entries(STR.ru)) assert.ok(cyr.test(v), k);
 });
 
+test("main: every reason handwrite.py gives has a code the page translates", () => {
+  const py = readFileSync(new URL("../handwrite.py", import.meta.url), "utf8");
+  const block = py.slice(py.indexOf("WHY = {"), py.indexOf("\n}", py.indexOf("WHY = {")));
+  const codes = [...block.matchAll(/^\s+"(\w+)":/gm)].map((m) => m[1]);
+  assert.ok(codes.length >= 13, codes.join());
+  const map = src.match(/const WRITE_WHY = \{([^}]*)\}/)[1];
+  for (const c of codes) {
+    const m = map.match(new RegExp(`\\b${c}: "(\\w+)"`));
+    assert.ok(m, `no page key for ${c}`);
+    assert.ok(m[1] in STR.en && m[1] in STR.ru, m[1]);
+  }
+});
+
 test("main: every key used by tr() exists, and no Russian is left outside the table", () => {
   const used = new Set([...src.matchAll(/\btr\(\s*"(\w+)"/g)].map((m) => m[1]));
   for (const k of ["q_failed", "q_removed"]) used.add(k);   // chosen with a conditional: tr(cond ? "a" : "b")

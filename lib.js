@@ -28,9 +28,9 @@ export const STR = {
     tw_line: "Tweak `{key}`: {a} \u2192 {b}",
     bi_pad: "Margins {v}: add this to the padding of the page root and sections (every side that already has padding)",
     bi_fs: "Font sizes {v}: multiply the font-size of all texts",
-    bi_ls: "Letter spacing {v}: add to the letter-spacing of all texts",
-    bi_lh: "Line spacing {v}: add to the line-height of all texts (in font sizes)",
-    a_lost: "; element not found \u2014 the design was relaid out, the point stayed where it was",
+    bi_ls: "Tracking {v}: add to the letter-spacing of all texts",
+    bi_lh: "Leading {v}: add to the line-height of all texts (in font sizes)",
+    a_lost: "; element not found: the layout changed, the point stayed where it was",
     a_tag: "tag {tag}", a_text: "text {s}", a_attr: "attributes {s}", a_inside: "inside #{anc}", a_cls: "classes {list}", a_near: "next to {s}",
     a_noid: "; no id, hints: {bits}",
     m_head: "Edits to the design `{f}` (Hub Design, round {round}; window {w}\u00d7{h} px, coordinates from the top-left corner of the page).",
@@ -39,19 +39,19 @@ export const STR = {
     m_region: "Comment on the area x {x}, y {y}, {w}\u00d7{h} px (inside {el}{note}; in it: {els}): {text}",
     m_region_none: "nothing but the background",
     m_comment: "Comment on {el}, point x {x}, y {y} (element {w}\u00d7{h} at x {ex}, y {ey}{note}): {text}",
-    m_hand: "Edited by hand `{sel}`{label}: {what}{inFile}.",
-    m_infile: " \u2014 already in the file",
+    m_hand: "Hand edit `{sel}`{label}: {what}{inFile}.",
+    m_infile: ", already in the file",
     m_drawing: "Freehand drawing: {d}{text}.",
-    m_auto: "These are my own moves in the Hub Design panel, sent automatically \u2014 no report needed: end the turn with a single line \u201c\u2014\u201d.",
+    m_auto: "These are my own actions in the Hub Design panel, sent automatically. No report needed: reply with a single line \u201c\u2014\u201d.",
     m_style: "Style reference: {path}",   // the same line in every language: the designer's skill looks for it
-    m_tweaks: "Tweaks are values from the Hub Design panel (#hub-tweaks): make the new ones the defaults and move them into the code.",
-    m_hand_note: "I made the hand edits right in the preview \u2014 move them into the code so that it looks the same (not a transform on top, but in the layout).",
-    m_file_note: "Hub Design wrote the items marked \u201calready in the file\u201d into the design itself, point by point: an inline style or the text of the element itself, tweaks on <html>{copy}. The look on screen is right \u2014 keep it; you may replace the inline with ordinary layout if the look does not change.",
+    m_tweaks: "Tweaks: values from the Hub Design panel (#hub-tweaks). Make the new ones the defaults and move them into the code.",
+    m_hand_note: "The hand edits were made right in the preview. Move them into the code so it looks the same (not a transform on top, but in the layout).",
+    m_file_note: "Hub Design wrote the items marked \u201calready in the file\u201d into the design itself, point by point: an inline style or the element's own text, tweaks on <html>{copy}. The look on screen is right: keep it. You may replace the inline style with ordinary layout if the look does not change.",
     m_copy: "; the copy of the file before these edits is `{c}`, do not overwrite or delete it",
     m_notes: "Notes from the Hub Design canvas (round {round}):\n",
     m_note: "Canvas note",
     selected: "Selected: {file} `{sel}` {tag}{label}",
-    element: "element",
+    element: "element", none: "none",
     g_columns: "Columns", g_rows: "Rows", g_grid: "Cells",
     g_line: "{title} {count} (gutter {gutter}, margin {margin}, color {color})",
     e_more: "and {n} more",
@@ -60,7 +60,7 @@ export const STR = {
     new_design: "New design (Hub Design): ",
     based_on: "Make a design based on {f}",
     save_to: "Save it in the direction folder: {dir}/<design-name>/ (index.html, assets next to it), not in your own working folder.",
-    gone_denied: "The file is outside the hub's project and session folders, the plugin will not show it: {path}",
+    gone_denied: "The file is outside the hub's project and session folders, so the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
     t_designer: "designer", t_animator: "animator",
     install: "Install the specialist for Hub Design: specialists install {name}",
@@ -89,31 +89,31 @@ export const STR = {
     tw_on: "вкл", tw_off: "выкл",
     bi_pad: "Поля {v}: добавь это к padding корня страницы и секций (к каждой стороне, где padding уже есть)",
     bi_fs: "Размер шрифтов {v}: умножь font-size всех текстов",
-    bi_ls: "Межбуквенный {v}: добавь к letter-spacing всех текстов",
-    bi_lh: "Межстрочный {v}: добавь к line-height всех текстов (в размерах шрифта)",
+    bi_ls: "Трекинг {v}: добавь к letter-spacing всех текстов",
+    bi_lh: "Интерлиньяж {v}: добавь к line-height всех текстов (в размерах шрифта)",
     tw_line: "Крутилка `{key}`: {a} \u2192 {b}",
-    a_lost: "; элемент не найден \u2014 макет перевёрстан, точка осталась на прежнем месте",
+    a_lost: "; элемент не найден: в макете изменилась вёрстка, точка осталась на прежнем месте",
     a_tag: "тег {tag}", a_text: "текст {s}", a_attr: "атрибуты {s}", a_inside: "внутри #{anc}", a_cls: "классы {list}", a_near: "рядом {s}",
     a_noid: "; нет id, приметы: {bits}",
-    m_head: "Правки к дизайну `{f}` (Hub Design, раунд {round}; окно {w}\u00d7{h} px, координаты \u2014 от верхнего левого угла страницы).",
+    m_head: "Правки к дизайну `{f}` (Hub Design, раунд {round}; окно {w}\u00d7{h} px, координаты от верхнего левого угла страницы).",
     m_grid: "Сетка поверх рамки (ориентир раскладки, на холсте; в макете её нет): {g}.",
     m_point: "точка",
-    m_region: "Коммент к области x {x}, y {y}, {w}\u00d7{h} px (внутри {el}{note}; в ней: {els}): {text}",
+    m_region: "Комментарий к области x {x}, y {y}, {w}\u00d7{h} px (внутри {el}{note}; в ней: {els}): {text}",
     m_region_none: "только фон",
-    m_comment: "Коммент к {el}, точка x {x}, y {y} (элемент {w}\u00d7{h} в x {ex}, y {ey}{note}): {text}",
-    m_hand: "Поправил руками `{sel}`{label}: {what}{inFile}.",
-    m_infile: " \u2014 уже в файле",
+    m_comment: "Комментарий к {el}, точка x {x}, y {y} (элемент {w}\u00d7{h} в x {ex}, y {ey}{note}): {text}",
+    m_hand: "Правка руками `{sel}`{label}: {what}{inFile}.",
+    m_infile: ", уже в файле",
     m_drawing: "Рисунок от руки: {d}{text}.",
-    m_auto: "Это мои собственные действия в панели Hub Design, ушли сами \u2014 отчёт не нужен: итог хода одной строкой \u00ab\u2014\u00bb.",
+    m_auto: "Это мои действия в панели Hub Design, отправились сами. Отчёт не нужен: ответь одной строкой \u00ab\u2014\u00bb.",
     m_style: "Style reference: {path}",
-    m_tweaks: "Крутилки\u2014 это значения из панели Hub Design (#hub-tweaks): сделай новые значениями по умолчанию и перенеси их в код.",
-    m_hand_note: "Правки руками я сделал прямо в предпросмотре \u2014 перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).",
-    m_file_note: "Пункты \u00abуже в файле\u00bb Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки \u2014 на <html>{copy}. Вид на экране верный \u2014 сохрани его; заменить inline обычной вёрсткой можно, если вид не изменится.",
-    m_copy: "; копия файла до этих правок \u2014 `{c}`, её не перезаписывай и не удаляй",
+    m_tweaks: "Крутилки: значения из панели Hub Design (#hub-tweaks). Сделай новые значениями по умолчанию и перенеси их в код.",
+    m_hand_note: "Правки руками сделаны прямо в предпросмотре. Перенеси их в код так, чтобы вышло так же (не transform поверх, а в вёрстку).",
+    m_file_note: "Пункты \u00abуже в файле\u00bb Hub Design записал в макет сам, точечно: inline-стиль или текст самого элемента, крутилки на <html>{copy}. Вид на экране верный: сохрани его. Заменить inline-стиль обычной вёрсткой можно, если вид не изменится.",
+    m_copy: "; копия файла до этих правок: `{c}`, её не перезаписывай и не удаляй",
     m_notes: "Заметки с холста Hub Design (раунд {round}):\n",
     m_note: "Заметка на холсте",
     selected: "Выделено: {file} `{sel}` {tag}{label}",
-    element: "элемент",
+    element: "элемент", none: "нет",
     g_columns: "Колонки", g_rows: "Строки", g_grid: "Клетки",
     g_line: "{title} {count} (зазор {gutter}, поле {margin}, цвет {color})",
     e_more: "и ещё {n}",
@@ -357,7 +357,7 @@ const num = (v) => (/^-?\d*\.\d{3,}px$/.test(v) ? Math.round(parseFloat(v) * 100
 
 const describeCols = (v) => {
   const a = gridCols(v.from, v.from), b = gridCols(v.to, v.to);
-  return tr("cols", { a: a || "—", b: b || "—", from: num(v.from), to: num(v.to) });
+  return tr("cols", { a: a || tr("none"), b: b || tr("none"), from: num(v.from), to: num(v.to) });
 };
 
 // one "edit" change - in words and numbers
@@ -554,10 +554,10 @@ export function anchorNote(c) {
 export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && hasEffect(c))
   .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // one element - one record, the last
 // handed - went to the designer in words, not as a write to the file: from then on the designer edits it, Hub Design does not write it to the file
-// the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (left to the designer)
+// the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (the code from handwrite.py; left to the designer)
 export function markWritten(changes, tweaks, file, res) {
   const done = new Set((res && res.done) || []);
-  const why = Object.fromEntries(((res && res.skipped) || []).map((x) => [x.sel, x.why]));
+  const why = Object.fromEntries(((res && res.skipped) || []).map((x) => [x.sel, x.code || x.why]));
   for (const c of changes) {
     if (c.file !== file || c.state === "done") continue;
     c.inFile = done.has(c.sel);
@@ -625,7 +625,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
     }
     for (const d of drawings.filter((x) => of(x) === f)) {
       n += 1;
-      lines.push(`${n}. ` + tr("m_drawing", { d: describeDrawing(d), text: String(d.text || "").trim() ? ` — ${String(d.text).trim()}` : "" }));
+      lines.push(`${n}. ` + tr("m_drawing", { d: describeDrawing(d), text: String(d.text || "").trim() ? ` (${String(d.text).trim()})` : "" }));
     }
     const turned = tweaks.filter((x) => of(x) === f && tweakEffect(x));
     for (const c of turned) {
@@ -998,7 +998,7 @@ export function hideToggle(list, path, hidden) {
 
 // card strings: the language is hub.lang (read at use time), any other - English
 export const CARD_STR = {
-  en: { by: "Hub Design", hide: "Hide", show: "Show", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Fold the card into one line", show_title: "Unfold the card", design: "design", video: "video", pdf: "PDF", svg: "SVG", gone: "file unavailable" },
-  ru: { by: "Hub Design", hide: "Скрыть", show: "Показать", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", svg: "SVG", gone: "файл недоступен" },
+  en: { by: "Hub Design", hide: "Collapse", show: "Expand", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Collapse the card into one line", show_title: "Expand the card", design: "design", video: "video", pdf: "PDF", svg: "SVG", gone: "file unavailable" },
+  ru: { by: "Hub Design", hide: "Свернуть", show: "Развернуть", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", svg: "SVG", gone: "файл недоступен" },
 };
 export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;

@@ -34,25 +34,25 @@
   // --- UI texts: en by default, ru when the hub page says so. Looked up at use time, never cached ----------------
   const STR = {
     en: {
-      parent: "Select parent",
+      parent: "Select the parent element",
       revert: "Revert to original",
       resize: "Resize",
       lost: "Element not found. The point stays where it was. ",
       comment: "Comment",
       comment_ph: "What should change here?",
       close: "Close",
-      delete: "Delete",
+      delete: "Remove",
       send: "Send",
     },
     ru: {
-      parent: "Выбрать родителя",
+      parent: "Выбрать родительский элемент",
       revert: "Вернуть как было",
-      resize: "Размер",
+      resize: "Изменить размер",
       lost: "Элемент не найден. Точка осталась на прежнем месте. ",
       comment: "Комментарий",
       comment_ph: "Что поменять здесь?",
       close: "Закрыть",
-      delete: "Удалить",
+      delete: "Убрать",
       send: "Отправить",
     },
   };

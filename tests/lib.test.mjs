@@ -54,9 +54,9 @@ test("the batch for the designer: a numbered list, empty items do not go", () =>
   });
   const lines = text.split("\n");
   assert.match(lines[0], /`\/d\/a\/index.html` \(Hub Design, раунд 2; окно 1280×800/);
-  assert.equal(lines[1], "1. Коммент к `.hero > h1` «Заголовок», точка x 300, y 120 (элемент 600×80 в x 100, y 90): крупнее");
-  assert.equal(lines[2], "2. Поправил руками `.cta` «Начать»: сдвиг +16 px по Y (было x 10, y 20 → стало x 10, y 36).");
-  assert.match(lines[3], /перенеси их в код/);
+  assert.equal(lines[1], "1. Комментарий к `.hero > h1` «Заголовок», точка x 300, y 120 (элемент 600×80 в x 100, y 90): крупнее");
+  assert.equal(lines[2], "2. Правка руками `.cta` «Начать»: сдвиг +16 px по Y (было x 10, y 20 → стало x 10, y 36).");
+  assert.match(lines[3], /еренеси их в код/);
   assert.equal(message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [{ text: "" }], changes: [] }), "");
   assert.equal(draftCount([{ text: "a" }, { text: "" }], [{ dx: 1, dy: 0, x0: 0, y0: 0 }, { dx: 0, dy: 0 }]), 2);
 });
@@ -67,7 +67,7 @@ test("css edits and drawings go in words", () => {
   const d = { kind: "arrow", sel: ".hero", label: "Герой", from: { x: 1, y: 2 }, to: { x: 30, y: 40 }, box: { x: 1, y: 2, w: 29, h: 38 }, text: "сюда" };
   assert.equal(describeDrawing(d), "стрелка от x 1, y 2 к x 30, y 40 около `.hero` «Герой»");
   const text = message({ path: "/a.html", round: 1, view: { w: 1, h: 1 }, comments: [], changes: [], drawings: [d] });
-  assert.match(text.split("\n")[1], /^1\. Рисунок от руки: стрелка .* — сюда\.$/);
+  assert.match(text.split("\n")[1], /^1\. Рисунок от руки: стрелка .* \(сюда\)\.$/);
   assert.equal(draftCount([], [], [d, d]), 2);
 });
 
@@ -563,7 +563,7 @@ test("a comment without id in the markup: the element hints in the message; a lo
   // old pins without hints - as before
   assert.doesNotMatch(message({ path: "/d/a.html", round: 1, view: { w: 1, h: 1 }, comments: [base], changes: [] }), /приметы|не найден/);
   const lost = message({ path: "/d/a.html", round: 1, view: { w: 1, h: 1 }, comments: [{ ...base, fp, lost: true }], changes: [] });
-  assert.match(lost, /элемент не найден — макет перевёрстан, точка осталась на прежнем месте\): крупнее/);
+  assert.match(lost, /элемент не найден: в макете изменилась вёрстка, точка осталась на прежнем месте\): крупнее/);
   assert.equal(anchorNote({ fp: { ...fp, id: "x" } }), "");
 });
 
@@ -587,6 +587,8 @@ test("writing into the file: the set is drafts and sent, without done and empty 
   assert.equal(list[0].inFile, true);
   assert.equal(list[1].inFile, false);
   assert.equal(list[1].noWrite, "тег другой");
+  markWritten(list, tw, f, { done: [], skipped: [{ sel: "h1", code: "tag", why: "the tag in the file is different" }], ops: "done" });
+  assert.equal(list[1].noWrite, "tag");   // the page translates the code; the server's English text is only the fallback
   assert.equal(list[2].inFile, undefined);   // done is not touched
   assert.equal(list[4].inFile, undefined);   // someone else's file
   assert.equal(tw[0].inFile, true);
@@ -600,20 +602,20 @@ test("message: items written to the file are marked, the rest as before; the cop
   const base = { path: f, round: 2, comments: [], changes: [mk(false)] };
   const plain = message(base);
   assert.ok(!plain.includes("уже в файле"));
-  assert.ok(plain.includes("перенеси их в код"));
+  assert.ok(plain.includes("еренеси их в код"));
   const done = message({ ...base, changes: [mk(true)], copies: { [f]: "page.r2.html" } });
-  assert.match(done, /1\. Поправил руками `a\.btn` «Купить»: сдвиг .* — уже в файле\./);
+  assert.match(done, /1\. Правка руками `a\.btn` «Купить»: сдвиг .*, уже в файле\./);
   assert.ok(done.includes("`/a/b/page.r2.html`"));
   assert.ok(done.includes("не перезаписывай"));
-  assert.ok(!done.includes("перенеси их в код"));
+  assert.ok(!done.includes("еренеси их в код"));
   // part written, part not - both hints
   const mixed = message({ ...base, changes: [mk(true), { ...mk(false), sel: "h1", dx: 7 }], copies: { [f]: "page.r2.html" } });
   assert.equal(mixed.match(/уже в файле/g).length, 2);   // the item's mark and the "items already in the file" hint
-  assert.ok(mixed.includes("перенеси их в код"));
+  assert.ok(mixed.includes("еренеси их в код"));
   // a tweak
   const tw = { file: f, key: "accent", label: "Акцент", editor: "color", from: "#000", to: "#f00", inFile: true };
   const t = message({ ...base, changes: [], tweaks: [tw], copies: { [f]: "page.r2.html" } });
-  assert.match(t, /Крутилка `accent`: .* — уже в файле\./);
+  assert.match(t, /Крутилка `accent`: .*, уже в файле\./);
   assert.ok(!t.includes("сделай новые значениями по умолчанию"));
 });
 
@@ -713,9 +715,9 @@ test("cards: file kind, name, path from the address, Hide, strings by language",
   assert.deepEqual(hideToggle(["/a", "/b"], "/a", false), ["/b"]);
   assert.deepEqual(hideToggle(["/a"], "/a", true), ["/a"]);
   assert.equal(hideToggle(Array.from({ length: HIDDEN_MAX }, (_, i) => "/p" + i), "/new", true).length, HIDDEN_MAX);
-  assert.equal(cardText("ru").hide, "Скрыть");
-  assert.equal(cardText("ru-RU").hide, "Скрыть");
-  assert.equal(cardText("de").hide, "Hide");
+  assert.equal(cardText("ru").hide, "Свернуть");
+  assert.equal(cardText("ru-RU").hide, "Свернуть");
+  assert.equal(cardText("de").hide, "Collapse");
   assert.equal(cardText(undefined).open, "Open in Hub Design");
 });
 
@@ -781,7 +783,7 @@ test("built-in tweaks: a shift from the design, clamped to the step, shown as wo
 test("message: the auto-sent moves carry the line 'no report needed'; a manual send does not", () => {
   const t = { key: "hd:fs", editor: "builtin", from: 0, to: 10, file: "/a.html", state: "draft" };
   const base = { path: "/a.html", round: 1, view: { w: 100, h: 100 }, comments: [], changes: [], tweaks: [t] };
-  assert.match(message({ ...base, auto: true }), /отчёт не нужен: итог хода одной строкой «—»\.$/);
+  assert.match(message({ ...base, auto: true }), /Отчёт не нужен: ответь одной строкой «—»\.$/);
   assert.doesNotMatch(message(base), /отчёт не нужен/);
   assert.equal(message({ ...base, tweaks: [], auto: true }), "");   // nothing to send - no lone line
 });
@@ -795,12 +797,12 @@ test("message: a comment on an area - x, y, w, h in design px and the elements i
   const c = { file: "/a.html", text: "Сделай крупнее", sel: ".hero", fp: { id: "hero" }, label: "Заголовок", x: 100, y: 200, w: 800, h: 400, ex: 80, ey: 150,
     area: { w: 300, h: 120, fw: 0.375, fh: 0.3 }, els: [{ sel: ".h1", label: "Привет" }, { sel: ".btn", label: "" }], more: 3 };
   const text = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [c], changes: [] });
-  assert.match(text, /1\. Коммент к области x 100, y 200, 300×120 px \(внутри `\.hero` «Заголовок»; в ней: `\.h1` «Привет», `\.btn`, \+3\): Сделай крупнее/);
+  assert.match(text, /1\. Комментарий к области x 100, y 200, 300×120 px \(внутри `\.hero` «Заголовок»; в ней: `\.h1` «Привет», `\.btn`, \+3\): Сделай крупнее/);
   const empty = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [{ ...c, els: [], more: 0 }], changes: [] });
   assert.match(empty, /в ней: только фон/);
   // a point comment is as before
   const point = message({ path: "/a.html", round: 1, view: { w: 1440, h: 900 }, comments: [{ ...c, area: undefined }], changes: [] });
-  assert.match(point, /Коммент к `\.hero`.*точка x 100, y 200/);
+  assert.match(point, /Комментарий к `\.hero`.*точка x 100, y 200/);
 });
 
 test("mergeAuthors: a design the feed tail forgot stays; the higher rank and the fresher write win", async () => {
