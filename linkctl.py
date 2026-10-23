@@ -148,11 +148,12 @@ class Ctl:
             self.links.decline(self.nopreview()["urls"])
             return 200, {"declined": True}
         if action == "nopreview":   # "Give the task": the list of the styles for the designer, written to the state folder
-            return 200, self.todo_list()
+            return 200, self.todo_list(decline=body.get("decline", True) is not False)
         return 400, {"error": "action"}
 
-    def todo_list(self):
-        """Writes the list of the styles with no preview for the designer -> {"path", "n", "dir"}. The question is not asked about them again."""
+    def todo_list(self, decline=True):
+        """Writes the list of the styles with no preview for the designer -> {"path", "n", "dir"}. decline: the question is not asked about them again
+        (the page sends decline:false and declines itself once the task is sent)."""
         root = self.target()
         rows = linkmem.without_preview(root, set(self.links.declined()))[:TODO_MAX]
         pdir = os.path.join(root, "previews")
@@ -164,5 +165,6 @@ class Ctl:
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             json.dump({"previews_dir": pdir, "how": "save a picture of a style as <preview_to>.png (or .jpg/.webp), ~1280x800", "styles": items}, f, ensure_ascii=False, indent=1)
         os.replace(tmp, path)
-        self.links.decline(sorted({u for _sid, _e, ls in rows for u in ls}))
+        if decline:
+            self.links.decline(sorted({u for _sid, _e, ls in rows for u in ls}))
         return {"path": path, "n": len(items), "dir": pdir}

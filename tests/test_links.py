@@ -301,6 +301,16 @@ class Ctl(Lib):
         self.assertTrue(res["path"].startswith(self.state))   # not in the owner's library
         self.assertEqual(c.status()["nopreview"]["n"], 0)
 
+    def test_the_list_can_be_written_without_closing_the_question(self):
+        self.nopic("s1")
+        c = self.make()
+        c.links.seed([A, B])
+        code, res = c.act({"action": "nopreview", "decline": False})
+        self.assertEqual((code, res["n"]), (200, 1))
+        self.assertEqual(c.status()["nopreview"]["n"], 1)   # the task may not have been sent: the question stays until "decline"
+        c.act({"action": "decline"})
+        self.assertEqual(c.status()["nopreview"]["n"], 0)
+
     def test_the_tab_adds_links_and_refuses_what_is_not_a_link(self):
         c = self.make()
         self.assertEqual(c.act({"action": "add", "url": "styles.refero.design/"})[1], {"link": REFERO})

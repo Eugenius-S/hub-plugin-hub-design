@@ -168,7 +168,9 @@ export default function register(h) {
   hub.addStyle("motion.css");
   addEventListener("message", onFrame);
   // the settings tab "Hub Design: styles": a pasted link is downloaded into the local style library (fetcher.py of the plugin process)
-  const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); } });
+  // the task for the designer (previews of the styles that came without one) goes through the hub like the "Install" button
+  const askDesigner = (text) => hub.post("/api/send", { session: "designer", text, action: true });
+  const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); }, ask: askDesigner });
   hub.addSettings({ id: "styles", title: tf("title"), render: (root) => fetchUi.render(root) });
   // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });

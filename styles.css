@@ -79,9 +79,23 @@
 .hdf{display:flex;flex-direction:column;gap:10px;max-width:640px}
 .hdf-lead,.hdf-terms{margin:0;color:var(--muted-foreground);font-size:var(--text-sm)}
 .hdf-lab{font-size:var(--text-sm);font-weight:500}
-.hdf-links{display:block;width:100%;box-sizing:border-box;resize:vertical;min-height:64px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);color:var(--foreground);padding:8px 10px;outline:none;font:inherit;font-size:var(--text-sm)}
-.hdf-links:focus{border-color:var(--ring)}
-.hdf-links:disabled{opacity:.6}
+.hdf-list{display:flex;flex-direction:column;gap:6px}
+.hdf-link{display:flex;gap:8px;align-items:center;min-height:34px}
+.hdf-link.saved{padding:0 4px 0 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--muted)}
+.hdf-url{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--text-sm)}
+.hdf-n{flex:none;color:var(--muted-foreground);font-size:var(--text-sm);white-space:nowrap}
+.hdf-q{flex:1 1 auto;min-width:0;font-size:var(--text-sm);white-space:normal}
+.hdf-link.saved:has(.hdf-q){flex-wrap:wrap;padding:6px 8px 6px 10px}
+.hdf-del{flex:none;padding:0 8px;min-width:28px}
+.hdf-del:disabled{opacity:.4}
+.hdf-field{display:block;width:100%;box-sizing:border-box;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);color:var(--foreground);padding:8px 10px;outline:none;font:inherit;font-size:var(--text-sm)}
+.hdf-field:focus{border-color:var(--ring)}
+.hdf-field:disabled{opacity:.6}
+.hdf-auto{display:flex;gap:8px;align-items:center;font-size:var(--text-sm);cursor:pointer}
+.hdf-auto-box{margin:0}
+.hdf-np{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:var(--text-sm)}
+.hdf-np[hidden]{display:none}
+.hdf-np-q{flex:1 1 220px}
 .hdf-hosts,.hdf-count,.hdf-now{color:var(--muted-foreground);font-size:var(--text-sm);min-height:0}
 .hdf-hosts:empty,.hdf-count:empty,.hdf-now:empty,.hdf-msg:empty{display:none}
 .hdf-row{display:flex;gap:8px;align-items:center}
