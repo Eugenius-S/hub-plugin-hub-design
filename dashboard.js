@@ -182,12 +182,21 @@ export const peerName = (it) => it.name || nameOf(it.file || "") || it.id;
 
 export const newest = (rows, n = PREVIEWS) => [...rows].sort((a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0)).slice(0, n);
 
+// put the nodes into the parent in this order and move only what is out of place: a node pulled out and put back replays its entrance
+// animation and reloads its picture (the tiles flickered on every snapshot), and a text written again replaces its node
+export function place(parent, nodes) {
+  const keep = new Set(nodes);
+  for (const c of [...parent.children]) if (!keep.has(c)) c.remove();
+  nodes.forEach((n, i) => { if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] || null); });
+}
+const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+const setTitle = (node, text) => { if (node.title !== text) node.title = text; };
 // createDashboard(app): app = { hub, files(), dirs(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name),
 //   peers() - [{machine, os, items}] of the other machines, peerShot(machine, shot) - the url of a picture }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
   // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd); peer: the machine whose folder is open (null - none), pdir: the direction inside it (null - all)
-  const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false, folder: null, peer: null, pdir: null };
+  const S = { tab: "all", q: "", sort: "recent", list: false, path: false, folder: null, peer: null, pdir: null };
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
@@ -207,16 +216,19 @@ export function createDashboard(app) {
     b.addEventListener("click", fn);
     return b;
   };
+  // the search field is always open: the magnifier sits inside it
   const search = el("input", "hdd-search");
   search.type = "search";
   search.addEventListener("input", () => { S.q = search.value; paintFiles(); });
-  const bSearch = tool("search", () => { S.search = !S.search; if (!S.search) { S.q = ""; search.value = ""; } paint(); if (S.search) search.focus(); });
+  const searchBox = el("label", "hdd-sbox");
+  searchBox.innerHTML = CI.search;
+  searchBox.append(search);
   const bView = tool("list", () => { S.list = !S.list; paint(); });
-  const bSort = tool("sliders", () => { S.sort = S.sort === "recent" ? "name" : "recent"; paint(); });
+  const bSort = tool("sort", () => { S.sort = S.sort === "recent" ? "name" : "recent"; paint(); });
   const bMore = tool("more", () => { S.path = !S.path; paint(); if (S.path) pathIn.focus(); });
   bMore.classList.add("hdd-more");
   const tools = el("div", "hdd-tools");
-  tools.append(search, bSearch, bView, bSort, bMore);
+  tools.append(searchBox, bView, bSort, bMore);
   const bar = el("div", "hdd-bar");
   bar.append(tabs, tools);
 
@@ -351,17 +363,29 @@ export function createDashboard(app) {
     return tl;
   }
   function fillTile(tl, peer, files, title) {
-    tl.name.textContent = title;
-    tl.node.title = title;
-    tl.count.textContent = t("folder_count", { n: files.length });
+    setText(tl.name, title);
+    setTitle(tl.node, title);
+    setText(tl.count, t("folder_count", { n: files.length }));
     const top = newest(files);
     tl.cells.forEach((c, i) => {
       const it = top[i];
       const src = it && it.shot ? app.peerShot(peer.machine, it.shot) + "&v=" + encodeURIComponent(it.stamp || it.last || "") : "";
       if (c.src !== src) { c.src = src; if (src) c.img.src = src; else c.img.removeAttribute("src"); }
-      c.img.hidden = !src;
+      if (c.img.hidden === !!src) c.img.hidden = !src;
     });
   }
+  // the containers of the area of other machines live as long as the dashboard: a rebuilt container takes its tiles out of the page (and they play their entrance again)
+  const holders = new Map();
+  const holder = (key, make) => { let h = holders.get(key); if (!h) { h = make(); holders.set(key, h); } return h; };
+  const tileGrid = (key) => holder("g:" + key, () => el("div", "hdd-folders hdd-ptiles"));
+  const peerBox = (machine) => holder("b:" + machine, () => {
+    const node = el("section", "hdd-peer");
+    node.dataset.machine = machine;
+    const h = el("h2", "hdd-phead");
+    const grid = el("div", "hdd-files hdd-pfiles");
+    node.append(h, grid);
+    return { node, h, grid };
+  });
   // returns how many cards and tiles of other machines are shown
   function paintPeers() {
     const list = (S.folder === null && app.peers && app.peers()) || [];
@@ -400,9 +424,9 @@ export function createDashboard(app) {
         return tl.node;
       }
       if (open && pv.mode === "folders") {
-        const grid = el("div", "hdd-folders hdd-ptiles");
+        const grid = tileGrid(peer.machine);
         grid.classList.toggle("list", S.list);
-        grid.append(...pv.groups.map((g) => {
+        place(grid, pv.groups.map((g) => {
           const key = peer.machine + "/" + g.key;
           const tl = ptile(key, () => { S.pdir = g.key; paint(); });
           fillTile(tl, peer, g.files, g.key || t("folder_none"));
@@ -413,40 +437,38 @@ export function createDashboard(app) {
         return grid;
       }
       const shownRows = open ? pv.rows : rows;
-      const box = el("section", "hdd-peer");
-      box.dataset.machine = peer.machine;
-      const h = open ? null : el("h2", "hdd-phead", t("peer_head", { where, n: rows.length }));
-      const grid = el("div", "hdd-files hdd-pfiles");
+      const box = peerBox(peer.machine);
+      box.h.hidden = !!open;
+      setText(box.h, t("peer_head", { where, n: rows.length }));
+      const grid = box.grid;
       grid.classList.toggle("list", S.list);
-      grid.append(...shownRows.map((it) => {
+      place(grid, shownRows.map((it) => {
         const c = pcard(peer, it);
         live.add(peer.machine + "/" + it.id);
         Object.assign(c, { peer, it, where });
-        c.node.title = it.file || "";
-        c.name.textContent = peerName(it);
-        c.badge.textContent = where;
-        c.text.textContent = [it.session, editedText(it)].filter(Boolean).join(" · ");
+        setTitle(c.node, it.file || "");
+        setText(c.name, peerName(it));
+        setText(c.badge, where);
+        setText(c.text, [it.session, editedText(it)].filter(Boolean).join(" · "));
         const src = it.shot ? app.peerShot(peer.machine, it.shot) + "&v=" + encodeURIComponent(it.stamp || it.last || "") : "";
         if (c.src !== src) { c.src = src; if (src) c.img.src = src; else c.img.removeAttribute("src"); }
-        c.img.hidden = !src;
-        c.none.hidden = !!src;
-        c.none.textContent = src ? "" : t("peer_noshot");
+        if (c.img.hidden === !!src) c.img.hidden = !src;
+        if (c.none.hidden !== !!src) c.none.hidden = !!src;
+        setText(c.none, src ? "" : t("peer_noshot"));
         return c.node;
       }));
       count += shownRows.length;
-      if (h) box.append(h);
-      box.append(grid);
-      return box;
+      return box.node;
     }).filter(Boolean);
-    if (tilesOnly && blocks.length) {
-      const grid = el("div", "hdd-folders hdd-ptiles");
+    if (tilesOnly) {
+      const grid = tileGrid("all");
       grid.classList.toggle("list", S.list);
-      grid.append(...blocks);
-      others.replaceChildren(grid);
+      place(grid, blocks);
+      place(others, blocks.length ? [grid] : []);
     } else {
-      others.replaceChildren(...blocks);
+      place(others, blocks);
     }
-    others.hidden = !blocks.length;
+    if (others.hidden !== !blocks.length) others.hidden = !blocks.length;
     for (const key of [...pcards.keys()]) if (!live.has(key)) pcards.delete(key);
     for (const key of [...ptiles.keys()]) if (!liveTiles.has(key)) ptiles.delete(key);
     return count;
@@ -575,15 +597,15 @@ export function createDashboard(app) {
     const live = new Set();
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);
-      tl.name.textContent = folderTitle(g.key, dirs);
-      tl.node.title = g.key || t("folder_none");
-      tl.count.textContent = t("folder_count", { n: g.files.length });
+      setText(tl.name, folderTitle(g.key, dirs));
+      setTitle(tl.node, g.key || t("folder_none"));
+      setText(tl.count, t("folder_count", { n: g.files.length }));
       newest(g.files).forEach((f, i) => {
         const c = thumb(f.path);
         live.add("t:" + f.path);
         if (tl.cells[i].firstChild !== c.shot) tl.cells[i].replaceChildren(c.shot);
       });
-      for (let i = Math.min(g.files.length, PREVIEWS); i < PREVIEWS; i++) tl.cells[i].replaceChildren();
+      for (let i = Math.min(g.files.length, PREVIEWS); i < PREVIEWS; i++) if (tl.cells[i].firstChild) tl.cells[i].replaceChildren();
       return tl.node;
     });
     tnodes.forEach((n, i) => { if (folders.children[i] !== n) folders.insertBefore(n, folders.children[i] || null); });
@@ -610,7 +632,9 @@ export function createDashboard(app) {
     head.textContent = t("title");
     search.placeholder = t("search_ph");
     pathIn.placeholder = t("path_ph");
-    for (const [b, key] of [[bSearch, "search"], [bMore, "open_by_path"]]) { b.title = t(key); b.setAttribute("aria-label", b.title); }
+    bMore.title = t("open_by_path");
+    bMore.setAttribute("aria-label", bMore.title);
+    search.setAttribute("aria-label", t("search"));
     bView.title = S.list ? t("tiles") : t("list");
     bView.setAttribute("aria-label", bView.title);
     bSort.title = t("sort") + ": " + t("sort_" + S.sort);
@@ -618,8 +642,6 @@ export function createDashboard(app) {
     for (const [p, label] of labels) label.textContent = p.title.replace("-", "\u2011").replace(/ (\u0432|in) /, " $1\u00a0");   // wrap only between words: not at the hyphen, not after the preposition (0432 in Russian)
     for (const [id, b] of tabBtns) { b.textContent = t("tab_" + id); b.classList.toggle("on", S.tab === id); }
     back.textContent = "\u2190 " + t("crumb_all");
-    search.hidden = !S.search;
-    bSearch.classList.toggle("on", S.search);
     bView.classList.toggle("on", S.list);
     bView.innerHTML = CI[S.list ? "grid" : "list"];
     bSort.classList.toggle("on", S.sort !== "recent");

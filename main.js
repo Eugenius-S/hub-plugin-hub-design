@@ -7,7 +7,7 @@ import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, cha
   goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
-import { styleLine } from "./lib.js";
+import { spread, styleLine } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -1226,7 +1226,16 @@ function build(root) {
   const note = el("div", "hd-note");
   // a wide secondary button under the input window: the palette and the label (the chosen style's name once there is one)
   // with a style chosen a small x on its right end detaches it (the click does not open the picker)
-  const styleOpen = button("btn hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => st.open());
+  const styleOpen = button("btn hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => (st.node.hidden ? st.open() : st.close()));   // the second press closes the open window
+  styleOpen.setAttribute("aria-expanded", "false");
+  // the hover fills the button with a circle from the centre of the palette: where it starts and how far it goes depend on the button
+  styleOpen.addEventListener("pointerenter", () => {
+    const c = spread(styleOpen.getBoundingClientRect(), styleOpen.querySelector(".hd-ic").getBoundingClientRect());
+    styleOpen.style.setProperty("--hd-cx", c.x + "px");
+    styleOpen.style.setProperty("--hd-cy", c.y + "px");
+    styleOpen.style.setProperty("--hd-r", c.r + "px");
+  });
+  new MutationObserver(() => styleOpen.setAttribute("aria-expanded", String(!st.node.hidden))).observe(st.node, { attributes: true, attributeFilter: ["hidden"] });
   const styleX = button("hd-style-x", "×", ts("detach"), () => attachStyle(null));
   styleX.hidden = true;
   const styleBtn = el("div", "hd-style-w");

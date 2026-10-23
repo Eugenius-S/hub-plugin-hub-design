@@ -331,6 +331,12 @@ export function cssValue(field, raw) {
 }
 
 // grid: "Columns: N" is read from repeat(N, minmax(0,1fr)) (or repeat(N, 1fr)) and written back in the same form
+// a circle that grows from the centre of the dot until it covers the whole box (the hover of the Style button): the centre
+// and the radius, in the box's own coordinates; both are DOMRect-like {left, top, width, height}
+export function spread(box, dot) {
+  const x = dot.left + dot.width / 2 - box.left, y = dot.top + dot.height / 2 - box.top;
+  return { x, y, r: Math.ceil(Math.hypot(Math.max(x, box.width - x), Math.max(y, box.height - y))) + 2 };
+}
 export const GRID_MAX = 24;
 export const gridForm = (n) => `repeat(${n}, minmax(0, 1fr))`;
 export function parseGridCols(v) {

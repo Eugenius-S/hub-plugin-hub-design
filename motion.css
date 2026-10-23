@@ -86,37 +86,38 @@
 .hdd-lb-box{transition:opacity 240ms var(--hd-ease-out),transform 240ms var(--hd-ease-out)}
 @starting-style{.hdd-lb-box{opacity:0;transform:scale(calc(1 - var(--hd-m) * .04))}}
 
-/* style button: on hover a gradient spreads from the palette over the whole button, the label and palette turn white
-   and the palette fills (Icons8 pair, icon-filled.svg). The circle is a layer under the label, clipped by the button. */
+/* style button: on hover a gradient spreads in a circle from the centre of the palette over the whole button (the circle's
+   centre and radius come from main.js, they depend on the label), the label turns white and the palette fills: the filled
+   Icons8 pair (icon-filled.svg) has holes, the gradient shows through them. The circle is a layer under the label. */
 .hd .hd-style{
   --hd-pink:#d6307f;
   position:relative;isolation:isolate;overflow:hidden;
-  transition:color var(--hd-hover) ease,border-color var(--hd-hover) ease,transform var(--hd-press) var(--hd-ease-out);
+  transition:color 120ms ease 60ms,border-color var(--hd-hover) ease,transform var(--hd-press) var(--hd-ease-out);
+}
+.hd-style::before{
+  content:"";position:absolute;inset:-1px;z-index:-1;pointer-events:none;
+  background:linear-gradient(90deg,var(--hd-acc),var(--hd-pink),color-mix(in oklab,var(--hd-acc) 50%,var(--hd-pink)),var(--hd-acc)) 0 0/420px 100% repeat-x;
+  clip-path:circle(0px at var(--hd-cx,20px) var(--hd-cy,50%));
+  transition:clip-path 240ms var(--hd-ease-out);
 }
 .hd-style .hd-ic{position:relative;display:inline-flex}
-.hd-style .hd-ic::before{
-  content:"";position:absolute;left:50%;top:50%;z-index:-1;width:1200px;height:1200px;margin:-600px 0 0 -600px;
-  border-radius:50%;pointer-events:none;
-  background:linear-gradient(90deg,var(--hd-acc),var(--hd-pink),color-mix(in oklab,var(--hd-acc) 50%,var(--hd-pink)),var(--hd-acc)) 0 0/420px 100% repeat-x;
-  opacity:0;transform:scale(calc(1 - var(--hd-m) * .985));
-  transition:transform var(--hd-hover) var(--hd-ease-out),opacity var(--hd-hover) ease;
-}
 .hd-style .hd-ic::after{
   content:"";position:absolute;inset:0;background:#fff;opacity:0;
   -webkit-mask:url("icon-filled.svg") center/20px 20px no-repeat;mask:url("icon-filled.svg") center/20px 20px no-repeat;
-  transition:opacity var(--hd-hover) ease;
+  transition:opacity 100ms ease;
 }
-.hd-style .hd-ic .icon{transition:opacity var(--hd-hover) ease}
+.hd-style .hd-ic .icon{transition:opacity 100ms ease}
 @media (hover:hover) and (pointer:fine){
-  .hd .hd-style-w:hover .hd-style{color:#fff;border-color:transparent}
-  .hd-style-w:hover .hd-style .hd-ic::before{
-    opacity:1;transform:none;animation:hd-sweep 3s linear infinite;
-    transition:transform 200ms var(--hd-ease-out),opacity var(--hd-hover) ease;
+  .hd .hd-style-w:hover .hd-style{color:#fff;border-color:transparent;transition:color 120ms ease 90ms,border-color var(--hd-hover) ease,transform var(--hd-press) var(--hd-ease-out)}
+  .hd-style-w:hover .hd-style::before{
+    clip-path:circle(var(--hd-r,400px) at var(--hd-cx,20px) var(--hd-cy,50%));
+    animation:hd-sweep 3s linear infinite;
+    transition:clip-path 380ms var(--hd-ease-out);
   }
-  .hd-style-w:hover .hd-style .hd-ic::after{opacity:1}
-  .hd-style-w:hover .hd-style .hd-ic .icon{opacity:0}
+  .hd-style-w:hover .hd-style .hd-ic::after{opacity:1;transition-delay:40ms}
+  .hd-style-w:hover .hd-style .hd-ic .icon{opacity:0;transition-delay:40ms}
   .hd .hd-style-w:hover .hd-style-x{color:#fff}
   .hd .hd-style-w:hover .hd-style-x:hover{background:rgb(255 255 255 / .2)}
 }
 @keyframes hd-sweep{to{background-position:420px 0}}
-@media (prefers-reduced-motion:reduce){.hd-style-w:hover .hd-style .hd-ic::before{animation:none}}
+@media (prefers-reduced-motion:reduce){.hd-style::before,.hd-style-w:hover .hd-style::before{transition:none;animation:none}}
