@@ -87,3 +87,58 @@ test("folder title: the direction label, 'No direction' for the rest", () => {
   lang("ru");
   assert.equal(folderTitle("", dirs), "Без направления");
 });
+
+// --- task folders: every design made for one task of the owner lies in one folder ---
+import { taskFolders, folderKeyOf, isTaskKey, taskOfKey, taskTitle, taskSlug, taskDir, taskLine, TASK_MIN } from "../lib.js";
+
+const tasks = [{ id: "d10", title: "Rewarded video for Ouch", by: "ads-a" }];
+
+test("task folders: a task with two designs gets a folder, one design stays where its file lies", () => {
+  const files = [{ path: "/p/Ads/design/a/index.html", task: "d10" }, { path: "/p/Gen/design/b/index.html", task: "d10" }, { path: "/p/Ads/design/c/index.html", task: "d11" }, { path: "/p/Ads/design/d/index.html" }];
+  const set = taskFolders(files);
+  assert.equal(TASK_MIN, 2);
+  assert.deepEqual([...set], ["d10"]);
+  assert.equal(folderKeyOf(files[0], dirs, set), "task:d10");
+  assert.equal(folderKeyOf(files[1], dirs, set), "task:d10");
+  assert.equal(folderKeyOf(files[2], dirs, set), "/p/Ads");
+  assert.equal(folderKeyOf(files[3], dirs, set), "/p/Ads");
+  assert.ok(isTaskKey("task:d10") && !isTaskKey("/p/Ads") && !isTaskKey(""));
+  assert.equal(taskOfKey("task:d10"), "d10");
+  assert.equal(taskOfKey("/p/Ads"), "");
+});
+
+test("task folders: groups and view put the designs of the task into one tile with the task title", () => {
+  const files = [{ path: "/p/Ads/design/a/index.html", task: "d10", last: 5 }, { path: "/p/Gen/design/b/index.html", task: "d10", last: 9 }, { path: "/p/Ads/design/c/index.html", last: 1 }];
+  const set = taskFolders(files);
+  const g = groupFiles(files, dirs, set);
+  assert.deepEqual(g.map((x) => x.key), ["task:d10", "/p/Ads"]);
+  assert.equal(g[0].files.length, 2);
+  assert.equal(g[0].task, "d10");
+  assert.equal(g[1].task, "");
+  assert.equal(view(files, dirs, { tasks: set }).mode, "folders");
+  assert.deepEqual(view(files, dirs, { folder: "task:d10", tasks: set }).rows.map((f) => f.path), [files[0].path, files[1].path]);
+  assert.equal(view(files, dirs, { q: "a", tasks: set }).mode, "files");
+  assert.equal(folderTitle("task:d10", dirs, tasks), "Rewarded video for Ouch");
+  assert.equal(folderTitle("task:d99", dirs, tasks), "d99");        // no title yet: the id
+  assert.equal(taskTitle("d10", tasks), "Rewarded video for Ouch");
+});
+
+test("task folders: a task without direction folders still makes tiles; no tasks - the flat list as before", () => {
+  const files = [{ path: "/x/a/index.html", task: "d10" }, { path: "/x/b/index.html", task: "d10" }];
+  assert.equal(view(files, [], { tasks: taskFolders(files) }).mode, "folders");
+  assert.equal(view(files, [], {}).mode, "files");
+});
+
+test("the folder of a task on disk: <direction>/design/<title>/, and the line for the designer", () => {
+  assert.equal(taskSlug("Rewarded video for Ouch"), "Rewarded-video-for-Ouch");
+  assert.equal(taskSlug("Ролик «Rewarded» для Ouch!"), "Ролик-Rewarded-для-Ouch");
+  assert.ok(taskSlug("a".repeat(30) + " " + "b".repeat(30)).length <= 40);
+  assert.equal(taskDir("/p/Ads/", "Rewarded video"), "/p/Ads/design/Rewarded-video/");
+  assert.equal(taskDir("C:\\p\\Ads", "Rewarded video"), "C:\\p\\Ads\\design\\Rewarded-video\\");
+  assert.equal(taskDir("", "x"), "");
+  assert.equal(taskDir("/p/Ads", ""), "/p/Ads/design/task/");
+  assert.match(taskLine("/p/Ads/design/Rewarded-video/"), /\/p\/Ads\/design\/Rewarded-video\//);
+  assert.equal(taskLine(""), "");
+  lang("ru");
+  assert.match(taskLine("/p/Ads/design/Rewarded-video/"), /задач/);
+});

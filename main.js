@@ -5,7 +5,7 @@
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
-  describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
+  describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
@@ -154,7 +154,7 @@ const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
-  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], regAt: 0, peers: [], peersAt: 0, peersSig: "", regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
+  authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], tasks: [], regAt: 0, peers: [], peersAt: 0, peersSig: "", regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
 };
 
 globalThis.__hubDesign = () => P;   // for checks in the sandbox: the batch and the view state
@@ -375,7 +375,15 @@ function saveFolder() {
   const snap = hub.snapshot() || {};
   return saveDirOf(P.origin, snap.sessions, snap.directions);
 }
-const withSave = (text) => { const l = saveLine(saveFolder()); return l ? text + "\n\n" + l : text; };
+// a task folder is open on the dashboard: the designs of the task go into its own folder next to the others of the direction that asked
+function taskSaveLine() {
+  const f = ui ? ui.dash.state.folder : null;
+  if (!isTaskKey(f)) return "";
+  const id = taskOfKey(f), snap = hub.snapshot() || {}, task = P.tasks.find((x) => x.id === id) || {};
+  const cwd = saveDirOf(task.by, snap.sessions, snap.directions) || saveDirOf(P.origin, snap.sessions, snap.directions);
+  return taskLine(taskDir(cwd, taskTitle(id, P.tasks)));
+}
+const withSave = (text) => { const l = taskSaveLine() || saveLine(saveFolder()); return l ? text + "\n\n" + l : text; };
 
 // a file in the hub's Files (the same address a path link in a reply leads to)
 const filesUrl = (path) => {
@@ -479,6 +487,7 @@ async function loadRegistry(force = false) {
     if (it.state && P.have[k] !== it.state) { P.have[k] = it.state; changed = true; }
   }
   P.registry = r.items.map(({ state, ...rest }) => rest);
+  P.tasks = Array.isArray(r.tasks) ? r.tasks : [];
   P.regAuthors = P.registry.map((x) => ({ path: x.path, session: x.session, wrote: x.rank === 2, sent: x.rank === 1 }));
   P.regReady = !!r.ready;
   clearTimeout(regTimer);
@@ -1293,7 +1302,7 @@ function build(root) {
   const dash = createDashboard({
     // a card's picture: the shot of the plugin process (cached by edit time); none until the edit time is known
     thumb: (path) => { const m = P.times[abs(path)]; return m ? `${origin()}/__canvas/thumb?path=${encodeURIComponent(abs(path))}&m=${m}` : ""; },
-    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { registry: P.registry, skip: (n) => P.hubs.has(n), who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
+    hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, tasks: () => P.tasks, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { registry: P.registry, skip: (n) => P.hubs.has(n), who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install, peers: () => P.peers, peerShot,
   });

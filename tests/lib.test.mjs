@@ -908,3 +908,11 @@ test("the card's share button copies the link, and says so", () => {
   assert.match(cardText("en").copied, /link/i);
   assert.match(cardText("ru").copied, /ссылк/i);
 });
+
+test("dashboard: the task of a registry row stays on the file, also when the live feed has the same file", () => {
+  const mac = ["/u"];
+  const registry = [{ path: "/u/o/a.html", session: "designer", ts: 3, last: 4, rank: 2, task: "d10" }, { path: "/u/o/b.html", session: "designer", ts: 2, last: 2, rank: 2 }];
+  assert.deepEqual(dashboardFiles([], [], mac, { registry }).map((r) => r.task || ""), ["d10", ""]);
+  const authors = [{ path: "/u/o/a.html", session: "designer", ts: 5, last: 5, wrote: true }];
+  assert.equal(dashboardFiles(authors, [], mac, { registry })[0].task, "d10");
+});

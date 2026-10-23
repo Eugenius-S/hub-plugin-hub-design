@@ -60,6 +60,7 @@ export const STR = {
     new_design: "New design (Hub Design): ",
     based_on: "Make a design based on {f}",
     save_to: "Save it in the direction folder: {dir}/<design-name>/ (index.html, assets next to it), not in your own working folder.",
+    save_task: "All the designs of this task go into one folder: {dir}<design-name>/ (index.html, assets next to it), every round too, not in your own working folder.",
     gone_denied: "The file is outside the hub's project and session folders, so the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
     t_designer: "designer", t_writer: "writer", t_animator: "animator",
@@ -122,6 +123,7 @@ export const STR = {
     new_design: "Новый макет (Hub Design): ",
     based_on: "Сделай макет на основе {f}",
     save_to: "Сохрани в папку направления: {dir}/<имя-макета>/ (index.html, ресурсы рядом), не в свою рабочую папку.",
+    save_task: "Все макеты этой задачи — в одну папку: {dir}<имя-макета>/ (index.html, ресурсы рядом), и новые раунды тоже, не в свою рабочую папку.",
     gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
     gone_missing: "Файл не найден: {path}",
     t_designer: "дизайнер", t_writer: "райтер", t_animator: "аниматор",
@@ -806,14 +808,14 @@ export function dashboardFiles(authors, frames, cwds, { who = () => "", time = (
   const out = [], seen = new Map();
   const add = (a) => {
     const k = pathKey(a.path), cur = seen.get(k);
-    if (cur) { cur.last = Math.max(cur.last || 0, a.last || a.ts || 0); return; }
+    if (cur) { cur.last = Math.max(cur.last || 0, a.last || a.ts || 0); if (a.task && !cur.task) cur.task = a.task; return; }
     seen.set(k, a);
     out.push(a);
   };
   for (const a of authors || []) if (nativePath(a.path, cwds)) add({ ...a });
   for (const r of registry || []) {
     if (!r || !r.path || !nativePath(r.path, cwds) || skip(r.session)) continue;
-    add({ path: r.path, session: r.session || "", ts: Number(r.ts) || 0, last: Number(r.last || r.ts) || 0, rank: r.rank || 0, wrote: r.rank === 2, sent: r.rank === 1 });
+    add({ path: r.path, session: r.session || "", ts: Number(r.ts) || 0, last: Number(r.last || r.ts) || 0, rank: r.rank || 0, wrote: r.rank === 2, sent: r.rank === 1, ...(r.task ? { task: String(r.task) } : {}) });
   }
   for (const path of (frames || []).map((f) => (typeof f === "string" ? f : f.path))) {
     if (seen.has(pathKey(path))) continue;
@@ -848,16 +850,37 @@ export function folderOf(path, dirs = []) {
   for (const d of dirs) if ((norm(p).startsWith(norm(d.key) + "/")) && d.key.length > best.length) best = d.key;
   return best;
 }
-// files by folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last
-export function groupFiles(files = [], dirs = []) {
+// --- folders of tasks: all the designs made for one task of the owner (every round, every session of the chain) lie in one folder ----------
+// the registry of the plugin process gives each design the root of the chain of tasks it was made for (f.task). A task gets a folder when it has several designs
+export const TASK_MIN = 2;
+export const TASK_PREFIX = "task:";
+export const isTaskKey = (key) => String(key || "").startsWith(TASK_PREFIX);
+export const taskOfKey = (key) => (isTaskKey(key) ? String(key).slice(TASK_PREFIX.length) : "");
+// the ids of the tasks that have a folder
+export function taskFolders(files = [], min = TASK_MIN) {
+  const n = new Map();
+  for (const f of files) if (f && f.task) n.set(f.task, (n.get(f.task) || 0) + 1);
+  return new Set([...n].filter(([, c]) => c >= min).map(([id]) => id));
+}
+// the folder a design is shown in: the folder of its task, else the direction folder of its file ("" - none)
+export const folderKeyOf = (f, dirs = [], tasks = new Set()) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : folderOf(f.path, dirs));
+// the name of a task folder: the title of the task (tasks: [{id, title}]); the same name for the folder on disk
+export const taskTitle = (id, tasks = []) => String(((tasks || []).find((x) => x.id === id) || {}).title || "").trim() || id;
+export function taskSlug(title) {
+  const s = String(title || "").normalize("NFC").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+  return s.length > 40 ? s.slice(0, 40).replace(/-[^-]*$/, "") || s.slice(0, 40) : s;
+}
+// files by folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last.
+// tasks (a Set of ids, taskFolders(all the files)): the designs of those tasks go to the folder of the task, the rest by direction
+export function groupFiles(files = [], dirs = [], tasks = new Set()) {
   const by = new Map();
   for (const f of files) {
-    const key = folderOf(f.path, dirs);
+    const key = folderKeyOf(f, dirs, tasks);
     if (!by.has(key)) by.set(key, []);
     by.get(key).push(f);
   }
   const last = (rows) => Math.max(0, ...rows.map((f) => Number(f.last || f.ts) || 0));
-  return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, last: last(rows) }))
+  return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, task: taskOfKey(key), last: last(rows) }))
     .sort((a, b) => (a.key === "") - (b.key === "") || b.last - a.last);
 }
 // the cwd of the direction a session is (nothing for the hub, specialists, executors, an unknown name): new designs go into <cwd>/design
@@ -865,6 +888,16 @@ export function saveDirOf(name, sessions = [], directions = []) {
   if (!name) return "";
   const d = directionDirs(sessions, directions).find((x) => x.names.includes(name));
   return d ? d.cwd : "";
+}
+// the folder of a task on disk: <the direction that asked>/design/<title>/
+export function taskDir(cwd, title) {
+  if (!cwd) return "";
+  const sep = /\\/.test(cwd) && !cwd.includes("/") ? "\\" : "/";
+  return String(cwd).replace(/[\\/]+$/, "") + sep + "design" + sep + (taskSlug(title) || "task") + sep;
+}
+// the line for the designer: where to put the new design (a task folder - the folder of the task)
+export function taskLine(dir) {
+  return dir ? tr("save_task", { dir }) : "";
 }
 // the line for the designer: where to put the new design
 export function saveLine(cwd) {

@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, folderOf, groupFiles, isGone, nameOf, scrollsRight } from "./lib.js";
+import { ago, bannerText, folderKeyOf, groupFiles, isGone, isTaskKey, nameOf, scrollsRight, taskFolders, taskOfKey, taskTitle } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 
@@ -132,11 +132,12 @@ export function createNeed(app, cls = "") {
 // the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
 // dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
 export const PREVIEWS = 4;
-export const folderTitle = (key, dirs = []) => (key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? taskTitle(taskOfKey(key), tasks) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
 // what the dashboard shows: "folders" (tiles), "files" (the cards of one folder or all the designs). Tiles - only when there are direction folders and nothing is searched
-export function view(rows, dirs, { folder = null, q = "" } = {}) {
-  if (folder !== null) return { mode: "files", rows: rows.filter((f) => folderOf(f.path, dirs) === folder) };
-  const groups = groupFiles(rows, dirs);
+// tasks: the Set of the ids of the tasks that have a folder (taskFolders of all the designs): their designs lie in the folder of the task, not of the direction
+export function view(rows, dirs, { folder = null, q = "", tasks = new Set() } = {}) {
+  if (folder !== null) return { mode: "files", rows: rows.filter((f) => folderKeyOf(f, dirs, tasks) === folder) };
+  const groups = groupFiles(rows, dirs, tasks);
   if (String(q || "").trim() || !groups.some((g) => g.key)) return { mode: "files", rows };
   return { mode: "folders", groups };
 }
@@ -648,19 +649,22 @@ export function createDashboard(app) {
     // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
     const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() }).filter((f) => !isGone(app.fileState(f.path)));
     // a folder that has nothing in it any more (and is not a known direction) is closed
-    if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderOf(f.path, dirs) === S.folder)) S.folder = null;
+    const taskList = app.tasks ? app.tasks() : [];
+    const tset = taskFolders(all.filter((f) => !isGone(app.fileState(f.path))));   // counted over all the designs: a search or a tab does not dissolve a folder
+    if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderKeyOf(f, dirs, tset) === S.folder)) S.folder = null;
     const inPeer = S.peer !== null;   // inside the folder of another machine its designs only: the own ones are hidden
-    const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q });
+    const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q, tasks: tset });
     const inFolder = S.folder !== null;
     setHidden(crumb, !inFolder && !inPeer);
-    if (inFolder) { setText(cname, folderTitle(S.folder, dirs)); setTitle(cname, S.folder); }
+    if (inFolder) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, isTaskKey(S.folder) ? folderTitle(S.folder, dirs, taskList) : S.folder); }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
-    const named = !inFolder && dirs.length > 0;   // a search across folders tells where each design lies
+    const named = !inFolder && (dirs.length > 0 || tset.size > 0);   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
-      const where = named ? folderTitle(folderOf(f.path, dirs), dirs) : "";
-      setText(c.text, [f.session, named && folderOf(f.path, dirs) ? where : "", editedText(f)].filter(Boolean).join(" · "));
+      const fk = folderKeyOf(f, dirs, tset);
+      const where = named ? folderTitle(fk, dirs, taskList) : "";
+      setText(c.text, [f.session, named && fk ? where : "", editedText(f)].filter(Boolean).join(" · "));
       return c.node;
     });
     place(files, nodes);   // move only the ones that shifted: a card put back replays its entrance animation
@@ -669,8 +673,8 @@ export function createDashboard(app) {
     const live = new Set();
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);
-      setText(tl.name, folderTitle(g.key, dirs));
-      setTitle(tl.node, g.key || t("folder_none"));
+      setText(tl.name, folderTitle(g.key, dirs, taskList));
+      setTitle(tl.node, isTaskKey(g.key) ? folderTitle(g.key, dirs, taskList) : g.key || t("folder_none"));
       setText(tl.count, t("folder_count", { n: g.files.length }));
       newest(g.files).forEach((f, i) => {
         const c = thumb(f.path);
