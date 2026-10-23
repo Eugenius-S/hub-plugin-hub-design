@@ -165,7 +165,10 @@ class Run(Base):
         self.assertEqual(Site.hits.count(f"/style/{uid(1)}") + Site.hits.count(f"/style/{uid(2)}"), 0)   # not asked for again
         after = self.index()
         for key in (uid(1), uid(2), "set:one"):
-            self.assertEqual(after[key], idx[key])   # the old fields (labels, set, license) stay
+            self.assertEqual({k: v for k, v in after[key].items() if k != "source_urls"}, idx[key])   # the old fields (labels, set, license) stay
+        self.assertEqual(after[uid(1)]["source_urls"], [self.root_url])   # a style that was there knows the link it was asked by now
+        self.assertEqual(after[uid(3)]["source_urls"], [self.root_url])
+        self.assertNotIn("source_urls", after["set:one"])   # a style that no link asked for is not marked
         self.assertIn(uid(3), after)
         self.assertEqual(sorted(f for f in os.listdir(self.lib) if f.endswith(".md")), sorted([f"old-1__{uid(1)}.md", f"old-2__{uid(2)}.md", f"cedar__{uid(3)}.md"]))   # no second copies
         with open(os.path.join(self.lib, "tags.json"), encoding="utf-8") as fh:
@@ -186,6 +189,7 @@ class Run(Base):
         Site.covers = {uid(1)}
         st = self.run_to_end()
         self.assertEqual((st["state"], st["added"], st["covers"]), ("done", 3, 1))
+        self.assertEqual((st["done"], st["total"]), (3, 3))   # a cover is not another item of the run
         e = self.index()[uid(1)]
         self.assertEqual((e["cover_video"], e["cover_url"], e["preview"]), (f"previews/{uid(1)}.mp4", f"{self.root_url}/video/{uid(1)}.mp4", f"previews/{uid(1)}.png"))
         with open(os.path.join(self.lib, e["cover_video"]), "rb") as fh:
@@ -202,13 +206,14 @@ class Run(Base):
         Site.covers = {uid(1)}
         st = self.run_to_end()
         self.assertEqual((st["added"], st["skipped"], st["covers"]), (1, 2, 1))
+        self.assertEqual((st["done"], st["total"]), (3, 3))
         self.assertEqual(Site.hits.count(f"/style/{uid(1)}"), 1)   # the page is read for the cover
         self.assertEqual(Site.hits.count(f"/video/{uid(1)}.mp4"), 1)
         after = self.index()
         self.assertEqual(after[uid(1)]["cover_video"], f"previews/{uid(1)}.mp4")
         self.assertEqual(after[uid(2)]["cover_video"], "")
         for key in (uid(1), uid(2)):   # nothing else of the old entry is touched
-            self.assertEqual({k: v for k, v in after[key].items() if not k.startswith("cover_")}, idx[key])
+            self.assertEqual({k: v for k, v in after[key].items() if not k.startswith("cover_") and k != "source_urls"}, idx[key])
         self.assertEqual(after["set:one"], idx["set:one"])
         with open(os.path.join(self.lib, f"old-1__{uid(1)}.md"), encoding="utf-8") as fh:
             self.assertEqual(fh.read(), "# old\n" * 300)   # the style file is not written again
@@ -237,7 +242,7 @@ class Run(Base):
         st = self.run_to_end()
         self.assertEqual((st["state"], st["covers"]), ("done", 0))
         after = self.index()
-        self.assertEqual(after[uid(1)], idx[uid(1)])   # untouched, no "cover_video": the next run tries again
+        self.assertEqual({k: v for k, v in after[uid(1)].items() if k != "source_urls"}, idx[uid(1)])   # untouched, no "cover_video": the next run tries again
         self.assertEqual(after[uid(2)]["cover_video"], "")
 
     def test_the_link_without_a_scheme_is_https(self):

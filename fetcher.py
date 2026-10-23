@@ -15,6 +15,7 @@ import json
 import os
 import random
 import re
+import shutil
 import threading
 import time
 import urllib.error
@@ -180,6 +181,46 @@ def write_index(root, data):
     os.replace(tmp, path)
 
 
+INDEX_LOCK = threading.RLock()   # read index -> change -> write index is one step: the run, a deleted link and the previews of a designer meet in index.json
+
+
+def canon(url, source_list=None):
+    """The link as it is remembered and compared: no www, no trailing slash, no query or fragment (a source may know better)."""
+    u = with_scheme(str(url or "").strip())
+    s = sources.for_url(u, source_list)
+    if s is not None and hasattr(s, "canon"):
+        return s.canon(u)
+    p = urlparse(u)
+    host = (p.hostname or "").lower()
+    host = host[4:] if host.startswith("www.") else host
+    port = f":{p.port}" if p.port else ""
+    return f"{p.scheme or 'https'}://{host}{port}{p.path.rstrip('/')}" if host else u
+
+
+def _urls(e):
+    v = e.get("source_urls")
+    return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+
+def tag_entries(root, pairs):
+    """pairs {id: set of links}: the styles that were skipped as "already downloaded" are marked as coming by these links too. -> how many entries changed."""
+    if not pairs:
+        return 0
+    with INDEX_LOCK:
+        data, kind = read_index(root)
+        n = 0
+        for sid, e in entries(data, kind):
+            add = pairs.get(sid.lower())
+            have = _urls(e)
+            new = [u for u in sorted(add or ()) if u not in have]
+            if new:
+                e["source_urls"] = have + new
+                n += 1
+        if n:
+            write_index(root, data)
+        return n
+
+
 class Fetcher:
     """target() -> the library folder (styles.target); sources - the list of sources (sources.SOURCES); gap - the pause between styles (a pair of seconds);
     sleep - for tests (called with the seconds)."""
@@ -194,6 +235,7 @@ class Fetcher:
         self.halt = threading.Event()
         self.thread = None
         self.st = {"state": "idle", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0, "urls": [], "args": {}}
+        self.tags = {}   # id (lower) -> the links (canon) the style came by in this run: they go to its entry as source_urls
 
     def hosts(self):
         return sources.names(self.sources)
@@ -210,6 +252,10 @@ class Fetcher:
         with self.lock:
             self.st[key] += 1
             self.st["done"] += 1
+
+    def _cover_saved(self):
+        with self.lock:   # a cover is a part of a style, not another item of the run: "done" does not move
+            self.st["covers"] += 1
 
     def pause(self, seconds=None):
         t = random.uniform(*self.gap) if seconds is None else seconds
@@ -280,30 +326,40 @@ class Fetcher:
     def _run(self, chosen):
         try:
             root = self.target()
-            refs = self._plan(chosen)
+            self.tags = {}
+            refs = self._plan(chosen, root)
             self._set(total=len(refs))
             os.makedirs(os.path.join(root, "previews"), exist_ok=True)
             row = 0   # failures in a row
             data, kind = read_index(root)
             have = {**on_disk(root), **{k.lower(): v for k, v in known(data, kind).items() if os.path.isfile(os.path.join(root, v))}}   # id -> file
             no_cover = {k.lower() for k, e in entries(data, kind) if "cover_video" not in e and k.lower() in have}   # saved before covers were fetched: not asked yet
-            for source, ref in refs:
-                if self.halt.is_set():
-                    raise Stop("stopped", "stopped")
-                if ref["id"].lower() in have:   # downloaded before, by this fetcher or by the old script: not a second copy
-                    self._count("skipped")
-                    if ref["id"].lower() in no_cover and hasattr(source, "cover_url"):   # only its cover is missing: the page is read for it, the style is not saved again
-                        row = self._backfill(root, source, ref, row)
-                    continue
-                self.pause()
+            skipped = {}
+            try:
+                for source, ref in refs:
+                    if self.halt.is_set():
+                        raise Stop("stopped", "stopped")
+                    if ref["id"].lower() in have:   # downloaded before, by this fetcher or by the old script: not a second copy
+                        self._count("skipped")
+                        skipped[ref["id"].lower()] = self.tags.get(ref["id"].lower(), set())
+                        if ref["id"].lower() in no_cover and hasattr(source, "cover_url"):   # only its cover is missing: the page is read for it, the style is not saved again
+                            row = self._backfill(root, source, ref, row)
+                        continue
+                    if "record" not in ref:   # a record is already on this machine (a clone): no site to be polite to
+                        self.pause()
+                    try:
+                        self._one(root, source, ref)
+                        row = 0
+                    except (Gone, OSError, sources.SourceError) as e:
+                        self._count("failed")
+                        row += 1
+                        if row >= FAILS_IN_A_ROW:
+                            raise Stop("network" if isinstance(e, OSError) else "site_changed")
+            finally:
                 try:
-                    self._one(root, source, ref)
-                    row = 0
-                except (Gone, OSError, sources.SourceError) as e:
-                    self._count("failed")
-                    row += 1
-                    if row >= FAILS_IN_A_ROW:
-                        raise Stop("network" if isinstance(e, OSError) else "site_changed")
+                    tag_entries(root, skipped)   # a style that was there before knows the link it was asked by now
+                except (Stop, OSError):
+                    pass
             self._set(state="stopped" if self.halt.is_set() else "done")
         except Stop as e:
             self._set(state=e.state, code=e.code if e.state != "stopped" else "", http=e.http, args=e.args_)
@@ -314,12 +370,15 @@ class Fetcher:
         except Exception as e:   # a bug must not hang the page on "running"
             self._set(state="error", code="internal", args={"text": f"{type(e).__name__}: {e}"[:200]})
 
-    def _plan(self, chosen):
-        """[(source, ref)] of all the links, a style once; the sitemap of a big site is one request."""
+    def _plan(self, chosen, root):
+        """[(source, ref)] of all the links, a style once; the sitemap of a big site is one request. self.tags: which links asked for which style."""
         refs, seen = [], set()
         for url, source in chosen:
             if self.halt.is_set():
                 raise Stop("stopped", "stopped")
+            link = canon(url, self.sources)
+            if hasattr(source, "bind"):
+                source.bind(root, self.halt)
 
             asked = []
 
@@ -329,6 +388,7 @@ class Fetcher:
                 asked.append(u)
                 return self._page(source, u, MAP_MAX)
             for ref in source.plan(url, get):
+                self.tags.setdefault(ref["id"].lower(), set()).add(link)
                 if ref["id"] not in seen:
                     seen.add(ref["id"])
                     refs.append((source, ref))
@@ -363,16 +423,52 @@ class Fetcher:
             if row >= FAILS_IN_A_ROW:
                 raise Stop("network")
             return row
-        data, kind = read_index(root)
-        for key, e in entries(data, kind):
-            if key.lower() == ref["id"].lower():
-                e["cover_video"], e["cover_url"] = path, url if path else ""
-        write_index(root, data)
+        with INDEX_LOCK:
+            data, kind = read_index(root)
+            for key, e in entries(data, kind):
+                if key.lower() == ref["id"].lower():
+                    e["cover_video"], e["cover_url"] = path, url if path else ""
+            write_index(root, data)
         if path:
-            self._count("covers")
+            self._cover_saved()
         return 0
 
+    def _store(self, root, entry, key):
+        """The entry goes into index.json under the id (key) - read again, the index may have changed while the page came."""
+        with INDEX_LOCK:
+            data, kind = read_index(root)
+            links = sorted(self.tags.get(key.lower(), ()))
+            if links:
+                entry["source_urls"] = links
+            if kind == "dict":
+                data[key] = entry
+            else:
+                data[:] = [e for e in data if not (isinstance(e, dict) and str(e.get("id") or e.get("uuid") or "") == key)] + [{**entry, "id": key}]
+            write_index(root, data)
+
+    def _save_record(self, root, ref):
+        """A style that a source made from files on this machine (no page): ref["record"] = {file, md, entry, image?, preview?}; image - a picture file to copy."""
+        rec = ref["record"]
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,160}", rec["file"]) or not rec["file"].endswith(".md"):
+            raise Gone("id")
+        with open(os.path.join(root, rec["file"]), "w", encoding="utf-8", newline="\n") as f:
+            f.write(rec["md"])
+        preview = ""
+        img = rec.get("image")
+        if img and rec.get("preview") and os.path.isfile(img) and 0 < os.path.getsize(img) <= styles.PREVIEW_MAX:
+            target = styles._inside(root, rec["preview"])
+            if target:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copyfile(img, target)
+                preview = rec["preview"]
+        entry = {**rec["entry"], "file": rec["file"], "preview": preview, "bytes": len(rec["md"].encode("utf-8")), "lastmod": _stamp()}
+        self._store(root, entry, ref["id"])
+        self._set(name=entry.get("name", ""))
+        self._count("added")
+
     def _one(self, root, source, ref):
+        if "record" in ref:
+            return self._save_record(root, ref)
         page = self._page(source, ref["url"])
         if page is None:
             raise Gone("page")
@@ -406,18 +502,13 @@ class Fetcher:
             cover = None   # the style is worth saving without it; no cover_video in its entry: the next run asks for the cover again
         with open(os.path.join(root, fname), "w", encoding="utf-8", newline="\n") as f:
             f.write(style["md"])
-        data, kind = read_index(root)   # read again: another process may have written there while the page came
         entry = {"uuid": sid, "name": style["name"], "url": ref["url"], "file": fname, "category": style["category"], "tags": style["tags"],
                  "collections": [], "preview": preview, "preview_url": style["image_url"], "site": style["site"], "description": style["description"],
                  "lastmod": style["lastmod"] or _stamp(), "bytes": len(style["md"].encode("utf-8"))}
         if cover is not None:
             entry["cover_video"], entry["cover_url"] = cover, (style.get("video_url") or "") if cover else ""
-        if kind == "dict":
-            data[sid] = entry
-        else:
-            data[:] = [e for e in data if not (isinstance(e, dict) and str(e.get("id") or e.get("uuid") or "") == sid)] + [{**entry, "id": sid}]
-        write_index(root, data)
+        self._store(root, entry, sid)
         self._set(name=style["name"])
         self._count("added")
         if cover:
-            self._count("covers")
+            self._cover_saved()
