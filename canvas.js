@@ -339,7 +339,7 @@ export function createCanvas(app) {
     gone.append(goneMsg, goneActs);
     gone.addEventListener("pointerdown", (e) => e.stopPropagation());
     labels.append(gone);
-    const n = { box, iframe, label, title, err, ep, gone, goneMsg, shown: false };
+    const n = { box, iframe, label, title, err, ep, gone, goneMsg, shown: false, next: null };
     fr.set(f.path, n);
     app.register(ep);
     if (!isGone(app.fileState(f.path))) { iframe.src = app.fileUrl(f.path) + "&t=" + Date.now(); n.shown = true; } else done();
@@ -349,6 +349,7 @@ export function createCanvas(app) {
     const n = fr.get(path);
     if (!n) return;
     app.unregister(n.ep.id);
+    if (n.next) n.next.remove();
     n.box.remove();
     n.label.remove();
     n.gone.remove();
@@ -359,9 +360,26 @@ export function createCanvas(app) {
     if (!n) return;
     app.verify([path], true);
     if (isGone(app.fileState(path))) return;
-    n.ep.ready = false;
-    n.iframe.src = app.fileUrl(path) + "&t=" + Date.now();
     n.shown = true;
+    // double buffer: the new document loads in a hidden iframe over the old one and replaces it when ready - no white flash between versions
+    if (n.next) n.next.remove();
+    const next = el("iframe", "hdc-iframe");
+    next.setAttribute("title", nameOf(path));
+    Object.assign(next.style, { position: "absolute", left: "0", top: "0", visibility: "hidden" });
+    const swap = () => {
+      if (n.next !== next) return;
+      n.next = null;
+      next.style.cssText = "";
+      n.iframe.replaceWith(next);
+      n.iframe = n.ep.iframe = next;
+      n.ep.ready = false;
+      n.bufferLoads = (n.bufferLoads || 0) + 1;
+      app.hello(n.ep);
+    };
+    next.addEventListener("load", swap);
+    n.next = next;
+    n.box.append(next);
+    next.src = app.fileUrl(path) + "&t=" + Date.now();
   }
   // the file vanished or came back: dim the frame and show the reason; when it is back, load it again
   function showGone(f, n) {
@@ -371,6 +389,7 @@ export function createCanvas(app) {
     if (gone) {
       const msg = goneText(state, f.path);
       if (n.goneMsg.textContent !== msg) n.goneMsg.textContent = msg;
+      if (n.next) { n.next.remove(); n.next = null; }
       if (n.shown) { n.iframe.src = "about:blank"; n.ep.ready = false; n.shown = false; }
     } else if (!n.shown) reloadFrame(f.path);
   }

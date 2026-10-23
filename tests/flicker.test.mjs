@@ -106,3 +106,13 @@ test("a changed picture of one design changes only that picture", () => {
   assert.deepEqual(log.attached, []);
   assert.equal(log.srcSets.length, 1);
 });
+
+test("a design frame reloads into a hidden second iframe and is swapped in when loaded: no white flash", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../canvas.js", import.meta.url), "utf8");
+  const fn = src.slice(src.indexOf("function reloadFrame(path)"), src.indexOf("function showGone"));
+  assert.match(fn, /visibility: "hidden"/);
+  assert.match(fn, /addEventListener\("load", swap\)/);
+  assert.match(fn, /n\.iframe\.replaceWith\(next\)/);
+  assert.doesNotMatch(fn, /n\.iframe\.src\s*=/);   // the visible frame is never navigated: the old design stays until the new one is ready
+});
