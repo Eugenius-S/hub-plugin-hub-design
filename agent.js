@@ -77,8 +77,8 @@
     .sel .grip.ne{right:calc(-5px * var(--s));top:calc(-5px * var(--s));cursor:nesw-resize}
     .sel .grip.sw{left:calc(-5px * var(--s));bottom:calc(-5px * var(--s));cursor:nesw-resize}
     .sel .grip.se{right:calc(-5px * var(--s));bottom:calc(-5px * var(--s));cursor:nwse-resize}
-    .sel .bar{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;display:flex;gap:var(--sp-tight);pointer-events:auto;padding-bottom:var(--sp-inner)}
-    .sel.under .bar{bottom:auto;top:100%;transform-origin:0 0;padding-bottom:0;padding-top:var(--sp-inner)}
+    .sel .bar{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;display:flex;gap:var(--sp-tight);pointer-events:auto;padding-bottom:calc(var(--sp-inner) + 5px)}
+    .sel.under .bar{bottom:auto;top:100%;transform-origin:0 0;padding-bottom:0;padding-top:calc(var(--sp-inner) + 5px)}
     .sel .bar span,.sel .bar button{background:var(--a);color:var(--on);border:0;border-radius:3px;font-size:11px;padding:2px 6px;white-space:nowrap}
     .sel .bar button{cursor:pointer}
     .pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;transform:scale(var(--s));border-radius:13px 13px 13px 2px;background:var(--a);color:var(--on);
@@ -190,6 +190,11 @@
     hoverBox.classList.toggle("under", r.top < 24 * inv || onBar);
     Object.assign(hoverBox.style, { display: "block", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
     hoverBox.firstChild.textContent = `${short(el)}  ${Math.round(r.width)}×${Math.round(r.height)}`;
+    // measured, not guessed: the label that still lands on the chips of the selection goes to the other side of its box, and is hidden if both sides collide
+    const chips = selected && selBox.style.display !== "none" ? selBox.querySelector(".bar") : null;
+    const hits = () => { if (!chips) return false; const a = hoverBox.firstChild.getBoundingClientRect(), b = chips.getBoundingClientRect(); return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top; };
+    hoverBox.firstChild.style.visibility = "";
+    if (hits()) { hoverBox.classList.toggle("under"); if (hits()) hoverBox.firstChild.style.visibility = "hidden"; }
   }
 
   // --- pins --------------------------------------------------------------------------------------------------------
@@ -619,6 +624,7 @@
   }
   function select(el) {
     selected = el;
+    if (el) hoverBox.style.display = "none";   // the box under the cursor would sit on the chips of the selection until the next move
     if (el) selBox.querySelector(".bar span").textContent = short(el);
     for (const n of selBox.querySelectorAll(".grip")) n.style.display = mode === "edit" && el ? "" : "none";
     selBox.querySelector(".bar").style.display = mode === "edit" && el ? "" : "none";

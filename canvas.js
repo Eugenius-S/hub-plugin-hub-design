@@ -647,10 +647,13 @@ export function createCanvas(app) {
   ovf.hidden = true;
   bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.comment, pencil.wrap, shapes.wrap, ovf);
   function fitBar() {
-    bar.classList.remove("compact");
+    bar.classList.remove("compact", "tiny");
     ovf.hidden = true;
-    const sameRow = top.offsetTop < bar.offsetTop + bar.offsetHeight;
-    if (sameRow && bar.offsetLeft + bar.offsetWidth + BAR_GAP > top.offsetLeft) { bar.classList.add("compact"); ovf.hidden = false; }
+    // the islands on the bar's row: the right group (it drops to a second row in a narrow stage) and the close island
+    const row = [top, xIsland].filter((c) => c.offsetTop < bar.offsetTop + bar.offsetHeight).map((c) => c.offsetLeft);
+    const room = () => row.length && bar.offsetLeft + bar.offsetWidth + BAR_GAP > Math.min(...row);
+    if (room()) { bar.classList.add("compact"); ovf.hidden = false; }
+    if (room()) bar.classList.add("tiny");   // still no room: the page name goes, only its arrow stays
   }
 
   const playTop = bind("", btn("hdc-tool", svg("play"), "", () => app.play(P.focus || (P.frames[0] && P.frames[0].path))), "play_top");

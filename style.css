@@ -156,6 +156,8 @@
 .hdc-pages{margin-right:var(--space-1);padding-right:var(--space-3);border-right:1px solid var(--border);border-radius:var(--radius) 0 0 var(--radius)}
 .hdc-grp{display:inline-flex;align-items:center}
 .hdc-bar.compact .hdc-grp{display:none}
+.hdc-bar.tiny .hdc-pages>span{display:none}
+.hdc-bar.tiny .hdc-pages{padding:0 var(--space-2)}
 .hdc-ovf[hidden]{display:none}
 .hdc-grp .hdc-tool{border-radius:var(--radius) 0 0 var(--radius)}
 .hdc-more{width:16px;height:32px;margin-left:-2px;border-radius:0 var(--radius) var(--radius) 0;color:var(--muted-foreground)}
@@ -232,7 +234,7 @@ html.hs-hidden .hd-top{padding-left:56px}
 .hd-bi .hd-seg,.hd-bi input[type=range]{grid-column:1 / -1}
 .hd-bi input[type=range]{margin:var(--hd-sp-tight) 0 0;width:100%}
 .hd-tout.wide{min-width:52px}
-.hd-tweak .hd-flabel{min-width:56px;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd-tweak .hd-flabel{min-width:56px;max-width:112px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hd-tweak input[type=range]{flex:1;min-width:0;accent-color:var(--hd-acc)}
 .hd-tweak input[type=checkbox]{accent-color:var(--hd-acc)}
 .hd-tout{flex:none;min-width:36px;text-align:right;font-size:var(--text-xs);color:var(--muted-foreground);font-variant-numeric:tabular-nums}
