@@ -28,6 +28,7 @@ import styles
 UA = "Mozilla/5.0 (compatible; hub-design-style-fetcher)"
 GAP = (1.0, 2.5)          # seconds between two styles
 IMAGE_GAP = 0.3           # between the page of a style and its picture
+COVER_GAP = (0.5, 1.2)    # between two styles of the cover pass: one small page each, no style is saved
 TIMEOUT = 30
 RETRIES = 2               # a page that did not come (the site is busy, the network blinked) is asked again this many times
 RETRY_WAIT = (4.0, 10.0)
@@ -234,7 +235,7 @@ class Fetcher:
         self.lock = threading.Lock()
         self.halt = threading.Event()
         self.thread = None
-        self.st = {"state": "idle", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0, "urls": [], "args": {}}
+        self.st = {"state": "idle", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0, "urls": [], "args": {}, "mode": ""}
         self.tags = {}   # id (lower) -> the links (canon) the style came by in this run: they go to its entry as source_urls
 
     def hosts(self):
@@ -290,7 +291,7 @@ class Fetcher:
                 return False, "busy", ""
             self.halt.clear()
             self.st.update({"state": "running", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0,
-                            "urls": links, "args": {}})
+                            "urls": links, "args": {}, "mode": ""})
             self.thread = threading.Thread(target=self._run, args=(chosen,), daemon=True)
             self.thread.start()
         return True, "", ""
@@ -324,43 +325,12 @@ class Fetcher:
                 self.pause(random.uniform(*RETRY_WAIT))
 
     def _run(self, chosen):
+        self._guarded(self._go, chosen)
+
+    def _guarded(self, work, *args):
+        """The thread of a run: whatever ends it is said in the status."""
         try:
-            root = self.target()
-            self.tags = {}
-            refs = self._plan(chosen, root)
-            self._set(total=len(refs))
-            os.makedirs(os.path.join(root, "previews"), exist_ok=True)
-            row = 0   # failures in a row
-            data, kind = read_index(root)
-            have = {**on_disk(root), **{k.lower(): v for k, v in known(data, kind).items() if os.path.isfile(os.path.join(root, v))}}   # id -> file
-            no_cover = {k.lower() for k, e in entries(data, kind) if "cover_video" not in e and k.lower() in have}   # saved before covers were fetched: not asked yet
-            skipped = {}
-            try:
-                for source, ref in refs:
-                    if self.halt.is_set():
-                        raise Stop("stopped", "stopped")
-                    if ref["id"].lower() in have:   # downloaded before, by this fetcher or by the old script: not a second copy
-                        self._count("skipped")
-                        skipped[ref["id"].lower()] = self.tags.get(ref["id"].lower(), set())
-                        if ref["id"].lower() in no_cover and hasattr(source, "cover_url"):   # only its cover is missing: the page is read for it, the style is not saved again
-                            row = self._backfill(root, source, ref, row)
-                        continue
-                    if "record" not in ref:   # a record is already on this machine (a clone): no site to be polite to
-                        self.pause()
-                    try:
-                        self._one(root, source, ref)
-                        row = 0
-                    except (Gone, OSError, sources.SourceError) as e:
-                        self._count("failed")
-                        row += 1
-                        if row >= FAILS_IN_A_ROW:
-                            raise Stop("network" if isinstance(e, OSError) else "site_changed")
-            finally:
-                try:
-                    tag_entries(root, skipped)   # a style that was there before knows the link it was asked by now
-                except (Stop, OSError):
-                    pass
-            self._set(state="stopped" if self.halt.is_set() else "done")
+            work(*args)
         except Stop as e:
             self._set(state=e.state, code=e.code if e.state != "stopped" else "", http=e.http, args=e.args_)
         except OSError as e:
@@ -369,6 +339,91 @@ class Fetcher:
             self._set(state="error", code=e.code, args=e.args_)
         except Exception as e:   # a bug must not hang the page on "running"
             self._set(state="error", code="internal", args={"text": f"{type(e).__name__}: {e}"[:200]})
+
+    def _go(self, chosen):
+        root = self.target()
+        self.tags = {}
+        refs = self._plan(chosen, root)
+        self._set(total=len(refs))
+        os.makedirs(os.path.join(root, "previews"), exist_ok=True)
+        row = 0   # failures in a row
+        data, kind = read_index(root)
+        have = {**on_disk(root), **{k.lower(): v for k, v in known(data, kind).items() if os.path.isfile(os.path.join(root, v))}}   # id -> file
+        no_cover = {k.lower() for k, e in entries(data, kind) if "cover_video" not in e and k.lower() in have}   # saved before covers were fetched: not asked yet
+        skipped = {}
+        try:
+            for source, ref in refs:
+                if self.halt.is_set():
+                    raise Stop("stopped", "stopped")
+                if ref["id"].lower() in have:   # downloaded before, by this fetcher or by the old script: not a second copy
+                    self._count("skipped")
+                    skipped[ref["id"].lower()] = self.tags.get(ref["id"].lower(), set())
+                    if ref["id"].lower() in no_cover and hasattr(source, "cover_url"):   # only its cover is missing: the page is read for it, the style is not saved again
+                        row = self._backfill(root, source, ref, row)
+                    continue
+                if "record" not in ref:   # a record is already on this machine (a clone): no site to be polite to
+                    self.pause()
+                try:
+                    self._one(root, source, ref)
+                    row = 0
+                except (Gone, OSError, sources.SourceError) as e:
+                    self._count("failed")
+                    row += 1
+                    if row >= FAILS_IN_A_ROW:
+                        raise Stop("network" if isinstance(e, OSError) else "site_changed")
+        finally:
+            try:
+                tag_entries(root, skipped)   # a style that was there before knows the link it was asked by now
+            except (Stop, OSError):
+                pass
+        self._set(state="stopped" if self.halt.is_set() else "done")
+
+    # --- the cover pass: the styles that are in the library already, asked for their moving cover ---
+
+    def _cover_refs(self, root):
+        """[(source, {id, url})] of the styles whose entry has no cover_video yet (not asked: a cover found is a path, none at the source is "")
+        and whose source can name a cover. The style file must be there."""
+        data, kind = read_index(root)
+        out = []
+        for sid, e in entries(data, kind):
+            if "cover_video" in e or not isinstance(e.get("url"), str) or not isinstance(e.get("file"), str):
+                continue
+            source = sources.for_url(e["url"], self.sources)
+            if source is not None and hasattr(source, "cover_url") and os.path.isfile(os.path.join(root, e["file"])):
+                out.append((source, {"id": sid, "url": e["url"]}))
+        return out
+
+    def start_covers(self):
+        """The background pass over the library: every style that was never asked for its moving cover is (only its page is read, the style stays as it
+        is). -> (ok, code): busy (a run is on), nothing (every style was asked), index_broken."""
+        try:
+            root = self.target()
+            refs = self._cover_refs(root) if os.path.isdir(root) else []
+        except (Stop, OSError):
+            return False, "index_broken"
+        if not refs:
+            return False, "nothing"
+        with self.lock:
+            if self.thread and self.thread.is_alive():
+                return False, "busy"
+            self.halt.clear()
+            self.st.update({"state": "running", "total": len(refs), "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0,
+                            "urls": [], "args": {}, "mode": "covers"})
+            self.thread = threading.Thread(target=self._guarded, args=(self._go_covers, refs), daemon=True)
+            self.thread.start()
+        return True, ""
+
+    def _go_covers(self, refs):
+        root = self.target()
+        os.makedirs(os.path.join(root, "previews"), exist_ok=True)
+        row = 0
+        for source, ref in refs:
+            if self.halt.is_set():
+                raise Stop("stopped", "stopped")
+            row = self._backfill(root, source, ref, row, random.uniform(*COVER_GAP))
+            with self.lock:
+                self.st["done"] += 1
+        self._set(state="done")
 
     def _plan(self, chosen, root):
         """[(source, ref)] of all the links, a style once; the sitemap of a big site is one request. self.tags: which links asked for which style."""
@@ -410,10 +465,10 @@ class Fetcher:
             f.write(data)
         return f"previews/{sid}{ext}"
 
-    def _backfill(self, root, source, ref, row):
+    def _backfill(self, root, source, ref, row, wait=None):
         """The cover of a style that is already in the library: its page is read, only the entry gets two fields (the style file and the labels stay).
         -> the failures in a row (the network is gone: the run stops like it does for new styles)."""
-        self.pause()
+        self.pause(wait)
         try:
             page = self._page(source, ref["url"])
             url = source.cover_url(page, ref) if page else ""

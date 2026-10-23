@@ -2,7 +2,8 @@
 
 One object joins the memory of the links (links.py), the fetcher (fetcher.py) and the library folder:
   startup()      - at the start of the plugin: the links by default are put once, the styles that are in the library already get their link,
-                   the previews a designer brought are taken; the first time (and only then), if the option is on, the links by default are downloaded
+                   the previews a designer brought are taken; the first time (and only then), if the option is on, the links by default are downloaded;
+                   every start, if the option is on, the styles that were never asked for their moving cover are asked (a pass in the background)
   status()       - what the page draws: the links with the number of their styles, the option, the question about the previews
   act(body)      - add / remove a link, delete_preview / delete (a link with its styles), auto, decline, nopreview (the list for the designer)
 Nothing is deleted by anything but act({"action": "delete"}), which the page sends after the owner saw the number."""
@@ -63,24 +64,28 @@ class Ctl:
         """-> "seeded" (the first time: the links were put), "" otherwise. The download of the first time is begun in the background (see class).
         auto - the option from hub.json (None: the one of the tab)."""
         root = self.target()
+        on = self.links.auto if auto is None else auto
         first = not self.links.seeded
         put = self.links.seed([self.canon(u) for u in self.defaults]) if first else []
         saved = {self.canon(u) for u in self.links.urls()}
         if os.path.isdir(root):
             linkmem.bind_existing(root, saved, self.source_list)
             linkmem.adopt_previews(root)
-        if first and put and (self.links.auto if auto is None else auto):
+        if first and put and on:
             ok, _code, _link = self.fetch.start(put)
             if ok:
                 self.auto_started = True
                 if watch:
                     threading.Thread(target=self._watch, daemon=True).start()
+        elif on:   # the styles are there already (a library from before the covers, an update): their covers come in the background
+            self.fetch.start_covers()
         return "seeded" if first and put else ""
 
     def _watch(self):
         """The background download is over: one fact to the owner if some styles have no preview (the question itself waits in the settings tab)."""
         self.fetch.join(timeout=24 * 3600)
         self.finished()
+        self.fetch.start_covers()   # the styles that were there before this run have no cover yet: the run asked only for the new ones
 
     def finished(self):
         if not self.auto_started:

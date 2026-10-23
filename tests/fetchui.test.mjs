@@ -206,6 +206,17 @@ test("fetchui: the count of animated covers is shown only when there are some", 
   assert.equal(find(root, "hdf-prog").textContent, "3 of 4 · added 3, skipped 0, failed 0");
 });
 
+test("fetchui: the background cover pass shows its own progress and summary", async () => {
+  const S = fake({ run: st({ state: "running", mode: "covers", total: 1336, done: 40, covers: 12 }) });
+  const { ui, root } = await mount();
+  clearTimeout(ui.state.timer);
+  assert.equal(find(root, "hdf-prog").textContent, "Animated covers: 40 of 1336 · found 12");
+  S.run = st({ state: "done", mode: "covers", total: 1336, done: 1336, covers: 700 });
+  await ui.poll();
+  clearTimeout(ui.state.timer);
+  assert.equal(find(root, "hdf-msg").textContent, "Animated covers are done: found 700 of 1336 styles.");
+});
+
 test("fetchui: a block by the site stops the run with the word", async () => {
   fake({ run: st({ state: "blocked", code: "rate", http: 429, total: 5, done: 2, added: 2 }) });
   const { root } = await mount();

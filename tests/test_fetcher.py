@@ -224,6 +224,49 @@ class Run(Base):
         self.assertEqual((st["added"], st["skipped"], st["covers"]), (0, 3, 0))
         self.assertEqual(Site.hits, ["/sitemap.xml"])
 
+    def run_covers(self):
+        ok, code = self.f.start_covers()
+        self.assertTrue(ok, code)
+        self.f.join(20)
+        return self.f.status()
+
+    def test_the_cover_pass_asks_the_styles_that_are_in_the_library_without_a_link_press(self):
+        idx = self.old_library(files=(1, 2), covers=False)
+        for k in (uid(1), uid(2)):
+            idx[k]["url"] = f"{self.root_url}/style/{k}"
+        idx[uid(3)] = {"uuid": uid(3), "name": "Gone file", "file": f"old-3__{uid(3)}.md", "url": f"{self.root_url}/style/{uid(3)}"}   # its md is not there
+        with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:
+            json.dump(idx, fh)
+        Site.covers = {uid(1)}
+        st = self.run_covers()
+        self.assertEqual((st["state"], st["mode"], st["total"], st["done"], st["covers"], st["added"]), ("done", "covers", 2, 2, 1, 0))
+        self.assertNotIn("/sitemap.xml", Site.hits)
+        after = self.index()
+        self.assertEqual(after[uid(1)]["cover_video"], f"previews/{uid(1)}.mp4")
+        self.assertEqual(after[uid(2)]["cover_video"], "")   # none at the source: marked, not asked again
+        self.assertNotIn("cover_video", after[uid(3)])
+        with open(os.path.join(self.lib, f"old-1__{uid(1)}.md"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# old\n" * 300)
+        Site.hits = []
+        self.assertEqual(self.f.start_covers(), (False, "nothing"))
+        self.assertEqual(Site.hits, [])
+
+    def test_the_cover_pass_leaves_a_style_whose_page_failed_for_the_next_start_and_stops_when_the_net_is_gone(self):
+        idx = self.old_library(files=(1, 2), covers=False)
+        for k in (uid(1), uid(2)):
+            idx[k]["url"] = f"{self.root_url}/style/{k}"
+        with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:
+            json.dump(idx, fh)
+        Site.covers = {uid(1), uid(2)}
+        Site.plan = {f"/style/{uid(1)}": 500}
+        st = self.run_covers()
+        self.assertEqual((st["state"], st["covers"], st["done"]), ("done", 1, 2))
+        after = self.index()
+        self.assertNotIn("cover_video", after[uid(1)])
+        self.assertEqual(after[uid(2)]["cover_video"], f"previews/{uid(2)}.mp4")
+        self.assertEqual(self.f.start_covers()[0], True)   # the failed one is asked again
+        self.f.join(20)
+
     def test_a_cover_that_is_gone_or_a_page_that_fails_loses_no_style(self):
         Site.covers = {uid(1), uid(2)}
         Site.plan = {f"/video/{uid(1)}.mp4": 404, f"/video/{uid(2)}.mp4": 500}
