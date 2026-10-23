@@ -153,6 +153,7 @@ export default function register(h) {
   hub.addStyle("card.css");
   hub.addStyle("styles.css");
   hub.addStyle("navicon.css");
+  hub.addStyle("motion.css");
   addEventListener("message", onFrame);
   // the settings tab "Hub Design: styles": a pasted link is downloaded into the local style library (fetcher.py of the plugin process)
   const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); } });
