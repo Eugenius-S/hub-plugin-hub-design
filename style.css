@@ -76,8 +76,13 @@
 .hd-right{flex:1;display:flex;min-width:0;min-height:0;position:relative}
 .hd-exit{position:absolute;right:var(--space-3);bottom:var(--space-3);z-index:40;border:0;background:var(--card);color:var(--foreground);font-weight:500;padding:8px 14px;border-radius:var(--radius-lg);box-shadow:var(--shadow-lift)}
 .hd-exit:hover{background:var(--muted)}
-.hd-right.props .hd-exit{right:calc(280px + var(--space-3))}
-.hd-props{width:280px;flex:none;border-left:1px solid var(--border);overflow:auto;padding:var(--space-4) var(--space-4) var(--space-5);background:var(--card);position:relative;z-index:6}
+.hd-right.props .hd-exit{right:calc(320px + var(--space-3))}
+.hd-props{width:320px;flex:none;border-left:1px solid var(--border);overflow:auto;padding:var(--space-5) var(--space-5) var(--space-7);background:var(--card);position:relative;z-index:6}
+/* the properties panel scrolls, so it takes one step more air on every level than the chat */
+.hd-props{--hd-sp-tight:var(--space-2);--hd-sp-inner:var(--space-3);--hd-sp-head:var(--space-4);--hd-sp-item:var(--space-7);--hd-sp-group:calc(var(--space-7) + var(--space-4))}
+.hd-props .hd-field{padding:var(--space-1) var(--space-3);min-height:36px}
+.hd-props .hd-tweak .hd-segb{padding:var(--space-2)}
+.hd-props .hd-swatches{gap:var(--space-2)}
 .hd-phint{color:var(--muted-foreground);padding:0 4px}
 .hd-pel{font-size:var(--text-xs);color:var(--muted-foreground);margin:0 0 var(--hd-sp-item);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hd-psec{margin-bottom:var(--hd-sp-group)}
