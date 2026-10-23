@@ -1047,7 +1047,31 @@ def peer_rows():
     dirs = peer_dirs()
     titles = {t["id"]: t["title"] for t in REG.task_rows()} if REG else {}
     many = registry.task_folders(rows)   # the designs of one task go to one folder on the other machine too: its name is the title of the task
-    return [{**r, "dir": (titles.get(r.get("task")) if r.get("task") in many else "") or peers.folder_label(os.path.expanduser(r["path"]), dirs)} for r in rows]
+    homes = peer_homes()
+    asked = {t["id"]: (t["by"], t["who"]) for t in REG.task_rows()} if REG else {}
+
+    def folder(r):   # the file is in a direction's folder; else the direction made it; else the direction asked for the task
+        label = peers.folder_label(os.path.expanduser(r["path"]), dirs) or homes.get(r.get("session"), "")
+        for name in asked.get(r.get("task"), ()):
+            label = label or homes.get(name, "")
+        return label
+    return [{**r, "dir": (titles.get(r.get("task")) if r.get("task") in many else "") or folder(r)} for r in rows]
+
+
+def peer_homes():
+    """{session: its direction label} on this machine (peers.direction_homes)."""
+    try:
+        from core import journal
+        from modules.directions import direction
+        from modules.directions.boards import Boards
+        sessions = list(journal.load_state(state_dir()).get("sessions", {}).values())
+        try:
+            names = set(Boards(direction.root(), state_dir=state_dir()).slugs())
+        except OSError:
+            names = set()
+        return peers.direction_homes(sessions, names)
+    except Exception:
+        return {}
 
 
 def peer_dirs():

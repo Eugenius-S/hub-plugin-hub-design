@@ -927,7 +927,16 @@ export function taskFolders(files = [], min = TASK_MIN) {
   return new Set([...n].filter(([, c]) => c >= min).map(([id]) => id));
 }
 // the folder a design is shown in: the folder of its task, else the direction folder of its file ("" - none)
-export const folderKeyOf = (f, dirs = [], tasks = new Set()) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : folderOf(f.path, dirs));
+// A design lies in the folder of the direction by the first rule that fits: the file is inside the cwd of the direction; the direction itself made it (its session is the author);
+// the direction asked for the task the design was made for (taskRows: [{id, by, who}] of the registry). Nothing fits - "" (no direction).
+export function homeOf(f, dirs = [], taskRows = []) {
+  const byPath = folderOf(f.path, dirs);
+  if (byPath) return byPath;
+  const home = (name) => (name && (dirs.find((d) => d.names && d.names.includes(name)) || {}).key) || "";
+  const task = f.task ? (taskRows || []).find((x) => x.id === f.task) : null;
+  return home(f.session) || (task ? home(task.by) || home(task.who) : "");
+}
+export const folderKeyOf = (f, dirs = [], tasks = new Set(), taskRows = []) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : homeOf(f, dirs, taskRows));
 // the name of a task folder: the title of the task (tasks: [{id, title}]); the same name for the folder on disk
 export const taskTitle = (id, tasks = []) => String(((tasks || []).find((x) => x.id === id) || {}).title || "").trim() || id;
 export function taskSlug(title) {
@@ -936,10 +945,10 @@ export function taskSlug(title) {
 }
 // files by folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last.
 // tasks (a Set of ids, taskFolders(all the files)): the designs of those tasks go to the folder of the task, the rest by direction
-export function groupFiles(files = [], dirs = [], tasks = new Set()) {
+export function groupFiles(files = [], dirs = [], tasks = new Set(), taskRows = []) {
   const by = new Map();
   for (const f of files) {
-    const key = folderKeyOf(f, dirs, tasks);
+    const key = folderKeyOf(f, dirs, tasks, taskRows);
     if (!by.has(key)) by.set(key, []);
     by.get(key).push(f);
   }

@@ -291,3 +291,12 @@ class Routes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Homes(unittest.TestCase):
+    def test_a_session_of_a_direction_has_the_label_of_its_folder(self):
+        sessions = [{"name": "rewarded-ads", "cwd": "/w/ads", "role": "worker"}, {"name": "ads-two", "cwd": "/w/ads", "role": "worker"},
+                    {"name": "motion", "cwd": "/w/motion", "role": "worker"}, {"name": "designer", "cwd": "/d", "role": "agent"},
+                    {"name": "hub", "cwd": "/h", "kind": "hub", "role": "worker"}]
+        homes = peers.direction_homes(sessions, set())
+        self.assertEqual(homes, {"rewarded-ads": "ads", "ads-two": "ads", "motion": "motion"})   # two directions in one folder - the folder name; the designer and the hub are none

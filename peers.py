@@ -92,6 +92,16 @@ def direction_dirs(sessions, directions):
     return out
 
 
+def direction_homes(sessions, directions):
+    """{session name: label of its direction folder}: a design made by a direction (or asked for by it) lies in its folder wherever the file is."""
+    labels = dict(direction_dirs(sessions, directions))
+    homes = {}
+    for s in sessions or []:
+        if isinstance(s, dict) and s.get("cwd") and s.get("name") and s.get("kind") != "hub" and (s.get("name") in (directions or ()) or s.get("role") == "worker"):
+            homes[s["name"]] = labels.get(_key(s["cwd"]), "")
+    return homes
+
+
 def folder_label(path, dirs):
     """The label of the deepest direction folder that holds the file, "" - no direction (the same rule as folderOf of lib.js)."""
     p = _key(path)

@@ -750,13 +750,14 @@ class AutoSend(unittest.TestCase):
         main = self.src("main.js")
         body = main[main.index("async function autoSend()"):]
         body = body[:body.index("\n}\n")]
-        self.assertIn('hub.post("/api/send", withLane({ session: P.session, text }', body)   # P.session is what is picked in the edit recipient selector; the lane rides along
+        self.assertIn('hub.post("/api/send", withLane({ session: to, text }', body)   # to = autoTo(file): picked by hand in the selector, else the author of the design - not the chat's session; the lane rides along
+        self.assertIn("autoTo(file)", body)
         self.assertIn("comments: [], notes: [], errors: []", body)   # comments go by their own button, not by auto-send
         self.assertIn("flushWrite", body)   # the file write comes first: items go marked as already in the file
 
     def test_watches_every_paint(self):
         main = self.src("main.js")
-        self.assertIn("auto.watch(autoSig(autoItems(), P.session, home()))", main)
+        self.assertIn("auto.watch(autoSig(autoItems(), autoTo(laneFile([...autoItems().changes, ...autoItems().tweaks, ...autoItems().drawings])), home()))", main)
 
     def test_hand_edits_not_above_the_field(self):
         main = self.src("main.js")
@@ -1167,6 +1168,10 @@ class DesignRegistry(unittest.TestCase):
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
         self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Ролик Ouch", "lone.html": ""})   # one design makes no folder
+        # the lone one was asked for by a direction ("x"): it goes to the folder of that direction, not to "no direction" (hd-sort)
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"x": "icons8-smm"}):
+            rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
+        self.assertEqual(rows["lone.html"], "icons8-smm")
 
     def test_no_registry_means_an_empty_not_ready_list(self):
         with unittest.mock.patch.object(server, "REG", None):

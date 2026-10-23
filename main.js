@@ -1012,7 +1012,7 @@ async function sendOne(pin) {
 const laneFile = (items) => (items.find((x) => x && x.file) || {}).file || P.lastEdit || P.focus || "";
 const autoItems = () => ({ changes: draftChanges().filter(hasEffect), tweaks: draftTweaks(), drawings: draftDrawings() });
 const auto = createAuto({ fire: () => autoSend() });
-const autoTo = (file) => editsTo(file, authorOf, P.session, P.ok, DEFAULT_SESSION);
+const autoTo = (file) => (P.pinned && P.pinned.focus === P.focus ? P.session : editsTo(file, authorOf, P.session, P.ok, DEFAULT_SESSION));   // picked by hand in the recipient selector wins; else the author
 async function autoSend() {
   if (P.busy) return auto.retry(1000);
   const sig = auto.sig();

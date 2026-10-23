@@ -137,9 +137,9 @@ export const PREVIEWS = 4;
 export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? taskTitle(taskOfKey(key), tasks) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
 // what the dashboard shows: "folders" (tiles), "files" (the cards of one folder or all the designs). Tiles - only when there are direction folders and nothing is searched
 // tasks: the Set of the ids of the tasks that have a folder (taskFolders of all the designs): their designs lie in the folder of the task, not of the direction
-export function view(rows, dirs, { folder = null, q = "", tasks = new Set() } = {}) {
-  if (folder !== null) return { mode: "files", rows: rows.filter((f) => folderKeyOf(f, dirs, tasks) === folder) };
-  const groups = groupFiles(rows, dirs, tasks);
+export function view(rows, dirs, { folder = null, q = "", tasks = new Set(), taskRows = [] } = {}) {
+  if (folder !== null) return { mode: "files", rows: rows.filter((f) => folderKeyOf(f, dirs, tasks, taskRows) === folder) };
+  const groups = groupFiles(rows, dirs, tasks, taskRows);
   if (String(q || "").trim() || !groups.some((g) => g.key)) return { mode: "files", rows };
   return { mode: "folders", groups };
 }
@@ -654,13 +654,13 @@ export function createDashboard(app) {
     const alive = all.filter((f) => !isGone(app.fileState(f.path)));
     const tset = taskFolders(alive);   // counted over all the designs: a search or a tab does not dissolve a folder
     // the labels ("Email-1: Kyoto") are numbered over all the designs of the folder too: a search or a tab does not renumber them
-    const labels = labelsOf(alive.map((f) => ({ key: f.path, title: f.title, path: f.path, group: folderKeyOf(f, dirs, tset), ts: f.ts || f.last })));
+    const labels = labelsOf(alive.map((f) => ({ key: f.path, title: f.title, path: f.path, group: folderKeyOf(f, dirs, tset, taskList), ts: f.ts || f.last })));
     // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
     const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine(), labels }).filter((f) => !isGone(app.fileState(f.path)));
     // a folder that has nothing in it any more (and is not a known direction) is closed
-    if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderKeyOf(f, dirs, tset) === S.folder)) S.folder = null;
+    if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderKeyOf(f, dirs, tset, taskList) === S.folder)) S.folder = null;
     const inPeer = S.peer !== null;   // inside the folder of another machine its designs only: the own ones are hidden
-    const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q, tasks: tset });
+    const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q, tasks: tset, taskRows: taskList });
     const inFolder = S.folder !== null;
     setHidden(crumb, !inFolder && !inPeer);
     if (inFolder) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, isTaskKey(S.folder) ? folderTitle(S.folder, dirs, taskList) : S.folder); }
@@ -669,7 +669,7 @@ export function createDashboard(app) {
     const named = !inFolder && (dirs.length > 0 || tset.size > 0);   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
-      const fk = folderKeyOf(f, dirs, tset);
+      const fk = folderKeyOf(f, dirs, tset, taskList);
       const where = named ? folderTitle(fk, dirs, taskList) : "";
       setText(c.name, labels.get(f.path) || nameOf(f.path));
       setText(c.text, [f.session, named && fk ? where : "", editedText(f)].filter(Boolean).join(" · "));
