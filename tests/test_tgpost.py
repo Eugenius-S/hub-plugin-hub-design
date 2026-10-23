@@ -2,10 +2,12 @@
 reason after 👎 -> a message to the author; off - nothing. Needs the hub code on PYTHONPATH (modules/telegram/design_posts)."""
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from unittest import mock
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,7 +32,7 @@ class Posts(unittest.TestCase):
         self.journal = os.path.join(self.dir, "journal.jsonl")
         self.seq, self.out, self.cfg = 0, [], dict(ON)
         self.sessions = {"designer": {"cwd": "/w"}, "maps": {"cwd": "/w"}}
-        self.shots = []
+        self.shots, self.page = [], None   # page: the address of the hub page the bot links to (none - no link)
         self.add("core.started", {})
         self.p = self.poster()
 
@@ -38,7 +40,7 @@ class Posts(unittest.TestCase):
         def shot(path):
             self.shots.append(path)
             return PNG
-        return tgpost.Poster(self.dir, shot, lambda: self.cfg, title=lambda p: "Landing",
+        return tgpost.Poster(self.dir, shot, lambda: self.cfg, title=lambda p: "Landing", page=lambda: self.page,
                              state=lambda: {"sessions": self.sessions}, emit=lambda t, d: self.out.append((t, d)))
 
     def add(self, type, data, src="session"):
@@ -218,6 +220,57 @@ class Posts(unittest.TestCase):
         (post,) = self.posts()
         self.assertNotIn("path", post)
         self.assertIn("/w/landing.html", post["text"])
+
+    def link_of(self, post):
+        """(label, address) of the markdown link in the caption, or None."""
+        m = re.search(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", post["text"])
+        return m and (m.group(1), m.group(2))
+
+    def test_the_post_carries_a_link_that_opens_the_design_in_hub_design(self):
+        self.page = "https://hub.tail.ts.net/"
+        self.file(path="/w/My Site (v2)/a&b.html")
+        (post,) = self.posts()
+        label, url = self.link_of(post)
+        self.assertEqual(label, "Open in Hub Design")
+        self.assertEqual(url, "https://hub.tail.ts.net/#/x/hub-design?open=%2Fw%2FMy%20Site%20%28v2%29%2Fa%26b.html")   # one address form with the page (designLink, lib.js)
+        self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(url).fragment.split("?", 1)[1])["open"], ["/w/My Site (v2)/a&b.html"])
+
+    def test_the_link_leads_to_the_source_not_the_core_copy_and_follows_the_language(self):
+        self.page = "http://100.64.0.1:8787"
+        src = os.path.join(self.dir, "landing.html")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write("<p>x</p>")
+        self.add("owner.file", {"path": "/state/attachments/ab12/landing.html", "source": src, "sender": "designer", "channel": "session", "owner": False})
+        with mock.patch.object(tgpost, "_lang", lambda: "ru"):
+            self.p.poll()
+        (post,) = self.posts()
+        label, url = self.link_of(post)
+        self.assertEqual(label, "Открыть в Hub Design")
+        self.assertIn(urllib.parse.quote(src, safe=""), url)
+        self.assertNotIn("attachments", url)
+
+    def test_no_page_address_no_link(self):
+        self.file()
+        (post,) = self.posts()
+        self.assertIsNone(self.link_of(post))
+        self.assertNotIn("Hub Design", post["text"])
+
+    def test_a_link_goes_with_a_post_without_a_shot_and_not_with_a_presentation(self):
+        self.page = "https://hub.tail.ts.net"
+        self.p.shot = lambda path: None
+        self.file()
+        self.file(path="/w/Q4 deck.pptx")   # a presentation does not open on the canvas: nothing to link to
+        first, deck = self.posts()
+        self.assertIsNotNone(self.link_of(first))
+        self.assertIsNone(self.link_of(deck))
+
+    def test_the_default_page_address_is_the_tailnet_one_the_hub_writes(self):
+        with open(os.path.join(self.dir, "tailnet.json"), "w", encoding="utf-8") as f:
+            json.dump({"ok": True, "urls": {"web": "https://hub.tail.ts.net"}}, f)
+        self.p = tgpost.Poster(self.dir, lambda p: PNG, lambda: self.cfg, title=lambda p: "Landing",
+                               state=lambda: {"sessions": self.sessions}, emit=lambda t, d: self.out.append((t, d)))
+        self.file()
+        self.assertTrue(self.link_of(self.posts()[0])[1].startswith("https://hub.tail.ts.net/#/x/hub-design?open="))
 
     def test_a_restart_does_not_post_again_and_the_first_start_skips_old_files(self):
         self.file()

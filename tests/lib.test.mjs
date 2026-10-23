@@ -884,3 +884,27 @@ test("a core copy in attachments is not a design: the source is taken, without a
   assert.deepEqual(mergeAuthors([{ path: COPY, session: "d", ts: 1 }, { path: SRC, session: "d", ts: 1 }]).map((a) => a.path), [SRC]);
   assert.equal(chatLines([{ kind: "file", k: 1, path: COPY, source: SRC, caption: "x" }])[0].text, `x\n${SRC}`);
 });
+
+import { designLink, designPathOf, cardText } from "../lib.js";
+
+test("the link that opens a design on the canvas: built and read back, whatever is in the path", () => {
+  const link = designLink("http://localhost:8787/", "/u/My Site (v2)/a&b#1.html");
+  assert.equal(link, "http://localhost:8787/#/x/hub-design?open=%2Fu%2FMy%20Site%20(v2)%2Fa%26b%231.html");
+  assert.equal(designPathOf(new URL(link).hash), "/u/My Site (v2)/a&b#1.html");
+  assert.equal(designPathOf("#/x/hub-design?open=C%3A%5Csite%5Cindex.html"), "C:\\site\\index.html");
+  assert.equal(designPathOf("#/x/hub-design?open=%2Fu%2Fa.html&k=v"), "/u/a.html");
+  assert.equal(designLink("https://hub.tail.ts.net/", "/u/a.html"), "https://hub.tail.ts.net/#/x/hub-design?open=%2Fu%2Fa.html");
+});
+
+test("an address that is not an open request gives no path", () => {
+  for (const h of ["", "#/", "#/x/hub-design", "#/x/hub-design?open=", "#/x/other?open=%2Fu%2Fa.html", "#/s/designer?open=%2Fu%2Fa.html", "#/x/hub-design?open=%E0%A4%A"]) {
+    assert.equal(designPathOf(h), "", h);
+  }
+});
+
+test("the card's share button copies the link, and says so", () => {
+  assert.match(cardText("en").share, /link/i);
+  assert.match(cardText("ru").share, /ссылк/i);
+  assert.match(cardText("en").copied, /link/i);
+  assert.match(cardText("ru").copied, /ссылк/i);
+});

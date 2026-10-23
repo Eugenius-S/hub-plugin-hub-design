@@ -7,7 +7,7 @@ import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, cha
   goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
-import { spread, styleLine, waitFresh } from "./lib.js";
+import { designLink, designPathOf, spread, styleLine, waitFresh } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -178,13 +178,14 @@ export default function register(h) {
   const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); }, onAgain: () => first.refresh(), ask: askDesigner });
   hub.addSettings({ id: "styles", title: tf("title"), render: (root) => fetchUi.render(root) });
   // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
-  mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
+  mountCards({ origin, local, open: openFile, link: (path) => designLink(location.origin + location.pathname, abs(path)), files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });
   // the address before Hub Design: "✕" returns there (none — to the home page)
   let prev = location.hash;
   addEventListener("hashchange", (e) => {
     const was = e.oldURL ? new URL(e.oldURL).hash : prev;
     prev = location.hash;
     if (was && !was.startsWith("#/x/" + ID)) P.back = was;
+    if (designPathOf(location.hash)) fromLink();   // a link to a design pasted into a page that is already open
     // came from a session window: its direction is where the new designs go (from any other page - nowhere in particular)
     if (location.hash.startsWith("#/x/" + ID) && !was.startsWith("#/x/" + ID)) {
       P.origin = decodeURIComponent((was.match(/^#\/s\/([^/?]+)/) || [])[1] || "");
@@ -347,6 +348,7 @@ function attachStyle(x) {
 
 // the recipient is not remembered between openings: the open design drives it (wanted); a handoff from a chat overrides
 function fromAddress() {
+  fromLink();
   applyHandoff();
   adoptOrigin();
   applyOpen();
@@ -375,6 +377,16 @@ const filesUrl = (path) => {
   const s = decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "");
   return `${location.protocol}//${location.hostname}:${(hub.snapshot() || {}).files_port || 8788}/open?path=${encodeURIComponent(abs(path))}` + (s ? `&session=${encodeURIComponent(s)}` : "");
 };
+
+// a link to a design (#/x/hub-design?open=<path>, designLink in lib.js): the file goes on the canvas like a click on a card, and the request is taken
+// off the address - a reload or "back" must not open it again; the view may not be drawn yet - applyOpen waits for render
+function fromLink() {
+  const path = designPathOf(location.hash);
+  if (!path) return;
+  history.replaceState(history.state, "", location.pathname + location.search + "#/x/" + ID);
+  P.openPath = path;
+  setTimeout(applyOpen, 0);
+}
 
 // a file from a card in the feed: open the view and put the file on the canvas (the view is not drawn yet - wait for render)
 function openFile(path) {

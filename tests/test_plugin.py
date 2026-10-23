@@ -88,7 +88,7 @@ class Scripts(unittest.TestCase):
         self.assertIn("hub-sidebar", main)
         self.assertIn('by: "hub-design"', main)
         self.assertIn("show() { P.shown = true; sidebar(true);", main)
-        self.assertIn("hide() { P.shown = false; sidebar(false);", main)
+        self.assertIn("hide() { P.shown = false; P.openFrom = null; sidebar(false);", main)
         self.assertIn("html.hs-hidden .hd-top", read("style.css"))
 
     def test_recipient_follows_design_not_session(self):

@@ -146,6 +146,17 @@ export const ZOOMS = [0, 50, 75, 100, 125, 150];
 // port of the plugin process: the hub page port + 11 (8787 -> 8798), as in server.py
 export const canvasPort = (pagePort) => Number(pagePort || 8787) + 11;
 
+// the link that opens a design on the canvas: <page of the hub>/#/x/hub-design?open=<full path>. The core keeps the params of a view address
+// through a reload and "back", so the link works on a fresh page load and on an open page alike
+export const designLink = (page, path, id = "hub-design") => `${String(page).replace(/\/+$/, "")}/#/x/${id}?open=${encodeURIComponent(path)}`;
+// the path out of such an address ("" - the address is not an open request of this view)
+export function designPathOf(hash, id = "hub-design") {
+  const m = String(hash || "").match(new RegExp(`^#/x/${id}\\?(.*)$`));
+  const hit = m && m[1].split("&").find((q) => q.startsWith("open="));
+  if (!hit) return "";
+  try { return decodeURIComponent(hit.slice(5)); } catch { return ""; }
+}
+
 // the file address at the process: /f/Users/me/site/index.html, Windows - /f/C:/site/index.html
 export function fileUrl(origin, path) {
   const p = String(path).replace(/\\/g, "/").replace(/^\/+/, "");
@@ -1011,8 +1022,8 @@ export function hideToggle(list, path, hidden) {
 
 // card strings: the language is hub.lang (read at use time), any other - English
 export const CARD_STR = {
-  en: { by: "Hub Design", hide: "Collapse", show: "Expand", share: "Copy path", copied: "Path copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Collapse the card into one line", show_title: "Expand the card", design: "design", video: "video", pdf: "PDF", svg: "SVG", gone: "file unavailable" },
-  ru: { by: "Hub Design", hide: "Свернуть", show: "Развернуть", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", svg: "SVG", gone: "файл недоступен" },
+  en: { by: "Hub Design", hide: "Collapse", show: "Expand", share: "Copy link", copied: "Link copied", open: "Open in Hub Design", hd: "Hub Design", open_file: "Open", open_file_title: "Open the file", hide_title: "Collapse the card into one line", show_title: "Expand the card", design: "design", video: "video", pdf: "PDF", svg: "SVG", gone: "file unavailable" },
+  ru: { by: "Hub Design", hide: "Свернуть", show: "Развернуть", share: "Скопировать ссылку", copied: "Ссылка скопирована", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", svg: "SVG", gone: "файл недоступен" },
 };
 export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;
 

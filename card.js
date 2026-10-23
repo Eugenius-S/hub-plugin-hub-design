@@ -143,7 +143,7 @@ function build(path, kind, who) {
   share.innerHTML = ICONS.share;
   share.addEventListener("click", async (e) => {
     e.stopPropagation();
-    if (!(await copy(cfg.abs(path)))) return;
+    if (!(await copy(cfg.link(path)))) return;
     share.innerHTML = ICONS.check;
     share.title = T.copied;
     share.classList.add("done");
@@ -225,7 +225,7 @@ function want(n) {
 }
 
 // opts: origin() -> the plugin process address, local() -> the hub is open on this computer, open(path) -> open a file in Hub Design,
-// lang() -> the page language, session() -> whose feed is open, abs(path) -> a path with "~" expanded
+// link(path) -> the address that opens the file in Hub Design (what "share" copies), lang() -> the page language, session() -> whose feed is open, abs(path) -> a path with "~" expanded
 export function mountCards(opts) {
   if (cfg) return;
   cfg = opts;

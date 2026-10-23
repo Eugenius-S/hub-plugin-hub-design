@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 
 import firstrun
 
@@ -29,6 +30,7 @@ DECKS = (".pptx",)   # no shot to make: the post carries the file itself (the bo
 STR = {
     "en": {
         "caption": "**{title}** · {who}\nReply to send {who} an edit.",
+        "open": "Open in Hub Design",
         "why_ask": "Why 👎? Press a button or reply in your own words.",
         "why_settle": "Why: {}",
         "why_composition": "Composition",
@@ -39,6 +41,7 @@ STR = {
     },
     "ru": {
         "caption": "**{title}** · {who}\nОтветьте на пост, чтобы отправить правку {who}.",
+        "open": "Открыть в Hub Design",
         "why_ask": "Почему 👎? Нажмите кнопку или ответьте своими словами.",
         "why_settle": "Почему: {}",
         "why_composition": "Композиция",
@@ -72,6 +75,21 @@ def why_key(button):
     return None
 
 
+def tailnet_page(state_dir):
+    """The address of the hub page in the tailnet (the hub's tailnet module writes it; the bot builds its links from the same file); none - None."""
+    try:
+        from modules.tailnet import access
+        st = access.status(state_dir)
+        return (st.get("urls") or {}).get("web") if st.get("ok") else None
+    except Exception:
+        return None
+
+
+def open_link(page, path):
+    """The address that opens a design on the canvas of Hub Design - the form of designLink (lib.js): <page>/#/x/hub-design?open=<path>."""
+    return f"{page.rstrip('/')}/#/x/{EXT}?open={urllib.parse.quote(path, safe='')}"
+
+
 def rules():
     """The bot's rule which files are designs (modules/telegram/design_posts.py); None - this hub's bot does not have it."""
     try:
@@ -84,7 +102,7 @@ def rules():
 class Poster:
     """shot(path) -> PNG bytes or None; config() -> hub.json; state(path) -> the hub state (sessions); emit(type, data) - a fact."""
 
-    def __init__(self, state_dir, shot, config, title=None, state=None, emit=None, ask=None):
+    def __init__(self, state_dir, shot, config, title=None, state=None, emit=None, ask=None, page=None):
         from core import journal
         self.journal = journal
         self.dir, self.path = state_dir, os.path.join(state_dir, "journal.jsonl")
@@ -94,6 +112,7 @@ class Poster:
         self.title = title or (lambda p: "")
         self.state = state or (lambda: journal.load_state(state_dir))
         self.emit = emit or self.spool
+        self.page = page or (lambda: tailnet_page(state_dir))   # -> the address of the hub page (none - no link in the post)
         self.ask = ask or (lambda: None)   # -> linkctl.Ctl: the question of the first start (firstrun.py) is posted here and its press is read here
         try:
             with open(self.mine, encoding="utf-8") as f:
@@ -192,7 +211,10 @@ class Poster:
         lang = _lang()
         text = tr(lang, "caption", title=title.replace("*", ""), who=sender)
         png = path if deck else self.keep(self.shot(design))
-        if not png:   # no shot (no Chrome, an error): the post goes as text with the path - a link to the file on the page
+        page = None if deck else self.page()   # a presentation does not open on the canvas
+        if page:
+            text += f"\n[{tr(lang, 'open')}]({open_link(page, design)})"
+        if not png:  # no shot (no Chrome, an error): the post goes as text with the path - a link to the file on the page
             text += f"\n\n`{design}`"
         ref = f"hd:{ev['seq']}"
         self.st["sent"][ref] = {"session": sender, "path": design, "title": title}
