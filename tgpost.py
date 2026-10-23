@@ -22,7 +22,11 @@ import firstrun
 
 EXT = "hub-design"   # the facts are signed ext:hub-design - the bot passes presses and replies back by this name
 LIKE, NOPE = "❤️", "👎"
-WHY = ["composition", "type", "illustration", "colors", "all"]   # reasons after 👎: STR key suffixes
+WHY = ["composition", "type", "illustration", "colors", "angles", "balance"]   # reasons after 👎 (ticks, any number): STR key suffixes
+LEGACY = {"Иллюстрация": "illustration", "Illustration": "illustration"}   # a button of a "Why?" posted before 0.32 stays valid
+ASPECT = {   # what the author is told for a reason key (English: messages to sessions are English)
+    "composition": "composition (positions, layout)", "type": "typography", "illustration": "graphics and illustration",
+    "colors": "colors", "angles": "angles (corner radii)", "balance": "balance"}
 KEEP_SENT, KEEP_WHY, KEEP_SHOTS = 300, 200, 50
 TICK = 2   # s between journal reads
 DECKS = (".pptx",)   # no shot to make: the post carries the file itself (the bot sends it as a document with the buttons)
@@ -31,24 +35,34 @@ STR = {
     "en": {
         "caption": "**{title}** · {who}\nReply to send {who} an edit.",
         "open": "Open in Hub Design",
-        "why_ask": "Why 👎? Press a button or reply in your own words.",
+        "why_ask": "Why 👎? Tick what did not work (any number), then press Done. Or reply in your own words.",
         "why_settle": "Why: {}",
         "why_composition": "Composition",
         "why_type": "Typography",
-        "why_illustration": "Illustration",
+        "why_illustration": "Graphics & illustration",
         "why_colors": "Colors",
+        "why_angles": "Angles (corners)",
+        "why_balance": "Balance",
         "why_all": "Everything",
+        "why_pick_all": "Select all",
+        "why_pick_none": "Clear all",
+        "why_done": "Done",
     },
     "ru": {
         "caption": "**{title}** · {who}\nОтветьте на пост, чтобы отправить правку {who}.",
         "open": "Открыть в Hub Design",
-        "why_ask": "Почему 👎? Нажмите кнопку или ответьте своими словами.",
+        "why_ask": "Почему 👎? Отметьте, что не зашло (сколько угодно), и нажмите «Готово». Или ответьте своими словами.",
         "why_settle": "Почему: {}",
         "why_composition": "Композиция",
         "why_type": "Типографика",
-        "why_illustration": "Иллюстрация",
+        "why_illustration": "Графика и иллюстрации",
         "why_colors": "Цвета",
+        "why_angles": "Углы (скругления)",
+        "why_balance": "Баланс",
         "why_all": "Всё вместе",
+        "why_pick_all": "Выбрать всё",
+        "why_pick_none": "Снять всё",
+        "why_done": "Готово",
     },
 }
 
@@ -68,8 +82,11 @@ def tr(lang, key, **params):
 
 
 def why_key(button):
-    """The reason key of a pressed button in any language of the table (the language may have changed since); None - not a reason."""
-    for k in WHY:
+    """The reason key of a pressed button in any language of the table (the language may have changed since); None - not a reason.
+    "all" is only the button of a "Why?" posted before the ticks (0.32)."""
+    if button in LEGACY:
+        return LEGACY[button]
+    for k in WHY + ["all"]:
         if any(t.get(f"why_{k}") == button for t in STR.values()):
             return k
     return None
@@ -189,7 +206,11 @@ class Poster:
         if ref == firstrun.REF:
             return self.first_pressed(data.get("button")) if kind == "telegram.pressed" else None
         if ref in self.st["why"]:
-            return self.answer_why(ref, data.get("button"), (data.get("text") or "").strip() if kind == "telegram.replied" else None, ev)
+            chosen = data.get("chosen") if isinstance(data.get("chosen"), list) else None
+            if kind == "telegram.pressed" and chosen is None and data.get("done"):   # the bot sends the ticked reasons as `chosen`
+                return
+            return self.answer_why(ref, data.get("button") if chosen is None else None,
+                                   (data.get("text") or "").strip() if kind == "telegram.replied" else None, ev, chosen)
         s = self.st["sent"].get(ref)
         if not s:
             return
@@ -295,23 +316,41 @@ class Poster:
                 del self.st["why"][next(iter(self.st["why"]))]
             lang = _lang()
             self.emit("telegram.post", {"text": tr(lang, "why_ask"), "ref": why, "settle": tr(lang, "why_settle"),
-                                        "buttons": [tr(lang, f"why_{k}") for k in WHY], "bump": True,
-                                        "lane": s["path"]})
+                                        "buttons": [tr(lang, f"why_{k}") for k in WHY], "bump": True, "lane": s["path"],
+                                        "multi": {"done": tr(lang, "why_done"), "all": tr(lang, "why_pick_all"),
+                                                  "none": tr(lang, "why_pick_none")}})
 
-    def answer_why(self, why, button=None, text=None, ev=None):
-        code = why_key(button) if button else None
-        if not (text or code):
+    def answer_why(self, why, button=None, text=None, ev=None, chosen=None):
+        """The owner's reasons come to the author in one message: the ticked ones (Done: `chosen`), his own words, or both. Every
+        reason ticked - the design does not work as a whole: a new variant, not a patch. The last line is a record the designer
+        can collect: `Feedback record: design=<path>; verdict=dislike; reasons=a,b; words="..."`."""
+        labels = chosen if chosen else [button] if button else []
+        keys = [k for k in dict.fromkeys(why_key(b) for b in labels) if k]
+        if not (text or keys):
             return
         s = self.st["sent"].get(self.st["why"].pop(why))
         if not s:
             return
-        reason = text or tr("en", f"why_{code}")
-        if code == "all" and not text:
+        whole = "all" in keys or set(WHY) <= set(keys)
+        names = [ASPECT[k] for k in keys if k in ASPECT]
+        said = []
+        if names and not whole:
+            said.append("what did not work: " + ", ".join(names))
+        elif whole:
+            said.append("what did not work: everything")
+        if text:
+            said.append(f"in the owner's words: {text}")
+        if whole and not text:
             todo = "The design does not work as a whole: make a new variant, not a patch of this one."
+        elif whole:
+            todo = "The design does not work as a whole: make a new variant, not a patch of this one, and keep the owner's words in mind."
         else:
-            todo = ("Redo only this in this design, leave the rest as it is, and send the fixed version again "
-                    "(hub send-file) - it comes to the owner as a new post.")
-        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {reason}. {todo}",
+            todo = ("Redo only " + ("these aspects" if len(names) > 1 else "this") + " in this design, leave the rest as it is, and send "
+                    "the fixed version again (hub send-file) - it comes to the owner as a new post.")
+        record = ",".join(WHY if whole else keys) or "words"
+        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {'; '.join(said)}. {todo} "
+                               f"Feedback record: design={s['path']}; verdict=dislike; reasons={record}; "
+                               f"words={json.dumps(text or '', ensure_ascii=False)}",
                  self.reject(ev, s["path"]) if ev else None)
 
     def poll(self):

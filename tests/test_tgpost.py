@@ -62,6 +62,12 @@ class Posts(unittest.TestCase):
         self.add("telegram.pressed", {"ext": "hub-design", "ref": ref, "button": button}, src="telegram")
         self.p.poll()
 
+    def done(self, ref, *chosen):
+        """«Done» of the multi-select post: the bot sends one fact with everything ticked."""
+        self.add("telegram.pressed", {"ext": "hub-design", "ref": ref, "button": ", ".join(chosen), "chosen": list(chosen), "done": True},
+                 src="telegram")
+        self.p.poll()
+
     def test_a_design_goes_as_a_post_with_a_shot_and_buttons_for_its_author(self):
         self.file()
         (post,) = self.posts()
@@ -88,8 +94,8 @@ class Posts(unittest.TestCase):
         self.assertNotIn("session", why)                   # the reason comes back to the plugin, not straight to the author
         self.press(ref, "👎")
         self.assertEqual(len(self.posts()), 2)            # a second 👎 - no second question
-        self.press(why["ref"], why["buttons"][2])
-        self.assertIn("Illustration", self.said()[-1]["text"])
+        self.press(why["ref"], why["buttons"][2])   # an old single-button "Why?" still works
+        self.assertIn("graphics and illustration", self.said()[-1]["text"])
         self.assertEqual(self.said()[-1]["to"], "designer")
         self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
         self.assertEqual(len(self.said()), 4)
@@ -106,11 +112,11 @@ class Posts(unittest.TestCase):
         self.assertEqual((nope["lane"], nope["reject"], nope["react"], nope["ref"]), ("/w/landing.html", True, self.seq, ref))
         why = self.posts()[1]
         self.assertEqual(why["lane"], "/w/landing.html")
-        self.press(why["ref"], "Colors")
+        self.done(why["ref"], "Colors")
         reason = self.said()[-1]
         self.assertEqual((reason["lane"], reason["reject"], reason["react"], reason["ref"]),
                          ("/w/landing.html", True, self.seq, why["ref"]))
-        self.assertIn("Colors", reason["text"])
+        self.assertIn("colors", reason["text"])
 
     def test_posts_ask_the_bot_to_bump_them_down_the_chat(self):
         self.file()
@@ -122,10 +128,13 @@ class Posts(unittest.TestCase):
     def test_why_buttons_in_order_and_keys_in_both_languages(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")
-        self.assertEqual(self.posts()[1]["buttons"], ["Composition", "Typography", "Illustration", "Colors", "Everything"])
-        ru = ["Композиция", "Типографика", "Иллюстрация", "Цвета", "Всё вместе"]
-        for keys in (["Composition", "Typography", "Illustration", "Colors", "Everything"], ru):
-            self.assertEqual([tgpost.why_key(b) for b in keys], ["composition", "type", "illustration", "colors", "all"])
+        en = ["Composition", "Typography", "Graphics & illustration", "Colors", "Angles (corners)", "Balance"]
+        self.assertEqual(self.posts()[1]["buttons"], en)
+        ru = ["Композиция", "Типографика", "Графика и иллюстрации", "Цвета", "Углы (скругления)", "Баланс"]
+        for keys in (en, ru):
+            self.assertEqual([tgpost.why_key(b) for b in keys], ["composition", "type", "illustration", "colors", "angles", "balance"])
+        self.assertEqual([tgpost.why_key(b) for b in ("Illustration", "Иллюстрация", "Everything", "Всё вместе")],
+                         ["illustration", "illustration", "all", "all"])
         for old in ("Not pretty", "Некрасиво", "Cluttered", "Не то просил", "Не наш стиль"):
             self.assertIsNone(tgpost.why_key(old))
 
@@ -133,20 +142,53 @@ class Posts(unittest.TestCase):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")
         why = self.posts()[1]
-        self.press(why["ref"], "Colors")
+        self.done(why["ref"], "Colors")
         text = self.said()[-1]["text"]
-        self.assertIn("Colors", text)
+        self.assertIn("colors", text)
         self.assertIn("only this", text)
         self.assertIn("send the fixed version again", text)
         self.assertNotIn("new variant", text)
         self.file(path="/w/landing2.html")
         ref2 = self.posts()[-1]["ref"]
         self.press(ref2, "👎")
-        self.press(self.posts()[-1]["ref"], "Всё вместе")
+        self.done(self.posts()[-1]["ref"], *[tgpost.tr("en", f"why_{k}") for k in tgpost.WHY])   # every reason ticked
         text = self.said()[-1]["text"]
-        self.assertIn("Everything", text)
+        self.assertIn("everything", text)
         self.assertIn("new variant", text)
         self.assertNotIn("only this", text)
+
+    def test_the_why_post_is_a_multi_select_with_done_and_nothing_goes_before_done(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        why = self.posts()[1]
+        self.assertEqual(why["multi"], {"done": "Done", "all": "Select all", "none": "Clear all"})
+        self.assertEqual(len(self.said()), 1)              # the 👎 only; the ticks are the bot's business until Done
+
+    def test_several_ticked_reasons_go_in_one_message_with_a_record_for_the_designer(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        why = self.posts()[1]
+        self.done(why["ref"], "Colors", "Angles (corners)", "Balance")
+        msg = self.said()[-1]
+        self.assertEqual(len(self.said()), 2)
+        self.assertEqual(msg["to"], "designer")
+        self.assertIn("what did not work: colors, angles (corner radii), balance", msg["text"])
+        self.assertIn("these aspects", msg["text"])
+        self.assertNotIn("new variant", msg["text"])
+        self.assertTrue(msg["text"].endswith('Feedback record: design=/w/landing.html; verdict=dislike; reasons=colors,angles,balance; words=""'))
+        self.assertTrue(msg["reject"])
+        self.done(why["ref"], "Colors")                    # answered - a late press changes nothing
+        self.assertEqual(len(self.said()), 2)
+
+    def test_ticks_and_words_together(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "👎")
+        why = self.posts()[1]["ref"]
+        self.add("telegram.replied", {"ext": "hub-design", "ref": why, "text": "too dark", "chosen": ["Colors"]}, src="telegram")
+        self.p.poll()
+        text = self.said()[-1]["text"]
+        self.assertIn("what did not work: colors; in the owner's words: too dark", text)
+        self.assertTrue(text.endswith('reasons=colors; words="too dark"'))
 
     def test_a_reason_in_words(self):
         self.file()
@@ -156,6 +198,7 @@ class Posts(unittest.TestCase):
         self.p.poll()
         self.assertIn("too dark", self.said()[-1]["text"])
         self.assertIn("only this", self.said()[-1]["text"])
+        self.assertIn("reasons=words", self.said()[-1]["text"])
 
     def test_off_foreign_or_not_a_design_sends_nothing(self):
         self.cfg = {}
