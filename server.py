@@ -547,7 +547,7 @@ def write(real, body):
             if out != cur:
                 write_file(real, out)
         return {"ok": True, "copy": os.path.basename(copy_path), "fmtime": int(os.stat(real).st_mtime * 1000), "stamp": newest(real),
-                "done": done, "skipped": skipped, "ops": ops_state, "opsWhy": ops_why}
+                "done": done, "skipped": skipped, "ops": ops_state, "opsWhy": handwrite.WHY.get(ops_why, ""), "opsCode": ops_why}
 
 
 EARLY_TAG = b'<script src="/__canvas/early.js"></script>'

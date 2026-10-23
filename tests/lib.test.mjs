@@ -587,6 +587,8 @@ test("writing into the file: the set is drafts and sent, without done and empty 
   assert.equal(list[0].inFile, true);
   assert.equal(list[1].inFile, false);
   assert.equal(list[1].noWrite, "тег другой");
+  markWritten(list, tw, f, { done: [], skipped: [{ sel: "h1", code: "tag", why: "the tag in the file is different" }], ops: "done" });
+  assert.equal(list[1].noWrite, "tag");   // the page translates the code; the server's English text is only the fallback
   assert.equal(list[2].inFile, undefined);   // done is not touched
   assert.equal(list[4].inFile, undefined);   // someone else's file
   assert.equal(tw[0].inFile, true);

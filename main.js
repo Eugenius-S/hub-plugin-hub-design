@@ -66,6 +66,10 @@ const STR = {
     in_file: "in the file",
     none: "(none)",
     not_written: "{sel}: not written to the file. {why}",
+    w_selector: "The selector could not be read", w_absent: "The element is not in the file: a script builds it or the layout changed", w_several: "The file has several such elements",
+    w_rawtext: "The text inside has markup", w_nested: "There are nested tags inside", w_textdiff: "The text in the file is not the same as on the canvas",
+    w_tag: "The tag in the file is different", w_label: "The element in the file has different text", w_used: "This element is already being edited",
+    w_style: "This style value cannot be used", w_nohtml: "The file has no <html>", w_tweak: "This tweak value cannot be used", w_check: "The file did not pass the check after writing",
     no_comments: "No comments yet. Choose “Comment” on the canvas toolbar and click the place you mean.",
     show_on_canvas: "Show on the canvas: {path}",
     no_talk: "No conversation with {name} yet",
@@ -119,6 +123,10 @@ const STR = {
     in_file: "в файле",
     none: "(пусто)",
     not_written: "{sel}: не записано в файл. {why}",
+    w_selector: "Не удалось разобрать селектор", w_absent: "Элемента нет в файле: его строит скрипт или изменилась вёрстка", w_several: "В файле несколько таких элементов",
+    w_rawtext: "Внутри не простой текст", w_nested: "Внутри вложенные теги", w_textdiff: "Текст в файле не такой, как на холсте",
+    w_tag: "В файле другой тег", w_label: "У элемента в файле другой текст", w_used: "Этот элемент уже правится",
+    w_style: "Такое значение стиля не подходит", w_nohtml: "В файле нет <html>", w_tweak: "Такое значение крутилки не подходит", w_check: "Файл не прошёл проверку после записи",
     no_comments: "Комментариев пока нет. Выберите «Комментарий» на панели холста и нажмите на нужное место.",
     show_on_canvas: "Показать на холсте: {path}",
     no_talk: "С {name} ещё не говорили",
@@ -834,6 +842,7 @@ async function install(name) {
   }
 }
 
+const WRITE_WHY = { selector: "w_selector", absent: "w_absent", several: "w_several", rawtext: "w_rawtext", nested: "w_nested", textdiff: "w_textdiff", tag: "w_tag", label: "w_label", used: "w_used", style: "w_style", nohtml: "w_nohtml", tweak: "w_tweak", check: "w_check" };   // the code of handwrite.py -> the STR key (the server's own text is English)
 const PDF_WHY = { timeout: "pdf_timeout", nopdf: "pdf_nopdf", notpdf: "pdf_notpdf" };   // the server's PdfError code -> the STR key (the server's own text is English)
 // "Download PDF": the plugin process prints with its own Chrome (hub.json testchrome.path); Chrome is not set up — the page prints itself
 async function savePdf(path) {
@@ -1724,7 +1733,7 @@ function paintComments() {
     li.append(el("b", "hd-n edit", "✎"), el("span", "hd-ct", `${c.label || c.sel}: ${describeChange(c)}`));
     if (c.inFile) li.append(el("span", "hd-infile", tr("in_file")));
     li.append(delBtn(() => dropEdit.change(c)));
-    li.title = c.noWrite ? tr("not_written", { sel: c.sel, why: c.noWrite }) : c.sel;
+    li.title = c.noWrite ? tr("not_written", { sel: c.sel, why: WRITE_WHY[c.noWrite] ? tr(WRITE_WHY[c.noWrite]) : c.noWrite }) : c.sel;
     rows.push(li);
   }
   for (const d of drawings) {

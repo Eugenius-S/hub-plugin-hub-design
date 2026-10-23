@@ -661,6 +661,7 @@ class Write(unittest.TestCase):
     def test_nothing_to_write_makes_no_copy(self):
         r, d = self.post({"path": self.path, "round": 1, "changes": [{"sel": "#nope", "label": "x", "dx": 4}]})
         self.assertEqual((d["copy"], d["done"], d["skipped"][0]["sel"]), ("", [], "#nope"))
+        self.assertEqual(d["skipped"][0]["code"], "absent")   # the page translates the reason by the code
         self.assertEqual(self.text(), self.HTML)
         self.assertEqual([f for f in os.listdir(os.path.dirname(self.path)) if ".r" in f], [])
 

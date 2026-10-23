@@ -48,20 +48,22 @@ class Apply(unittest.TestCase):
     def test_text_that_differs_from_the_file_is_not_written(self):
         out, done, skipped, _, _ = run([{"sel": BTN2, "label": "Buy", "t0": "Something else", "t": "New"}])
         self.assertEqual((out, done), (SRC, []))
-        self.assertIn("differs from the canvas", skipped[0]["why"])
+        self.assertEqual(skipped[0]["code"], "textdiff")
+        self.assertIn("not the same as on the canvas", skipped[0]["why"])
 
     def test_nothing_is_written_to_the_wrong_element(self):
         for c, why in (
-            ({"sel": "#nope", "label": "x", "dx": 1}, "not in the file"),
+            ({"sel": "#nope", "label": "x", "dx": 1}, "absent"),
             ({"sel": "div.card > a.btn", "label": "Buy", "dx": 1}, "several"),
-            ({"sel": BTN2, "label": "A totally different text", "dx": 1}, "different text"),
+            ({"sel": BTN2, "label": "A totally different text", "dx": 1}, "label"),
             ({"sel": BTN2, "label": "Buy", "tag": "button", "dx": 1}, "tag"),
-            ({"sel": "???", "label": "", "dx": 1}, "not parsed"),
-            ({"sel": BTN2, "label": "Buy", "css": {"color": {"from": "a", "to": "red; position: fixed"}}}, "not acceptable"),
+            ({"sel": "???", "label": "", "dx": 1}, "selector"),
+            ({"sel": BTN2, "label": "Buy", "css": {"color": {"from": "a", "to": "red; position: fixed"}}}, "style"),
         ):
             out, done, skipped, _, _ = run([c])
             self.assertEqual((out, done), (SRC, []), c)
-            self.assertIn(why, skipped[0]["why"], c)
+            self.assertEqual(skipped[0]["code"], why, c)
+            self.assertEqual(skipped[0]["why"], handwrite.WHY[why], c)
 
     def test_element_built_by_script_is_not_found(self):
         out, done, skipped, _, _ = run([{"sel": "#pricing > div.card:nth-of-type(3) > a.btn", "label": "Buy", "dx": 1}])
@@ -117,11 +119,11 @@ class Apply(unittest.TestCase):
             self.assertEqual(done, [], c)
             why = skipped[0]["why"]
             self.assertTrue(why.isascii() and why, (c, why))
+            self.assertIn(skipped[0]["code"], handwrite.WHY, c)
         _, _, _, state, why = run([], [{"kind": "var", "name": "x", "value": "1"}])
-        self.assertEqual(state, "skipped")
-        self.assertTrue(why.isascii() and why, why)
+        self.assertEqual((state, why), ("skipped", "tweak"))
         _, _, _, state, why = run([], [{"kind": "var", "name": "--a", "value": "1"}], "<p>no html tag</p>")
-        self.assertTrue(why.isascii(), why)
+        self.assertEqual(why, "nohtml")
 
 
 if __name__ == "__main__":

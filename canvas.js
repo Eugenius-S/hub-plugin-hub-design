@@ -22,7 +22,7 @@ export const STR = {
     fit_all: "Fit all", zoom_in: "Zoom in", zoom_out: "Zoom out",
     path_ph: "HTML path: /…/index.html", add_frame: "Add a frame", recent_html: "Recent HTML files of this session",
     ed_who: "Send the comment to", ed_pick: "Choose a recipient",
-    how_wrote: "Wrote this design", how_picked: "Picked by you", how_sent: "Sent this design (the author was not found)", how_named: "Mentioned this file (the author was not found)", how_none: "The author of the design is unknown",
+    how_wrote: "Author of this design", how_picked: "Picked by you", how_sent: "Sent this design (the author was not found)", how_named: "Mentioned this file (the author was not found)", how_none: "The author of the design is unknown",
     ed_head: "Comment", ed_ph: "What to change here?", ed_close: "Close", ed_delete: "Remove", ed_send: "Send",
     tool_select: "Select (V)", tool_hand: "Hand (H)", tool_text: "Text (T)", tool_frame: "Add a frame (F)", tool_comment: "Comment (C)",
     tool_pencil: "Pencil (P)", tool_shape: "Shapes (R)", tool_more: "More: pencil and shapes",

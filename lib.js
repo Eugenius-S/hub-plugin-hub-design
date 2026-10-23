@@ -554,10 +554,10 @@ export function anchorNote(c) {
 export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && hasEffect(c))
   .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // one element - one record, the last
 // handed - went to the designer in words, not as a write to the file: from then on the designer edits it, Hub Design does not write it to the file
-// the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (left to the designer)
+// the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (the code from handwrite.py; left to the designer)
 export function markWritten(changes, tweaks, file, res) {
   const done = new Set((res && res.done) || []);
-  const why = Object.fromEntries(((res && res.skipped) || []).map((x) => [x.sel, x.why]));
+  const why = Object.fromEntries(((res && res.skipped) || []).map((x) => [x.sel, x.code || x.why]));
   for (const c of changes) {
     if (c.file !== file || c.state === "done") continue;
     c.inFile = done.has(c.sel);
