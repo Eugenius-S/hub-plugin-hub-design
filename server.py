@@ -217,8 +217,8 @@ def page_origins():
 
 
 def inject(body):
-    """agent.js (with anchor.js before it) goes last in the document: its boxes and pins sit on top of the design."""
-    tag = ('<script>window.__canvas={origins:%s}</script><script src="/__canvas/anchor.js"></script><script src="/__canvas/agent.js"></script>'
+    """agent.js (with anchor.js and snap.js before it) goes last in the document: its boxes and pins sit on top of the design."""
+    tag = ('<script>window.__canvas={origins:%s}</script><script src="/__canvas/anchor.js"></script><script src="/__canvas/snap.js"></script><script src="/__canvas/agent.js"></script>'
            % json.dumps(page_origins())).encode()
     low = body.lower()
     at = low.rfind(b"</body>")
@@ -733,7 +733,7 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         if url.path == "/__canvas/ping":
             return self.say(200, {"ok": True, "v": version()})
-        if url.path in ("/__canvas/agent.js", "/__canvas/anchor.js", "/__canvas/early.js"):
+        if url.path in ("/__canvas/agent.js", "/__canvas/anchor.js", "/__canvas/snap.js", "/__canvas/early.js"):
             with open(os.path.join(HERE, url.path.rsplit("/", 1)[1]), "rb") as f:
                 body = f.read()
             self.head(200, TYPES[".js"], len(body))

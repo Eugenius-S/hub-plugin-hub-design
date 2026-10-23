@@ -66,13 +66,19 @@
   host.style.cssText = "all:initial;position:absolute;left:0;top:0;width:0;height:0;z-index:2147483647;pointer-events:none;";
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `<style>
-    :host{all:initial;--a:#3b6fd4;--on:#fff;--bg:#fff;--fg:#1f1e1d;--bd:#d8d4cb;--mu:#8a8780;--s:1}
+    :host{all:initial;--sp-tight:4px;--sp-inner:8px;--g:#e93d82;--a:#3b6fd4;--on:#fff;--bg:#fff;--fg:#1f1e1d;--bd:#d8d4cb;--mu:#8a8780;--s:1}
     *{box-sizing:border-box;font:13px/1.35 var(--font,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif)}
     .hover{position:fixed;pointer-events:none;outline:calc(1px * var(--s)) solid var(--a);background:color-mix(in srgb,var(--a) 7%,transparent);display:none}
+    .hover.under i{bottom:auto;top:100%;transform-origin:0 0}
     .hover i{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;background:var(--a);color:var(--on);font-style:normal;font-size:11px;padding:1px 6px;border-radius:3px;white-space:nowrap;max-width:360px;overflow:hidden;text-overflow:ellipsis}
     .sel,.frame{position:fixed;outline:calc(2px * var(--s)) solid var(--a);display:none;pointer-events:none}
-    .sel .grip{position:absolute;right:calc(-5px * var(--s));bottom:calc(-5px * var(--s));width:10px;height:10px;transform:scale(var(--s));background:var(--bg);border:2px solid var(--a);border-radius:2px;pointer-events:auto;cursor:nwse-resize}
-    .sel .bar{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;display:flex;gap:3px;pointer-events:auto;padding-bottom:2px}
+    .sel .grip{position:absolute;width:10px;height:10px;transform:scale(var(--s));background:var(--bg);border:2px solid var(--a);border-radius:2px;pointer-events:auto}
+    .sel .grip.nw{left:calc(-5px * var(--s));top:calc(-5px * var(--s));cursor:nwse-resize}
+    .sel .grip.ne{right:calc(-5px * var(--s));top:calc(-5px * var(--s));cursor:nesw-resize}
+    .sel .grip.sw{left:calc(-5px * var(--s));bottom:calc(-5px * var(--s));cursor:nesw-resize}
+    .sel .grip.se{right:calc(-5px * var(--s));bottom:calc(-5px * var(--s));cursor:nwse-resize}
+    .sel .bar{position:absolute;left:0;bottom:100%;transform:scale(var(--s));transform-origin:0 100%;display:flex;gap:var(--sp-tight);pointer-events:auto;padding-bottom:var(--sp-inner)}
+    .sel.under .bar{bottom:auto;top:100%;transform-origin:0 0;padding-bottom:0;padding-top:var(--sp-inner)}
     .sel .bar span,.sel .bar button{background:var(--a);color:var(--on);border:0;border-radius:3px;font-size:11px;padding:2px 6px;white-space:nowrap}
     .sel .bar button{cursor:pointer}
     .pin{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;transform:scale(var(--s));border-radius:13px 13px 13px 2px;background:var(--a);color:var(--on);
@@ -98,18 +104,23 @@
     svg.draw{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
     svg.draw *{fill:none;stroke:var(--a);stroke-width:calc(3px * var(--s));stroke-linecap:round;stroke-linejoin:round}
     svg.draw .sent{stroke:var(--mu)}
-  </style><svg class="draw"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up">↑</button><button class="rev">↺</button></div><div class="grip"></div></div><div class="rgns"></div><div class="pins"></div>`;
+    svg.snap{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+    svg.snap line{stroke:var(--g);stroke-width:calc(1px * var(--s))}
+    svg.snap rect{fill:var(--g)}
+    svg.snap text{fill:#fff;font:600 11px/1 var(--font,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif);dominant-baseline:central;text-anchor:middle}
+  </style><svg class="draw"></svg><svg class="snap"></svg><div class="hover"><i></i></div><div class="frame"></div><div class="sel"><div class="bar"><span></span><button class="up">↑</button><button class="rev">↺</button></div><i class="grip nw" data-h="nw"></i><i class="grip ne" data-h="ne"></i><i class="grip sw" data-h="sw"></i><i class="grip se" data-h="se"></i></div><div class="rgns"></div><div class="pins"></div>`;
   const hoverBox = root.querySelector(".hover");
   const selBox = root.querySelector(".sel");
   const frameBox = root.querySelector(".frame");
   const pinsBox = root.querySelector(".pins");
   const rgnsBox = root.querySelector(".rgns");
   const svg = root.querySelector("svg.draw");
+  const snapSvg = root.querySelector("svg.snap");
   // texts of the overlay: the static ones and the open comment editor; called after the template, the editor and a language change
   const LABELS = [[".up", "title", "parent"], [".rev", "title", "revert"], [".grip", "title", "resize"], [".ed h4", "textContent", "comment"],
     [".ed textarea", "placeholder", "comment_ph"], [".ed .x", "textContent", "close"], [".ed .del", "textContent", "delete"], [".ed .go", "textContent", "send"]];
   function applyLabels() {
-    for (const [sel, prop, key] of LABELS) { const n = root.querySelector(sel); if (n) n[prop] = t(key); }
+    for (const [sel, prop, key] of LABELS) for (const n of root.querySelectorAll(sel)) n[prop] = t(key);
   }
   applyLabels();
   const mount = () => { if (!host.isConnected) document.documentElement.appendChild(host); };
@@ -171,8 +182,12 @@
 
   // --- box under the cursor ------------------------------------------------------------------------------------------
   function showHover(el) {
-    if (!el || mode === "view" || mode === "draw" || drag) { hoverBox.style.display = "none"; return; }
+    if (!el || mode === "view" || mode === "draw" || drag || el === selected) { hoverBox.style.display = "none"; return; }
     const r = el.getBoundingClientRect();
+    // the label sits above the box; under it where the top edge is too near the window edge or the label would land on the selection's chips
+    const sr = selected && selected.isConnected ? selected.getBoundingClientRect() : null;
+    const onBar = !!sr && Math.abs(r.top - sr.top) < 34 * inv && r.left < sr.right && r.right > sr.left;
+    hoverBox.classList.toggle("under", r.top < 24 * inv || onBar);
     Object.assign(hoverBox.style, { display: "block", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
     hoverBox.firstChild.textContent = `${short(el)}  ${Math.round(r.width)}×${Math.round(r.height)}`;
   }
@@ -284,8 +299,10 @@
     }));
   }
   function place() {
-    svg.style.width = document.documentElement.scrollWidth + "px";
-    svg.style.height = document.documentElement.scrollHeight + "px";
+    for (const n of [svg, snapSvg]) {
+      n.style.width = document.documentElement.scrollWidth + "px";
+      n.style.height = document.documentElement.scrollHeight + "px";
+    }
     for (const n of pinsBox.children) {
       const p = pins.find((q) => q.id === n.dataset.id);
       if (!p) continue;
@@ -315,6 +332,7 @@
   function box(node, el) {
     if (!el || !el.isConnected) { node.style.display = "none"; return; }
     const r = el.getBoundingClientRect();
+    if (node === selBox) node.classList.toggle("under", r.top < 34 * inv);   // no room above: the chips go under the box
     Object.assign(node.style, { display: "block", left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
   }
   (function loop() { place(); requestAnimationFrame(loop); })();
@@ -357,6 +375,62 @@
     setTimeout(() => ta.focus({ preventScroll: true }), 0);
   }
 
+  // --- smart guides ------------------------------------------------------------------------------------------------
+  // while an element is dragged or resized it sticks to the lines of the other elements and of the design frame (snap.js), pink lines
+  // show the alignment and the labels show the gaps to the neighbours. Alt / Cmd: no snapping
+  const H = window.HubSnap;
+  const SNAP_PX = 6;             // the pull distance on the screen, in px of the canvas (scaled by 1/zoom inside the design)
+  const SNAP_MAX = 600;          // the other elements looked at in a big document
+  const SKIP_TAGS = /^(script|style|link|meta|head|br|template|noscript|title|source|track|option)$/i;
+  function snapScene(el) {
+    if (!H) return { others: [], frame: null };
+    const root = document.documentElement;
+    const frame = { x: 0, y: 0, w: root.scrollWidth, h: root.scrollHeight };
+    const seen = new Set();
+    const others = [];
+    const all = document.body ? document.body.getElementsByTagName("*") : [];
+    for (let i = 0; i < all.length && others.length < SNAP_MAX; i++) {
+      const n = all[i];
+      if (n === el || el.contains(n) || ours(n) || SKIP_TAGS.test(n.tagName)) continue;
+      const r = pageRect(n);
+      if (r.w < 2 || r.h < 2) continue;
+      const key = [r.x, r.y, r.w, r.h].map(Math.round).join(",");
+      if (seen.has(key) || (r.w >= frame.w && r.h >= frame.h)) continue;
+      if (getComputedStyle(n).visibility === "hidden") continue;
+      seen.add(key);
+      others.push(r);
+    }
+    return { others, frame };
+  }
+  const svgNode = (name, attrs) => {
+    const n = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    return n;
+  };
+  // the pill with a distance: it stays the same size on the screen at any canvas zoom
+  function pill(x, y, text) {
+    const g = svgNode("g", { transform: `translate(${x} ${y}) scale(${inv})` });
+    const w = String(text).length * 7 + 10;
+    g.append(svgNode("rect", { x: -w / 2, y: -8, width: w, height: 16, rx: 3 }), svgNode("text", { x: 0, y: 0 }));
+    g.lastChild.textContent = text;
+    return g;
+  }
+  function drawSnap(d, s, free) {
+    if (!H || free) { clearSnap(); return; }
+    const box = { x: d.r0.x + (s.dx - d.bx), y: d.r0.y + (s.dy - d.by), w: s.w != null ? s.w : d.r0.w, h: s.h != null ? s.h : d.r0.h };
+    const nodes = [];
+    for (const l of H.guides(box, d.others, d.frame)) {
+      nodes.push(l.axis === "x" ? svgNode("line", { x1: l.at, x2: l.at, y1: l.from, y2: l.to }) : svgNode("line", { y1: l.at, y2: l.at, x1: l.from, x2: l.to }));
+    }
+    for (const g of H.gaps(box, d.others)) {
+      const mid = (g.from + g.to) / 2;
+      nodes.push(g.axis === "x" ? svgNode("line", { x1: g.from, x2: g.to, y1: g.at, y2: g.at }) : svgNode("line", { y1: g.from, y2: g.to, x1: g.at, x2: g.at }));
+      nodes.push(g.axis === "x" ? pill(mid, g.at, g.d) : pill(g.at, mid, g.d));
+    }
+    snapSvg.replaceChildren(...nodes);
+  }
+  const clearSnap = () => snapSvg.replaceChildren();
+
   // --- hand edits -----------------------------------------------------------------------------------------------
   // the shift the element already has (from the file: our earlier write, or the design's own): a new drag goes on from it, it never snaps back to 0
   const parseShift = (v) => {
@@ -395,7 +469,7 @@
     undo.push({ el, before, after: snap(el) });
     if (undo.length > 100) undo.shift();
     redo.length = 0;
-    sendHistory();
+    sendHistory("commit");
     report(el);
     sendSelected();
   }
@@ -406,16 +480,16 @@
     report(el);
     if (el === selected) sendSelected();
   }
-  const sendHistory = () => send({ t: "history", undo: undo.length, redo: redo.length });
+  const sendHistory = (why = "") => send({ t: "history", undo: undo.length, redo: redo.length, why });
   function stepUndo() {
     const h = undo.pop();
     if (h) { restore(h.el, h.before); redo.push(h); }
-    sendHistory();
+    sendHistory("undo");
   }
   function stepRedo() {
     const h = redo.pop();
     if (h) { restore(h.el, h.after); undo.push(h); }
-    sendHistory();
+    sendHistory("redo");
   }
   function revert(el) {
     const s = state.get(el);
@@ -424,6 +498,8 @@
     if (s.t0 != null) el.textContent = s.t0;
     state.delete(el);
     touched.delete(el);
+    for (const list of [undo, redo]) for (let i = list.length - 1; i >= 0; i--) if (list[i].el === el) list.splice(i, 1);   // a removed edit leaves no steps behind
+    sendHistory("revert");
   }
   const textLeaf = (el) => el.childNodes.length > 0 && [...el.childNodes].every((n) => n.nodeType === 3 || (n.nodeType === 1 && n.tagName === "BR"));
 
@@ -467,7 +543,7 @@
   function select(el) {
     selected = el;
     if (el) selBox.querySelector(".bar span").textContent = short(el);
-    selBox.querySelector(".grip").style.display = mode === "edit" && el ? "" : "none";
+    for (const n of selBox.querySelectorAll(".grip")) n.style.display = mode === "edit" && el ? "" : "none";
     selBox.querySelector(".bar").style.display = mode === "edit" && el ? "" : "none";
     place();
     sendSelected();
@@ -482,12 +558,12 @@
     const s = state.get(selected);
     if (s) { send({ t: "revert", sel: s.sel }); revert(selected); sendSelected(); }
   });
-  selBox.querySelector(".grip").addEventListener("pointerdown", (e) => {
+  for (const grip of selBox.querySelectorAll(".grip")) grip.addEventListener("pointerdown", (e) => {
     if (!selected) return;
     e.stopPropagation(); e.preventDefault();
     const s = track(selected);
     const r = selected.getBoundingClientRect();
-    drag = { kind: "size", el: selected, sx: e.clientX, sy: e.clientY, bw: r.width, bh: r.height, moved: false, before: snap(selected) };
+    drag = { kind: "size", h: grip.dataset.h, el: selected, sx: e.clientX, sy: e.clientY, bx: s.dx, by: s.dy, r0: pageRect(selected), moved: false, before: snap(selected), ...snapScene(selected) };
     s.w = s.w ?? r.width; s.h = s.h ?? r.height;
   });
 
@@ -643,9 +719,22 @@
       const ddx = e.clientX - drag.sx, ddy = e.clientY - drag.sy;
       if (Math.abs(ddx) + Math.abs(ddy) > 2) drag.moved = true;
       const s = state.get(drag.el);
-      if (drag.kind === "move") { s.dx = Math.round(drag.bx + ddx); s.dy = Math.round(drag.by + ddy); }
-      else { s.w = Math.max(4, Math.round(drag.bw + ddx)); s.h = Math.max(4, Math.round(drag.bh + ddy)); }
+      const free = e.altKey || e.metaKey;   // Alt / Cmd: no snapping
+      const thr = SNAP_PX * inv;
+      const r0 = drag.r0;
+      if (!H) {
+        if (drag.kind === "move") { s.dx = Math.round(drag.bx + ddx); s.dy = Math.round(drag.by + ddy); }
+        else { s.w = Math.max(4, Math.round(r0.w + ddx)); s.h = Math.max(4, Math.round(r0.h + ddy)); }
+      } else if (drag.kind === "move") {
+        const b = H.snapMove({ x: r0.x + ddx, y: r0.y + ddy, w: r0.w, h: r0.h }, drag.others, drag.frame, thr, free);
+        s.dx = Math.round(drag.bx + b.x - r0.x); s.dy = Math.round(drag.by + b.y - r0.y);
+      } else {
+        const b = H.snapResize(drag.h, r0, ddx, ddy, drag.others, drag.frame, thr, { keep: e.shiftKey, alt: free });
+        s.w = Math.round(b.w); s.h = Math.round(b.h);
+        s.dx = Math.round(drag.bx + b.x - r0.x); s.dy = Math.round(drag.by + b.y - r0.y);
+      }
       paintState(drag.el);
+      drawSnap(drag, s, free);
       return stop(e);
     }
     if (mode === "view" || mode === "draw") return;
@@ -670,7 +759,7 @@
       if (selected !== el) select(el);
       else if (e.detail > 1) return;
       const s = track(el);
-      drag = { kind: "move", el, sx: e.clientX, sy: e.clientY, bx: s.dx, by: s.dy, moved: false, before: snap(el) };
+      drag = { kind: "move", el, sx: e.clientX, sy: e.clientY, bx: s.dx, by: s.dy, r0: pageRect(el), moved: false, before: snap(el), ...snapScene(el) };
     }
   }, true);
   addEventListener("pointerup", (e) => {
@@ -687,6 +776,7 @@
     if (!drag) return;
     const d = drag;
     drag = null;
+    clearSnap();
     if (d.moved) commit(d.el, d.before);
     stop(e);
   }, true);
@@ -724,14 +814,17 @@
   // canvas keys while the focus is in the frame: space, tool letters, Esc, zoom, undo
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const KEYS = /^[vhtncprf0]$/i;
+  const LATIN = { KeyZ: "z", Equal: "=", Minus: "-" };
   const keyOut = (down) => (e) => {
     if (!external || typing(e.target) || ours(e.target)) return;
     const mod = e.metaKey || e.ctrlKey;
-    const mine = e.key === " " || e.key === "Escape" || (!mod && !e.altKey && (KEYS.test(e.key) || e.key === "!" || (e.shiftKey && e.key === "1"))) ||
-      (mod && (/^[zZ=+\-]$/.test(e.key)));
+    // with another layout (not Latin) a shortcut is still the key by its place
+    const k = mod && LATIN[e.code] ? LATIN[e.code] : e.key;
+    const mine = k === " " || k === "Escape" || (!mod && !e.altKey && (KEYS.test(k) || k === "!" || (e.shiftKey && k === "1"))) ||
+      (mod && (/^[zZ=+\-]$/.test(k)));
     if (!mine) return;
     e.preventDefault();
-    send({ t: "key", k: e.key, down, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
+    send({ t: "key", k, down, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
   };
   addEventListener("keydown", (e) => {
     if (e.key === "Escape" && mode !== "view") { select(null); showHover(null); }

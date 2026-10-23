@@ -91,6 +91,7 @@ class Server(unittest.TestCase):
         text = body.decode()
         self.assertIn('<script src="/__canvas/agent.js"></script></body>', text)
         self.assertLess(text.index("/__canvas/anchor.js"), text.index("/__canvas/agent.js"))   # pin fingerprints come before the agent
+        self.assertLess(text.index("/__canvas/snap.js"), text.index("/__canvas/agent.js"))     # so do the smart guides
         self.assertIn('"http://localhost:8787"', text)
         self.assertIn("frame-ancestors 'self' http://localhost:", r.getheader("Content-Security-Policy"))
         self.assertEqual(r.getheader("Cache-Control"), "no-store")
@@ -140,6 +141,11 @@ class Server(unittest.TestCase):
         r, body = self.get("/__canvas/anchor.js")
         self.assertEqual(r.status, 200)
         self.assertIn(b"HubAnchor", body)
+
+    def test_snap_served(self):
+        r, body = self.get("/__canvas/snap.js")
+        self.assertEqual(r.status, 200)
+        self.assertIn(b"HubSnap", body)
 
     def test_outside_hidden_and_unknown_types_refused(self):
         for p in (os.path.join(OUT, "x.html"), os.path.join(SITE, ".git", "config.json"), os.path.join(SITE, "secret.env"),

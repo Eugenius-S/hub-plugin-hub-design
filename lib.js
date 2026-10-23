@@ -41,6 +41,7 @@ export const STR = {
     m_comment: "Comment on {el}, point x {x}, y {y} (element {w}\u00d7{h} at x {ex}, y {ey}{note}): {text}",
     m_hand: "Hand edit `{sel}`{label}: {what}{inFile}.",
     m_infile: ", already in the file",
+    undone: "undone, back to the original",
     m_drawing: "Freehand drawing: {d}{text}.",
     m_auto: "These are my own actions in the Hub Design panel, sent automatically. No report needed: reply with a single line \u201c\u2014\u201d.",
     m_style: "Style reference: {path}",   // the same line in every language: the designer's skill looks for it
@@ -105,6 +106,7 @@ export const STR = {
     m_comment: "Комментарий к {el}, точка x {x}, y {y} (элемент {w}\u00d7{h} в x {ex}, y {ey}{note}): {text}",
     m_hand: "Правка руками `{sel}`{label}: {what}{inFile}.",
     m_infile: ", уже в файле",
+    undone: "отменено, снова как было",
     m_drawing: "Рисунок от руки: {d}{text}.",
     m_auto: "Это мои действия в панели Hub Design, отправились сами. Отчёт не нужен: ответь одной строкой \u00ab\u2014\u00bb.",
     m_style: "Style reference: {path}",
@@ -389,6 +391,7 @@ const describeCols = (v) => {
 
 // one "edit" change - in words and numbers
 export function describeChange(c) {
+  if (c.undone) return tr("undone");
   const parts = [];
   if (c.dx || c.dy) {
     const where = [c.dx ? tr("along_x", { v: signed(c.dx) }) : "", c.dy ? tr("along_y", { v: signed(c.dy) }) : ""].filter(Boolean).join(", ");
@@ -574,11 +577,48 @@ export function anchorNote(c) {
   return tr("a_noid", { bits: bits.join(", ") });
 }
 
+// the agent reports the whole state of one element after every step (move, resize, undo, redo): the list of changes after it.
+// A state with no effect (undone to the original) removes the draft and the record already written to the file (it is rolled back from the copy);
+// if the designer had got that edit (sent), a draft "undone" tells him the file is back as it was
+export function foldChange(changes, c) {
+  const same = (q) => q.file === c.file && q.sel === c.sel;
+  const draft = changes.find((q) => same(q) && q.state === "draft");
+  const next = changes.filter((q) => !(same(q) && (q.state === "draft" || q.state === "sent" && q.inFile)));
+  // the designer already has an edit of this element (sent), or an undo of it is still waiting to go: the file must not silently differ from what he knows
+  const told = changes.some((q) => same(q) && q.state === "sent" && hasEffect(q) && !q.undone) || !!(draft && (draft.undone || draft.told));
+  const rec = { ...c, state: "draft" };
+  if (hasEffect(rec)) {
+    if (told) rec.told = true;
+    if (!draft) return [...changes, rec];
+    return changes.map((q) => (q === draft ? rec : q));
+  }
+  return told ? [...next, { ...rec, undone: true }] : next;
+}
+
+// Ctrl+Z / Ctrl+Shift+Z over everything the owner did by hand, in the order he did it: element edits (k "e": the frame keeps its own stack and is told
+// to step) and tweaks (k "t": the value goes back to `before`). A run of one tweak's steps (a slider drag) is one step
+export function createSteps({ merge = 800, max = 200 } = {}) {
+  let done = [], undone = [];
+  return {
+    push(step) {
+      const at = step.at || Date.now();
+      const last = done[done.length - 1];
+      if (step.k === "t" && last && last.k === "t" && last.file === step.file && last.key === step.key && at - last.at < merge) { last.after = step.after; last.at = at; }
+      else { done.push({ ...step, at }); if (done.length > max) done.shift(); }
+      undone = [];
+    },
+    undo() { const s = done.pop(); if (s) undone.push(s); return s || null; },
+    redo() { const s = undone.pop(); if (s) done.push(s); return s || null; },
+    drop(file) { done = done.filter((s) => s.file !== file); undone = undone.filter((s) => s.file !== file); },
+    size: () => [done.length, undone.length],
+  };
+}
+
 // the message to the designer as a batch: comments on points, hand edits, drawings, notes; the designer edits the file.
 // Items with a `file` field of different files go in separate sections; without the field - one file `path`
 // --- hand edits straight into the file (server.py /__canvas/write): what to send and what to mark "already in the file" -------------------------------
 // drafts and sent but not yet accepted by the designer: the file is always rebuilt from the copy - as one full set
-export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && hasEffect(c))
+export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && !c.undone && hasEffect(c))
   .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // one element - one record, the last
 // handed - went to the designer in words, not as a write to the file: from then on the designer edits it, Hub Design does not write it to the file
 // the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (the code from handwrite.py; left to the designer)
@@ -648,7 +688,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
       const what = describeChange(c);
       if (!what) continue;
       n += 1;
-      lines.push(`${n}. ` + tr("m_hand", { sel: c.sel, label: c.label ? ` ${tr("quote", { s: cut(c.label) })}` : "", what, inFile: c.inFile ? tr("m_infile") : "" }));
+      lines.push(`${n}. ` + tr("m_hand", { sel: c.sel, label: c.label ? ` ${tr("quote", { s: cut(c.label) })}` : "", what, inFile: c.inFile || c.undone ? tr("m_infile") : "" }));
     }
     for (const d of drawings.filter((x) => of(x) === f)) {
       n += 1;
@@ -667,8 +707,8 @@ export function message({ path, round, view, views = {}, comments, changes, draw
     }
     if (!n) continue;
     if (turned.some((c) => !c.inFile)) lines.push(tr("m_tweaks"));
-    if (mine.some((c) => hasEffect(c) && !c.inFile)) lines.push(tr("m_hand_note"));
-    if (mine.some((c) => hasEffect(c) && c.inFile) || turned.some((c) => c.inFile)) {
+    if (mine.some((c) => hasEffect(c) && !c.inFile && !c.undone)) lines.push(tr("m_hand_note"));
+    if (mine.some((c) => hasEffect(c) && (c.inFile || c.undone)) || turned.some((c) => c.inFile)) {
       const copy = copyPath(f, copies[f]);
       lines.push(tr("m_file_note", { copy: copy ? tr("m_copy", { c: copy }) : "" }));
     }

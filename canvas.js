@@ -221,9 +221,11 @@ export function createCanvas(app) {
     return false;
   }
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+  const SHORTCUT = { KeyZ: "z", Equal: "=", Minus: "-" };
   const onKey = (down) => (e) => {
     if (!app.visible() || typing(e.target)) return;
-    if (key(e.key, down, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey })) e.preventDefault();
+    const k = (e.metaKey || e.ctrlKey) && SHORTCUT[e.code] ? SHORTCUT[e.code] : e.key;   // a shortcut is the key by its place: Ctrl+Z works on any layout
+    if (key(k, down, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey })) e.preventDefault();
   };
   addEventListener("keydown", onKey(true));
   addEventListener("keyup", onKey(false));

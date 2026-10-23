@@ -4,7 +4,7 @@
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
-  goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
+  goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh } from "./lib.js";
@@ -604,6 +604,7 @@ function removeFrame(path, keepDrafts = false) {
     P.drawings = P.drawings.filter((d) => d.file !== path);
     P.tweaks = P.tweaks.filter((t) => t.file !== path);
     P.errs = P.errs.filter((e) => e.file !== path);
+    steps.drop(path);
     flushWrite(path);   // the drafts are removed — the file returns to its look before our edits
   }
   specs.delete(path);
@@ -641,6 +642,7 @@ function fileChanged(file) {
   P.changes = P.changes.filter((c) => !mine(c) || c.state !== "done");
   if (P.sel && P.sel.file === file) P.sel = null;
   P.hist[file] = { undo: 0, redo: 0 };
+  steps.drop(file);
   renumber();
   ui.cv.reloadFrame(file);
 }
@@ -817,11 +819,7 @@ function handle(file, m, ep = epOf(file)) {
     P.drawings.push({ id: "d" + P.seq, file, round: P.round, state: "draft", text: "", ...m.drawing });
     syncAll();
   } else if (m.t === "change") {
-    const c = { ...m.change, file, state: "draft" };
-    const i = P.changes.findIndex((q) => q.file === file && q.sel === c.sel && q.state === "draft");
-    if (!hasEffect(c)) { if (i >= 0) P.changes.splice(i, 1); }
-    else if (i >= 0) P.changes[i] = c;
-    else P.changes.push(c);
+    P.changes = foldChange(P.changes, { ...m.change, file });   // undone to the original: the draft and what is already in the file go away
     P.lastEdit = file;
     scheduleWrite(file);
   } else if (m.t === "revert") {
@@ -836,6 +834,7 @@ function handle(file, m, ep = epOf(file)) {
     } else if (P.sel && P.sel.file === file) P.sel = null;
   } else if (m.t === "history") {
     P.hist[file] = { undo: m.undo, redo: m.redo };
+    if (m.why === "commit") steps.push({ k: "e", file });
   } else if (m.t === "changed") {
     const w = writers.get(file);
     if (w && m.mtime <= w.maxStamp) return;   // our own write of manual edits
@@ -866,9 +865,21 @@ function deselect() {
   tellAll({ t: "deselect" });
   paint();
 }
+// Ctrl+Z / Ctrl+Shift+Z: the owner's last step by hand — an edit of an element (the frame steps back itself) or a tweak (its value returns), in the order done
+const steps = createSteps();
 function undo(redo) {
-  const file = P.lastEdit || P.focus;
-  if (file) tellFile(file, { t: redo ? "redo" : "undo" });
+  const s = redo ? steps.redo() : steps.undo();
+  if (!s) {   // no step of ours is known (the page was reloaded): leave it to the frame of the design edited last
+    const file = P.lastEdit || P.focus;
+    if (file) tellFile(file, { t: redo ? "redo" : "undo" });
+    return;
+  }
+  if (s.k === "e") return tellFile(s.file, { t: redo ? "redo" : "undo" });
+  const value = redo ? s.after : s.before;
+  const b = BUILTINS.find((x) => x.key === s.key);
+  const t = (specs.get(s.file)?.list || []).find((x) => x.key === s.key);
+  if (b) setBuiltin(s.file, b, value, false);
+  else if (t) setTweak(s.file, t, value, false);
 }
 // which of the needed specialists are not in the hub (by the snapshot: appeared — it disappears itself); asked — "waiting"
 const lackNow = () => lacking((ui?.snap || hub.snapshot() || {}).sessions || [], P.asked);
@@ -1535,9 +1546,10 @@ function opsFor(file, key) {
   const t = (specs.get(file)?.list || []).find((x) => x.key === key);
   return t ? tweakApply(t, tweakNow(file, t)) : [];
 }
-function setTweak(file, t, raw) {
+function setTweak(file, t, raw, record = true) {
   const value = tweakValue(t, raw);
   if (value == null) return false;
+  if (record) steps.push({ k: "t", file, key: t.key, before: tweakNow(file, t), after: value });
   const sp = specs.get(file);
   let e = P.tweaks.find((x) => x.file === file && x.key === t.key && x.state === "draft");
   if (!e) {
@@ -1560,9 +1572,10 @@ const builtinNow = (file, key) => {
   return mine ? mine.to : 0;
 };
 const builtinVals = (file) => Object.fromEntries(BUILTINS.map((b) => [b.id, builtinNow(file, b.key)]));
-function setBuiltin(file, b, raw) {
+function setBuiltin(file, b, raw, record = true) {
   const value = builtinValue(b, raw);
   if (value == null) return false;
+  if (record) steps.push({ k: "t", file, key: b.key, before: builtinNow(file, b.key), after: value });
   let e = P.tweaks.find((x) => x.file === file && x.key === b.key && x.state === "draft");
   if (!e) {
     const sent = P.tweaks.find((x) => x.file === file && x.key === b.key && x.state === "sent");
