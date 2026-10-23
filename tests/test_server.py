@@ -750,7 +750,7 @@ class AutoSend(unittest.TestCase):
         main = self.src("main.js")
         body = main[main.index("async function autoSend()"):]
         body = body[:body.index("\n}\n")]
-        self.assertIn('hub.post("/api/send", { session: P.session, text })', body)   # P.session is what is picked in the edit recipient selector
+        self.assertIn('hub.post("/api/send", withLane({ session: P.session, text }', body)   # P.session is what is picked in the edit recipient selector; the lane rides along
         self.assertIn("comments: [], notes: [], errors: []", body)   # comments go by their own button, not by auto-send
         self.assertIn("flushWrite", body)   # the file write comes first: items go marked as already in the file
 
