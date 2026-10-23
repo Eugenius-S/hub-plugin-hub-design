@@ -377,6 +377,33 @@ def title_of(real):
     return re.sub(r"\s+", " ", html.unescape(m.group(1))).strip() if m else ""
 
 
+_HEADS = {}   # (real, mtime) -> the name of a design for its card label
+
+
+def head_of(real):
+    """The name of a design for its label on the dashboard: <title>, else the first <h1> without tags; none - an empty string. Cached by the file edit time."""
+    try:
+        key = (real, os.stat(real).st_mtime)
+    except OSError:
+        return ""
+    if key in _HEADS:
+        return _HEADS[key]
+    out = title_of(real)
+    if not out:
+        try:
+            with open(real, "rb") as f:
+                text = f.read(TITLE_READ).decode("utf-8", "replace")
+        except OSError:
+            text = ""
+        m = re.search(r"<h1[^>]*>(.*?)</h1>", text, re.S | re.I)
+        if m:
+            out = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]*>", " ", m.group(1)))).strip()
+    if len(_HEADS) > 4000:
+        _HEADS.clear()
+    _HEADS[key] = out[:200]
+    return _HEADS[key]
+
+
 def thumb_dir():
     return os.path.join(state_dir(), "hub-design", "thumbs")
 
@@ -690,7 +717,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/__canvas/registry":
             # the designs ever made on this machine (registry.py) with the state of each file: the start screen lists them whatever sessions exist now
             rows = REG.listing() if REG else []
-            out = [{**r, "state": file_state(os.path.expanduser(r["path"]))} for r in rows]
+            out = []
+            for r in rows:
+                real = os.path.expanduser(r["path"])
+                st = file_state(real)
+                out.append({**r, "state": st, **({"title": head_of(os.path.realpath(real))} if st == "ok" and real.lower().endswith(HTML) else {})})
             return self.say(200, {"ready": bool(REG and REG.ready), "items": out, "tasks": REG.task_rows() if REG else []}, self.cors())
         if url.path == "/__canvas/peers":
             # the designs of the other machines of the owner (peers.py): names and shots only, the files stay there. Off: {"on": false}
@@ -1014,7 +1045,7 @@ def peer_stamp(real):
 
 
 def peer_title(real):
-    return title_of(real) if real.lower().endswith(HTML) else ""
+    return head_of(real) if real.lower().endswith(HTML) else ""
 
 
 def tg_shot(path):

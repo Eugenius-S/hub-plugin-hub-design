@@ -1131,6 +1131,23 @@ class DesignRegistry(unittest.TestCase):
         r, _ = self.get("/__canvas/registry", {"Sec-Fetch-Site": "cross-site"})
         self.assertEqual(r.status, 403)
 
+    def test_the_answer_gives_the_name_of_a_design_for_its_label_title_first_then_the_first_headline(self):
+        d = os.path.realpath(self.old)
+        for name, text in [("t.html", "<title> Black Friday post 01,\n 50% off </title><h1>x</h1>"), ("h.html", "<p>x</p><h1 class=a>Email <b>1</b> &amp; Kyoto</h1>"), ("n.html", "<p>none</p>")]:
+            with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+                f.write(text)
+            self.put(os.path.join(d, name))
+        self.put(os.path.join(d, "style.css"))
+        self.put(os.path.join(d, "gone.html"))
+        _, body = self.get("/__canvas/registry", self.ORIGIN)
+        got = {os.path.basename(x["path"]): x for x in json.loads(body)["items"]}
+        self.assertEqual(got["t.html"]["title"], "Black Friday post 01, 50% off")
+        self.assertEqual(got["h.html"]["title"], "Email 1 & Kyoto")
+        self.assertEqual(got["n.html"]["title"], "")
+        self.assertNotIn("title", got["style.css"])   # only html has one
+        self.assertNotIn("title", got["gone.html"])   # a missing file is not read
+        self.assertEqual(server.peer_title(os.path.join(d, "h.html")), "Email 1 & Kyoto")   # the other machines get the same name
+
     def test_the_answer_names_the_tasks_of_the_designs_and_the_other_machines_get_the_title_as_the_folder(self):
         here, other = os.path.join(os.path.realpath(self.old), "a.html"), os.path.join(os.path.realpath(self.old), "b.html")
         for path in (here, other):

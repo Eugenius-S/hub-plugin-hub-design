@@ -66,6 +66,7 @@ export const STR = {
     t_designer: "designer", t_writer: "writer", t_animator: "animator",
     install: "Install the specialist for Hub Design: specialists install {name}",
     banner: "Hub Design needs the {title}",
+    k_email: "Email", k_post: "Post", k_story: "Story", k_banner: "Banner", k_landing: "Landing", k_slides: "Slides", k_poster: "Poster", k_ad: "Ad", k_screen: "Screen", k_design: "Design",
   },
   ru: {
     size_fit: "По окну",
@@ -129,6 +130,7 @@ export const STR = {
     t_designer: "дизайнер", t_writer: "райтер", t_animator: "аниматор",
     install: "Поставь специалиста для Hub Design: specialists install {name}",
     banner: "Для Hub Design нужен {title}",
+    k_email: "Email", k_post: "Пост", k_story: "Сторис", k_banner: "Баннер", k_landing: "Лендинг", k_slides: "Слайды", k_poster: "Постер", k_ad: "Реклама", k_screen: "Экран", k_design: "Макет",
   },
 };
 const tr = makeT(STR);
@@ -788,6 +790,68 @@ export const nameOf = (path) => {
   return name.toLowerCase() === "index" && parts.length > 1 ? parts[parts.length - 2] : name;
 };
 
+// --- labels of designs: "<kind>-<N>: <gist>" (Email-1: Kyoto, Post-2: 50% off) instead of the file name -----------------------------------------------
+// the kind comes from the title of the design (else from the file name), the gist is its headline: the part of the title next to the kind, 1-3 words;
+// N counts the designs of one kind in one folder by the time they were made
+const W = "(?<![\\p{L}])", E = "(?![\\p{L}])";
+const KINDS = [
+  ["email", new RegExp(W + "(e-?mails?|письм[оа]|рассылк[аи]|newsletter)" + E, "iu")],
+  ["story", new RegExp(W + "(stor(y|ies)|сторис|истори[яи])" + E, "iu")],
+  ["banner", new RegExp(W + "(banners?|баннер(ы|а|ов)?)" + E, "iu")],
+  ["landing", new RegExp(W + "(landing|лендинг(и|а)?)" + E, "iu")],
+  ["slides", new RegExp(W + "(slides?|decks?|слайд(ы|а|ов)?|презентаци[яи])" + E, "iu")],
+  ["poster", new RegExp(W + "(posters?|постер(ы|а|ов)?|афиш[аиы])" + E, "iu")],
+  ["ad", new RegExp(W + "(ads?|креатив(ы|а|ов)?|реклам[аыу])" + E, "iu")],
+  ["post", new RegExp(W + "(posts?|пост(ы|а|ов)?)" + E, "iu")],
+  ["screen", new RegExp(W + "(screens?|экран(ы|а|ов)?)" + E, "iu")],
+];
+const kindName = (id) => ({
+  email: () => tr("k_email"), post: () => tr("k_post"), story: () => tr("k_story"), banner: () => tr("k_banner"), landing: () => tr("k_landing"),
+  slides: () => tr("k_slides"), poster: () => tr("k_poster"), ad: () => tr("k_ad"), screen: () => tr("k_screen"),
+}[id] || (() => tr("k_design")))();
+const kindIn = (text) => (KINDS.find(([, re]) => re.test(text || "")) || [])[0] || "";
+// the kind of a design: its title first, then its file name ("welcome-email.html")
+export const kindOf = (title, path) => kindIn(title) || kindIn(String(nameOf(path || "")).replace(/[_.-]+/g, " "));
+
+const SEP = /\s*[,;:|·•–—]\s*|\s+-\s+/u;
+const NUM = /(?<![\p{L}\p{N}])([#№]?\d+[a-zA-Z]?|[rR]\d+)(?![\p{L}\p{N}])/gu;
+const trim = (s) => s.replace(/\s+/g, " ").replace(/^[\s\-–—_.,:;|]+|[\s\-–—_.,:;|]+$/gu, "");
+const MAX_WORDS = 3, MAX_GIST = 26;
+const clip = (s) => {
+  const w = trim(s).replace(/^(для|про|for|about)\s+/iu, "").split(" ").slice(0, MAX_WORDS);
+  while (w.length > 1 && w.join(" ").length > MAX_GIST) w.pop();
+  const out = w.join(" ");
+  return out.length > MAX_GIST ? out.slice(0, MAX_GIST - 1) + "…" : out;
+};
+// the gist of a design: next to the kind in the title ("Black Friday post 01, 50% off" - "50% off"), else the title without the kind and the numbers,
+// else the file name without the kind and the round numbers
+export function gistOf(title, path = "") {
+  const kre = (KINDS.find(([id]) => id === kindIn(title)) || [])[1];
+  const segs = String(title || "").split(SEP).map((x) => x.trim()).filter(Boolean);
+  const own = (x) => trim(x.replace(kre || /$^/, " ").replace(NUM, " "));
+  const i = kre ? segs.findIndex((x) => kre.test(x)) : -1;
+  const letters = (x) => /\p{L}/u.test(x);
+  const cand = i < 0 ? segs.filter(letters).map(trim) : [...segs.slice(i + 1).filter(letters).map(trim), own(segs[i]), ...segs.slice(0, i).reverse().filter(letters).map(own)];
+  const got = cand.find((x) => letters(x));
+  if (got) return clip(got);
+  const file = String(nameOf(path || "")).replace(/[_.-]+/g, " ");
+  const kf = (KINDS.find(([id]) => id === kindIn(file)) || [])[1];
+  return clip(trim(file.replace(kf || /$^/, " ").replace(NUM, " ")));
+}
+// the labels for the designs of one list: items [{key, title, path, group, ts}] - the number counts the designs of one kind in one group (folder) by ts.
+// returns Map key -> label
+export function labelsOf(items = []) {
+  const n = new Map(), out = new Map();
+  const order = [...items].sort((a, b) => (a.ts || 0) - (b.ts || 0) || String(a.path).localeCompare(String(b.path)));
+  for (const f of order) {
+    const kind = kindOf(f.title, f.path), c = (n.get((f.group || "") + "|" + kind) || 0) + 1;
+    n.set((f.group || "") + "|" + kind, c);
+    const gist = gistOf(f.title, f.path);
+    out.set(f.key, kindName(kind) + "-" + c + (gist ? ": " + gist : ""));
+  }
+  return out;
+}
+
 // which kind of paths this machine has: by the cwd of the hub sessions. A path of another OS ("C:\\…" on a Mac, "!Projects/…" without a root) is not shown on the dashboard
 export function nativePath(path, cwds = []) {
   const p = String(path || "");
@@ -808,14 +872,14 @@ export function dashboardFiles(authors, frames, cwds, { who = () => "", time = (
   const out = [], seen = new Map();
   const add = (a) => {
     const k = pathKey(a.path), cur = seen.get(k);
-    if (cur) { cur.last = Math.max(cur.last || 0, a.last || a.ts || 0); if (a.task && !cur.task) cur.task = a.task; return; }
+    if (cur) { cur.last = Math.max(cur.last || 0, a.last || a.ts || 0); if (a.task && !cur.task) cur.task = a.task; if (a.title && !cur.title) cur.title = a.title; return; }
     seen.set(k, a);
     out.push(a);
   };
   for (const a of authors || []) if (nativePath(a.path, cwds)) add({ ...a });
   for (const r of registry || []) {
     if (!r || !r.path || !nativePath(r.path, cwds) || skip(r.session)) continue;
-    add({ path: r.path, session: r.session || "", ts: Number(r.ts) || 0, last: Number(r.last || r.ts) || 0, rank: r.rank || 0, wrote: r.rank === 2, sent: r.rank === 1, ...(r.task ? { task: String(r.task) } : {}) });
+    add({ path: r.path, session: r.session || "", ts: Number(r.ts) || 0, last: Number(r.last || r.ts) || 0, rank: r.rank || 0, wrote: r.rank === 2, sent: r.rank === 1, ...(r.task ? { task: String(r.task) } : {}), ...(r.title ? { title: String(r.title) } : {}) });
   }
   for (const path of (frames || []).map((f) => (typeof f === "string" ? f : f.path))) {
     if (seen.has(pathKey(path))) continue;

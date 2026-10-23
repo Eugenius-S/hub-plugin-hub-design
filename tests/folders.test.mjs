@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { directionDirs, dirKey, folderOf, groupFiles, saveDirOf, saveLine } from "../lib.js";
-import { PREVIEWS, folderTitle, newest, view } from "../dashboard.js";
+import { dashboardFiles, directionDirs, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine } from "../lib.js";
+import { PREVIEWS, folderTitle, newest, shown, view } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
 const lang = (l) => setLangSource(() => l);
@@ -141,4 +141,53 @@ test("the folder of a task on disk: <direction>/design/<title>/, and the line fo
   assert.equal(taskLine(""), "");
   lang("ru");
   assert.match(taskLine("/p/Ads/design/Rewarded-video/"), /задач/);
+});
+
+// --- labels: "<kind>-<N>: <gist>" -----------------------------------------------------------------------------------------------------
+test("label: the kind from the title, the gist from the part next to it, the number by time inside the folder", () => {
+  const f = (key, title, path, ts, group = "g") => ({ key, title, path, ts, group });
+  const L = labelsOf([
+    f("c", "Welcome email: Busy", "/p/offer/index.html", 30),
+    f("a", "Email 1 — Kyoto", "/p/end-2.html", 10),
+    f("b", "Black Friday post 01, 50% off", "/p/bf/index.html", 20),
+    f("d", "Email 3 · Ocean", "/p/o.html", 40, "other"),   // another folder counts from 1 again
+  ]);
+  assert.equal(L.get("a"), "Email-1: Kyoto");
+  assert.equal(L.get("c"), "Email-2: Busy");   // later than "a": the number follows the time, not the order of the list
+  assert.equal(L.get("b"), "Post-1: 50% off");
+  assert.equal(L.get("d"), "Email-1: Ocean");
+});
+
+test("label: no title - the kind and the gist from the file name without round numbers; no kind - a design", () => {
+  assert.equal(kindOf("", "/p/welcome-email-2.html"), "email");
+  assert.equal(gistOf("", "/p/welcome-email-2.html"), "welcome");
+  assert.equal(labelsOf([{ key: "x", title: "", path: "/p/start-3.html", ts: 1 }]).get("x"), "Design-1: start");
+  assert.equal(labelsOf([{ key: "x", title: "", path: "/p/offer/index.html", ts: 1 }]).get("x"), "Design-1: offer");
+  assert.equal(labelsOf([{ key: "x", title: "", path: "/p/r2.html", ts: 1 }]).get("x"), "Design-1");   // nothing left but a round number
+});
+
+test("label: the gist is short - three words, 26 characters; a kind word inside another word is not a kind", () => {
+  assert.equal(gistOf("Story 2 · Free gifts for everybody right now", "").split(" ").length, 3);
+  assert.ok(gistOf("Post, " + "Supercalifragilisticexpialidocious".repeat(2), "").length <= 26);
+  assert.equal(kindOf("The history of poster art", ""), "poster");   // "history" is not a story
+  assert.equal(kindOf("Postcard", ""), "");
+  assert.equal(kindOf("Loading screen", ""), "screen");
+});
+
+test("label: the kind is named in the hub language, the rest stays as the design wrote it", () => {
+  lang("ru");
+  assert.equal(labelsOf([{ key: "p", title: "Post 2, Распродажа 50%", path: "/p/a.html", ts: 1 }]).get("p"), "Пост-1: Распродажа 50%");
+  assert.equal(labelsOf([{ key: "p", title: "Баннер: Лето", path: "/p/a.html", ts: 1 }]).get("p"), "Баннер-1: Лето");
+  assert.equal(labelsOf([{ key: "p", title: "", path: "/p/a.html", ts: 1 }]).get("p"), "Макет-1: a");
+});
+
+test("label: the dashboard list carries the title of the registry, and the search and the name sort go by the label", () => {
+  const files = dashboardFiles([{ path: "/p/a/index.html", session: "designer", ts: 1 }], [], ["/p"], {
+    registry: [{ path: "/p/a/index.html", ts: 1, title: "Email 1, Kyoto" }, { path: "/p/b.html", ts: 2, title: "Post 1, Sale" }],
+  });
+  assert.deepEqual(files.map((x) => x.title), ["Email 1, Kyoto", "Post 1, Sale"]);   // the feed one gets the title from the registry too
+  const labels = labelsOf(files.map((x) => ({ key: x.path, title: x.title, path: x.path, ts: x.ts })));
+  assert.deepEqual(shown(files, { q: "kyoto", labels }).map((x) => x.path), ["/p/a/index.html"]);
+  assert.deepEqual(shown(files, { q: "post-1", labels }).map((x) => x.path), ["/p/b.html"]);
+  assert.deepEqual(shown(files, { sort: "name", labels }).map((x) => labels.get(x.path)), ["Email-1: Kyoto", "Post-1: Sale"]);
 });

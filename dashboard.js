@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, folderKeyOf, groupFiles, isGone, isTaskKey, nameOf, scrollsRight, taskFolders, taskOfKey, taskTitle } from "./lib.js";
+import { ago, bannerText, folderKeyOf, groupFiles, isGone, isTaskKey, labelsOf, nameOf, scrollsRight, taskFolders, taskOfKey, taskTitle } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 
@@ -83,11 +83,13 @@ export const stubText = (current, lead) => (!current.trim() || isStub(current) ?
 export { nameOf };
 
 // "Mine" - designs the owner keeps on the canvas; "Others" - the rest (written by specialists and hub sessions)
-export function shown(files, { tab = "all", q = "", sort = "recent", mine = new Set() } = {}) {
+// labels: Map path -> the label of the design ("Email-1: Kyoto"); the search and the name sort go by it too
+export function shown(files, { tab = "all", q = "", sort = "recent", mine = new Set(), labels = new Map() } = {}) {
   const needle = String(q || "").trim().toLowerCase();
+  const label = (f) => labels.get(f.path) || nameOf(f.path);
   const rows = files.filter((f) => (tab === "all" || (tab === "mine") === mine.has(f.path))
-    && (!needle || (nameOf(f.path) + " " + f.path + " " + (f.session || "")).toLowerCase().includes(needle)));
-  const by = sort === "name" ? (a, b) => nameOf(a.path).localeCompare(nameOf(b.path)) : (a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0);
+    && (!needle || (label(f) + " " + nameOf(f.path) + " " + f.path + " " + (f.session || "")).toLowerCase().includes(needle)));
+  const by = sort === "name" ? (a, b) => label(a).localeCompare(label(b)) : (a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0);
   return rows.sort(by);
 }
 export const editedText = (f, now) => {
@@ -527,12 +529,13 @@ export function createDashboard(app) {
       setText(box.h, t("peer_head", { where, n: rows.length }));
       const grid = box.grid;
       grid.classList.toggle("list", S.list);
+      const plabels = labelsOf((peer.items || []).map((it) => ({ key: it.id, title: it.name, path: it.file || "", group: it.dir || "", ts: it.ts || it.last })));
       place(grid, shownRows.map((it) => {
         const c = pcard(peer, it);
         live.add(peer.machine + "/" + it.id);
         Object.assign(c, { peer, it, where });
         setTitle(c.node, it.file || "");
-        setText(c.name, peerName(it));
+        setText(c.name, plabels.get(it.id) || peerName(it));
         setText(c.badge, where);
         setText(c.text, [it.session, editedText(it)].filter(Boolean).join(" · "));
         const src = it.shot ? app.peerShot(peer.machine, it.shot) + "&v=" + encodeURIComponent(it.stamp || it.last || "") : "";
@@ -646,11 +649,14 @@ export function createDashboard(app) {
   function paintFiles() {
     const all = app.files();
     const dirs = app.dirs ? app.dirs() : [];
-    // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
-    const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() }).filter((f) => !isGone(app.fileState(f.path)));
-    // a folder that has nothing in it any more (and is not a known direction) is closed
     const taskList = app.tasks ? app.tasks() : [];
-    const tset = taskFolders(all.filter((f) => !isGone(app.fileState(f.path))));   // counted over all the designs: a search or a tab does not dissolve a folder
+    const alive = all.filter((f) => !isGone(app.fileState(f.path)));
+    const tset = taskFolders(alive);   // counted over all the designs: a search or a tab does not dissolve a folder
+    // the labels ("Email-1: Kyoto") are numbered over all the designs of the folder too: a search or a tab does not renumber them
+    const labels = labelsOf(alive.map((f) => ({ key: f.path, title: f.title, path: f.path, group: folderKeyOf(f, dirs, tset), ts: f.ts || f.last })));
+    // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
+    const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine(), labels }).filter((f) => !isGone(app.fileState(f.path)));
+    // a folder that has nothing in it any more (and is not a known direction) is closed
     if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderKeyOf(f, dirs, tset) === S.folder)) S.folder = null;
     const inPeer = S.peer !== null;   // inside the folder of another machine its designs only: the own ones are hidden
     const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q, tasks: tset });
@@ -664,6 +670,7 @@ export function createDashboard(app) {
       const c = card(f);
       const fk = folderKeyOf(f, dirs, tset);
       const where = named ? folderTitle(fk, dirs, taskList) : "";
+      setText(c.name, labels.get(f.path) || nameOf(f.path));
       setText(c.text, [f.session, named && fk ? where : "", editedText(f)].filter(Boolean).join(" · "));
       return c.node;
     });
