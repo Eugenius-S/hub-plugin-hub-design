@@ -26,6 +26,8 @@ The start screen does not rely on what the page happened to see. The plugin proc
 
 A new design asked for from a direction (the view was opened from its chat, or its folder is open on the start screen) carries a line for the designer: save it in `<direction folder>/design/<design-name>/`, not in its own working folder. The folder comes from the hub snapshot (the cwd of the direction's session), never guessed. From the hub chat, a specialist's chat or outside any folder the line is not added.
 
+**Folders of tasks.** The registry also knows the task each design was made for: the owner's task that started the chain (a subtask goes to the root of its chain), found in the journal by the mark of the turn (`dN`, `reply to task dN`). A task with two or more designs becomes one tile on the start screen, named by the title of the task, with every round of every session inside; designs without a task, and a task with a single design, stay in the direction folders as before. A design is counted once, so a search or a tab does not dissolve the folder. With a task folder open, a new design carries the line: save it in `<direction that asked>/design/<task-title>/`. `/__canvas/registry` answers `{ready, items, tasks}` (`items[].task` is the task id, `tasks[]` is `{id, title, by}`); a machine's folder for the peers is named by the title of the task.
+
 ### Hand edits go straight into the file
 
 Move, resize, text and tweaks are written by Hub Design into the `.html` itself, through `server.py`: this way "by hand" stays an edit, not a request.
