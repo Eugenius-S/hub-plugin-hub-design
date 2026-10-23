@@ -2,16 +2,19 @@
 
 One object joins the memory of the links (links.py), the fetcher (fetcher.py) and the library folder:
   startup()      - at the start of the plugin: the links by default are put once, the styles that are in the library already get their link,
-                   the previews a designer brought are taken; the first time (and only then), if the option is on, the links by default are downloaded;
-                   every start, if the option is on, the styles that were never asked for their moving cover are asked (a pass in the background)
-  status()       - what the page draws: the links with the number of their styles, the option, the question about the previews
-  act(body)      - add / remove a link, delete_preview / delete (a link with its styles), auto, decline, nopreview (the list for the designer)
+                   the previews a designer brought are taken; the first time (and only then) the owner is asked (firstrun.py) and NOTHING is downloaded -
+                   neither the links nor the covers - until the answer "Download" (answer()); after that, if the option is on, every start asks the styles
+                   that were never asked for their moving cover (a pass in the background). hub.json auto_download_defaults is the owner's decision: no question
+  status()       - what the page draws: the links with the number of their styles, the option, the question of the first start, the question about the previews
+  act(body)      - add / remove a link, delete_preview / delete (a link with its styles), auto, decline, nopreview (the list for the designer),
+                   firstrun (the answer to the question of the first start, or "again")
 Nothing is deleted by anything but act({"action": "delete"}), which the page sends after the owner saw the number."""
 import json
 import os
 import threading
 
 import fetcher
+import firstrun
 import links as linkmem
 import styles
 
@@ -52,6 +55,7 @@ class Ctl:
     def __init__(self, links, fetch, target, state, notify=None, defaults=DEFAULTS, source_list=None):
         self.links, self.fetch, self.target, self.state = links, fetch, target, state
         self.notify, self.defaults, self.source_list = notify, defaults, source_list
+        self.watch = True   # a download begun by the answer is watched (the owner is told about the styles without a preview); tests switch it off
         self.auto_started = False   # this run was begun by startup(): when it ends, the owner is told about the styles without a preview
         self.lock = threading.Lock()
 
@@ -64,9 +68,16 @@ class Ctl:
         """-> "seeded" (the first time: the links were put), "" otherwise. The download of the first time is begun in the background (see class).
         auto - the option from hub.json (None: the one of the tab)."""
         root = self.target()
+        self.watch = watch
+        if auto is not None and self.links.first in ("", "pending"):   # hub.json decided: it is not asked
+            self.links.set_first("config")
         on = self.links.auto if auto is None else auto
         first = not self.links.seeded
         put = self.links.seed([self.canon(u) for u in self.defaults]) if first else []
+        if self.links.first == "" and first and put:
+            self.links.set_first("pending")
+        if self.links.first == "pending":   # asked, no answer: nothing goes to the network
+            on = False
         saved = {self.canon(u) for u in self.links.urls()}
         if os.path.isdir(root):
             linkmem.bind_existing(root, saved, self.source_list)
@@ -80,6 +91,55 @@ class Ctl:
         elif on:   # the styles are there already (a library from before the covers, an update): their covers come in the background
             self.fetch.start_covers()
         return "seeded" if first and put else ""
+
+    # --- the question of the first start ---
+
+    def facts(self):
+        """What the question says: the sources, the size and the time (the page and Telegram write the text from it)."""
+        return {**firstrun.FACTS, "sources": len(self.defaults), "links": [self.canon(u) for u in self.defaults], "agents": list(firstrun.AGENTS)}
+
+    def question(self):
+        """The question while it waits for the answer, otherwise None."""
+        return self.facts() if self.links.first == "pending" else None
+
+    def to_post(self):
+        """The question that is to go to Telegram (asked and not posted yet) -> the facts, else None. mark_posted() after it went."""
+        return self.facts() if self.links.first == "pending" and not self.links.ask_posted else None
+
+    def mark_posted(self):
+        self.links.set_ask_posted(True)
+
+    def answer(self, choice, via="page"):
+        """The owner answered: yes - the links by default are downloaded now (and the option is on), no / settings - nothing is downloaded (the option is
+        off; "settings" is for the one who goes to change it in the tab). Answered already - nothing happens. Answered on the page, the Telegram post
+        is erased (telegram.unpost); a press in Telegram settles its post itself. -> the answer: "yes" | "no" | "settings" | "" (it was not asked)."""
+        if choice not in firstrun.CHOICES or self.links.first != "pending":
+            return self.links.first if self.links.first in firstrun.CHOICES else ""
+        self.links.set_first(choice)
+        self.links.set_auto(choice == "yes")
+        if choice == "yes":
+            urls = [x["url"] for x in self.links.items() if x["default"]]
+            if urls:
+                ok, _code, _link = self.fetch.start(urls)
+                if ok:
+                    self.auto_started = True
+                    if self.watch:
+                        threading.Thread(target=self._watch, daemon=True).start()
+        if via == "page" and self.links.ask_posted and self.notify:
+            self.notify("telegram.unpost", {"ref": firstrun.REF})
+        return choice
+
+    def by_hand(self):
+        """The owner started a download in the settings tab while the question waited: the question is answered (he is in the settings already); the
+        option stays as the tab has it."""
+        if self.links.first == "pending":
+            self.links.set_first("settings")
+            if self.links.ask_posted and self.notify:
+                self.notify("telegram.unpost", {"ref": firstrun.REF})
+
+    def again(self):
+        """The settings tab asks the question once more (and Telegram gets it again)."""
+        self.links.set_first("pending")
 
     def _watch(self):
         """The background download is over: one fact to the owner if some styles have no preview (the question itself waits in the settings tab)."""
@@ -115,7 +175,7 @@ class Ctl:
         rows = []
         for it in self.links.items():
             rows.append({**it, "n": have.get(self.canon(it["url"]), 0)})
-        return {"links": rows, "auto": self.links.auto, "nopreview": self.nopreview()}
+        return {"links": rows, "auto": self.links.auto, "nopreview": self.nopreview(), "first": self.links.first, "firstrun": self.question()}
 
     # --- what the page asks for ---
 
@@ -152,6 +212,13 @@ class Ctl:
         if action == "decline":
             self.links.decline(self.nopreview()["urls"])
             return 200, {"declined": True}
+        if action == "firstrun":
+            if body.get("choice") == "again":
+                self.again()
+                return 200, {"first": self.links.first}
+            if body.get("choice") not in firstrun.CHOICES:
+                return 400, {"error": "choice"}
+            return 200, {"first": self.answer(body["choice"])}
         if action == "nopreview":   # "Give the task": the list of the styles for the designer, written to the state folder
             return 200, self.todo_list(decline=body.get("decline", True) is not False)
         return 400, {"error": "action"}

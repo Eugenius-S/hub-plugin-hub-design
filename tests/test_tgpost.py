@@ -243,5 +243,74 @@ class Posts(unittest.TestCase):
             self.assertEqual(bool(self.posts()), design_posts.claimed(cfg, sender, {"cwd": "/w"}, path), (sender, path))
 
 
+class FakeCtl:
+    """What tgpost uses of linkctl.Ctl: the question to post, the mark that it went, the answer."""
+
+    def __init__(self, facts):
+        self.facts, self.posted, self.answers = facts, False, []
+
+    def to_post(self):
+        return None if self.posted else self.facts
+
+    def mark_posted(self):
+        self.posted = True
+
+    def answer(self, choice, via="page"):
+        self.answers.append((choice, via))
+
+
+@unittest.skipUnless(tgpost.rules(), "no hub code with modules/telegram/design_posts on PYTHONPATH")
+class FirstQuestion(unittest.TestCase):
+    """The question of the first start in Telegram: one post with three buttons; the press goes to the plugin."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(dir=TMP)
+        self.journal = os.path.join(self.dir, "journal.jsonl")
+        self.seq, self.out, self.sessions = 0, [], {"hub-core": {"kind": "hub"}, "writer": {"cwd": "/w"}}
+        self.ctl = FakeCtl({"sources": 10, "styles": 2058, "gb": 2.1, "hours": "2-3"})
+        self.add("core.started", {})
+        self.p = tgpost.Poster(self.dir, lambda path: PNG, lambda: {}, state=lambda: {"sessions": self.sessions},
+                               emit=lambda t, d: self.out.append((t, d)), ask=lambda: self.ctl)
+
+    def add(self, type, data, src="session"):
+        self.seq += 1
+        with open(self.journal, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"seq": self.seq, "type": type, "src": src, "data": data}) + "\n")
+
+    def press(self, button, ext="hub-design", ref="hd:first", src="telegram"):
+        self.add("telegram.pressed", {"ext": ext, "ref": ref, "button": button}, src=src)
+        self.p.poll()
+
+    def test_the_question_goes_once_with_three_buttons_the_numbers_and_the_agents_it_lacks(self):
+        self.p.poll()
+        self.p.poll()
+        (post,) = [d for t, d in self.out if t == "telegram.post"]
+        self.assertEqual((post["ref"], post["bump"], bool(post["settle"])), ("hd:first", True, True))
+        self.assertEqual(len(post["buttons"]), 3)
+        for needle in ("10", "2058", "2.1", "2-3", "designer", "writer"):
+            self.assertIn(needle, post["text"])
+        self.assertIn("Not in the hub yet: designer", post["text"])   # the writer is a session of the hub, the designer is not
+        self.assertTrue(self.ctl.posted)
+
+    def test_nothing_waits_nothing_goes(self):
+        self.ctl.posted = True
+        self.p.poll()
+        self.assertEqual(self.out, [])
+        self.p.ask = lambda: None   # no plugin controller (an old process, a flagship hub)
+        self.p.poll()
+        self.assertEqual(self.out, [])
+
+    def test_a_button_in_either_language_is_the_answer_and_a_foreign_press_is_not(self):
+        import firstrun
+        for lang, choice in (("en", "yes"), ("ru", "no"), ("en", "settings")):
+            self.press(firstrun.STR[lang][choice])
+        self.assertEqual(self.ctl.answers, [("yes", "tg"), ("no", "tg"), ("settings", "tg")])
+        self.press("❤️")
+        self.press(firstrun.STR["en"]["yes"], ext="other")
+        self.press(firstrun.STR["en"]["yes"], src="web")
+        self.press(firstrun.STR["en"]["yes"], ref="hd:7")
+        self.assertEqual(len(self.ctl.answers), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

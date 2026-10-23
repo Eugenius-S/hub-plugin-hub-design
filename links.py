@@ -6,9 +6,12 @@ files, the previews and covers, the index entries go, except the styles that als
 
 The library folder is the owner's: nothing is deleted without an explicit call of delete(), which the page makes only after the owner confirmed the number.
 
-links.json: {"links": [{"url", "default"}], "seeded": bool, "auto": bool, "declined": [url]}
-  seeded - the links by default are put once (a removed one does not come back); auto - download them when the plugin starts for the first time;
-  declined - the links whose styles without a preview the owner does not want to be asked about again."""
+links.json: {"links": [{"url", "default"}], "seeded": bool, "auto": bool, "declined": [url], "first": str, "ask_posted": bool}
+  seeded - the links by default are put once (a removed one does not come back); auto - download them (the covers too) while it is on;
+  declined - the links whose styles without a preview the owner does not want to be asked about again;
+  first - the question of the first start (what is preinstalled, how long and how big, download or not): "pending" (asked, nothing is downloaded until
+  the answer), "yes" | "no" | "settings" (the answer), "config" (hub.json decided: no question), "legacy" (the plugin had downloaded before the question
+  existed: no question); "" - not asked yet; ask_posted - the question went to Telegram."""
 import json
 import os
 import re
@@ -20,6 +23,7 @@ import sources
 import styles
 
 NAME = "hub-design-links.json"
+FIRST = ("", "pending", "yes", "no", "settings", "config", "legacy")
 PREVIEW_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
 BAK = "index.json.bak-links"
 
@@ -47,7 +51,11 @@ class Links:
         fresh = d is None
         d = d or {}
         links = [x for x in d.get("links", []) if isinstance(x, dict) and isinstance(x.get("url"), str)] if isinstance(d.get("links"), list) else []
-        return {"links": links, "seeded": bool(d.get("seeded")) and not fresh, "auto": d.get("auto") is not False,
+        seeded = bool(d.get("seeded")) and not fresh
+        first = d.get("first") if d.get("first") in FIRST else ""
+        if seeded and not first:   # written before the question existed: it had downloaded already - nothing to ask
+            first = "legacy"
+        return {"links": links, "seeded": seeded, "auto": d.get("auto") is not False, "first": first, "ask_posted": bool(d.get("ask_posted")),
                 "declined": [x for x in d.get("declined", []) if isinstance(x, str)] if isinstance(d.get("declined"), list) else []}
 
     def _write(self):
@@ -107,6 +115,26 @@ class Links:
     @property
     def auto(self):
         return self.data["auto"]
+
+    @property
+    def first(self):
+        return self.data["first"]
+
+    def set_first(self, value):
+        with _lock:
+            self.data["first"] = value if value in FIRST else ""
+            if value in ("", "pending"):
+                self.data["ask_posted"] = False
+            self._write()
+
+    @property
+    def ask_posted(self):
+        return self.data["ask_posted"]
+
+    def set_ask_posted(self, on=True):
+        with _lock:
+            self.data["ask_posted"] = bool(on)
+            self._write()
 
     def set_auto(self, on):
         with _lock:

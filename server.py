@@ -793,7 +793,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             return self.say(400, {"error": "body"}, extra)
         action = body.get("action") if isinstance(body, dict) else None
-        if action in ("add", "remove", "delete_preview", "delete", "auto", "decline", "nopreview"):   # the links and what hangs on them (linkctl.py)
+        if action in ("add", "remove", "delete_preview", "delete", "auto", "decline", "nopreview", "firstrun"):   # the links and what hangs on them (linkctl.py)
             code, answer = ctl().act(body)
             return self.say(code, {**answer, **FETCH.status()} if code == 200 else answer, extra)
         if action == "stop":
@@ -802,6 +802,7 @@ class Handler(BaseHTTPRequestHandler):
             ok, code, link = FETCH.start(body.get("urls"))
             if not ok:
                 return self.say(409 if code == "busy" else 400, {"error": code, "link": link, **FETCH.status()}, extra)
+            ctl().by_hand()
         else:
             return self.say(400, {"error": "action"}, extra)
         return self.say(200, FETCH.status(), extra)
@@ -1062,7 +1063,7 @@ def main():
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the links by default are put once, the first time they are downloaded (linkctl.py)
         threading.Thread(target=lambda: ctl().startup(auto=setting("auto_download_defaults")), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
-        threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p))), daemon=True).start()
+        threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p)), ctl), daemon=True).start()
     try:
         t.join()
     except KeyboardInterrupt:

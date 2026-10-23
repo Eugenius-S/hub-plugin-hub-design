@@ -87,7 +87,7 @@ function fake(init = {}) {
   globalThis.fetch = async (url, o = {}) => {
     const body = o.body ? JSON.parse(o.body) : null;
     S.calls.push({ method: o.method || "GET", body });
-    if (!body) return reply({ ...S.run, links: S.links, auto: S.auto, nopreview: S.np });
+    if (!body) return reply({ ...S.run, links: S.links, auto: S.auto, nopreview: S.np, ...(S.first ? { first: S.first } : {}) });
     const a = body.action;
     if (a === "add") {
       if (!/^https?:/.test(body.url)) return reply({ error: "bad_link", link: body.url }, 400);
@@ -97,6 +97,7 @@ function fake(init = {}) {
     if (a === "delete_preview") return reply(S.preview);
     if (a === "delete") { S.links = S.links.filter((l) => l.url !== body.url); return reply({ ...S.preview, ...S.run }); }
     if (a === "auto") { S.auto = body.on; return reply({ auto: body.on }); }
+    if (a === "firstrun") { S.first = body.choice === "again" ? "pending" : body.choice; return reply({ first: S.first }); }
     if (a === "decline") { S.np = { n: 0, urls: [] }; return reply({ declined: true }); }
     if (a === "nopreview") return reply({ path: "/state/hub-design-nopreview.json", n: S.np.n, dir: "/lib/previews" });
     if (a === "start") { S.run = st({ state: "running", total: 4, done: 1, added: 1, name: "Marlin" }); return reply({ ...S.run }); }
@@ -352,4 +353,27 @@ test("fetchui: the process does not answer - one line, no endless polling; not l
   assert.equal(calls.length, 1);
   assert.equal(find(r2, "hdf-msg").textContent, STR.en.e_local);
   assert.ok(find(r2, "hdf-go").disabled);
+});
+
+test("fetchui: the question of the first start - answered: a button asks it again (and the card on the page is told); waiting: only a line, no button", async () => {
+  const S = fake({ first: "no" });
+  let told = 0;
+  const { ui, root } = await mount({ onAgain: () => { told++; } });
+  const again = find(root, "hdf-again");
+  assert.ok(!again.hidden && find(root, "hdf-wait").hidden);
+  assert.equal(again.textContent, STR.en.again);
+  await again.listeners.click();
+  assert.deepEqual(sent(S, "firstrun"), [{ action: "firstrun", choice: "again" }]);
+  assert.equal(told, 1);
+  assert.ok(find(root, "hdf-again").hidden);
+  assert.equal(find(root, "hdf-wait").textContent, STR.en.waiting);
+  assert.ok(!find(root, "hdf-wait").hidden);
+  clearTimeout(ui.state.timer);
+});
+
+test("fetchui: no first-start answer yet in the status (an old process): no button, no line", async () => {
+  fake();
+  const { ui, root } = await mount();
+  assert.ok(find(root, "hdf-again").hidden && find(root, "hdf-wait").hidden);
+  clearTimeout(ui.state.timer);
 });

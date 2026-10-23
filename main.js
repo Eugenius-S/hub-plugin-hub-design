@@ -12,6 +12,7 @@ import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { createFetchUi, t as tf } from "./fetchui.js";
+import { createFirstRun } from "./firstrun.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { currentLang, makeT, setLangSource } from "./i18n.js";
 
@@ -170,7 +171,11 @@ export default function register(h) {
   // the settings tab "Hub Design: styles": a pasted link is downloaded into the local style library (fetcher.py of the plugin process)
   // the task for the designer (previews of the styles that came without one) goes through the hub like the "Install" button
   const askDesigner = (text) => hub.post("/api/send", { session: "designer", text, action: true });
-  const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); }, ask: askDesigner });
+  // the question of the first start (what is preinstalled, how long and how much the download takes): a card over the page until it is answered; in Telegram too
+  const first = createFirstRun({ hub, base: origin, local, agents: () => lackNow(), install });
+  document.body.append(first.node);
+  first.refresh();
+  const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); }, onAgain: () => first.refresh(), ask: askDesigner });
   hub.addSettings({ id: "styles", title: tf("title"), render: (root) => fetchUi.render(root) });
   // cards of designs, documents and presentations in the chat feed of any session; a click on a card opens the file here
   mountCards({ origin, local, open: openFile, files: filesUrl, lang: () => hub.lang, abs, session: () => decodeURIComponent((location.hash.match(/^#\/s\/([^/?]+)/) || [])[1] || "") });

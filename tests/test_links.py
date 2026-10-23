@@ -233,7 +233,7 @@ class Ctl(Lib):
                                lambda t, d: self.facts.append((t, d)), list(defaults))
         return self.ctl
 
-    def test_the_first_start_puts_the_default_links_binds_the_old_styles_and_downloads(self):
+    def test_the_first_start_puts_the_default_links_binds_the_old_styles_and_downloads_only_after_yes(self):
         for e in self.idx.values():
             e.pop("source_urls", None)
             e["set"], e["source"] = "x", "acme/set-a"
@@ -241,8 +241,11 @@ class Ctl(Lib):
         c = self.make()
         self.assertEqual(c.startup(watch=False), "seeded")
         self.assertEqual(c.links.urls(), [A, B])
-        self.assertEqual(self.fetch.started, [[A, B]])
+        self.assertEqual((self.fetch.started, self.fetch.covers, c.links.first), ([], 0, "pending"))   # asked: the network is not touched
         self.assertEqual(links.counts(self.root), {A: 4})   # the 2058 of the owner are bound, not fetched again
+        self.assertEqual(c.answer("yes"), "yes")
+        self.assertEqual(self.fetch.started, [[A, B]])
+        self.assertEqual((c.links.first, c.links.auto), ("yes", True))
 
     def test_the_second_start_does_nothing_and_a_removed_default_stays_removed(self):
         c = self.make()
@@ -256,6 +259,7 @@ class Ctl(Lib):
     def test_every_start_asks_the_styles_that_have_no_cover_yet_not_only_the_first(self):
         c = self.make()
         c.startup(watch=False)
+        c.answer("yes")
         self.assertEqual((self.fetch.started, self.fetch.covers), ([[A, B]], 0))   # the first start: the download goes first, the covers come after it
         c = self.make()
         c.startup(watch=False)
@@ -277,6 +281,7 @@ class Ctl(Lib):
         self.nopic("s1")
         c = self.make()
         c.startup(watch=False)
+        c.answer("yes")
         c.finished()
         self.assertEqual(len(self.facts), 1)
         kind, data = self.facts[0]
@@ -288,6 +293,7 @@ class Ctl(Lib):
     def test_nothing_is_said_when_every_style_has_its_picture(self):
         c = self.make()
         c.startup(watch=False)
+        c.answer("yes")
         c.finished()
         self.assertEqual(self.facts, [])
 
@@ -361,6 +367,135 @@ class Ctl(Lib):
         st = c.status()
         self.assertEqual([(x["url"], x["n"], x["default"]) for x in st["links"]], [(A, 2, True), (B, 2, True), ("https://github.com/acme/empty", 0, True)])
         self.assertTrue(st["auto"])
+
+
+class FirstRun(Lib):
+    """The question of the first start: nothing is downloaded until the answer; the answer is remembered; the settings tab asks again."""
+
+    def make(self, defaults=(A, B)):
+        self.fetch = FakeFetch()
+        self.facts = []
+        c = linkctl.Ctl(links.Links(os.path.join(self.state, links.NAME)), self.fetch, lambda: self.root, self.state,
+                        lambda t, d: self.facts.append((t, d)), list(defaults))
+        c.watch = False
+        return c
+
+    def forget(self):
+        path = os.path.join(self.state, links.NAME)
+        if os.path.exists(path):
+            os.remove(path)
+
+    def test_while_the_question_waits_no_start_touches_the_network_the_links_or_the_covers(self):
+        self.make().startup(watch=False)
+        for _ in range(3):   # the plugin restarts: the option is on by default, the question still holds everything back
+            c = self.make()
+            self.assertEqual(c.startup(watch=False), "")
+            self.assertEqual((c.links.first, self.fetch.started, self.fetch.covers), ("pending", [], 0))
+        self.assertEqual(c.status()["first"], "pending")
+
+    def test_the_question_carries_the_facts_the_card_and_the_post_say(self):
+        c = self.make()
+        c.startup(watch=False)
+        q = c.status()["firstrun"]
+        self.assertEqual((q["sources"], q["styles"], q["gb"], q["hours"]), (2, 2058, 2.1, "2-3"))
+        self.assertEqual((q["links"], q["agents"]), ([A, B], ["designer", "writer"]))
+        c.answer("no")
+        self.assertIsNone(c.status()["firstrun"])
+
+    def test_yes_downloads_and_turns_the_option_on_no_and_settings_turn_it_off_and_nothing_is_downloaded(self):
+        for choice, auto, started in (("yes", True, [[A, B]]), ("no", False, []), ("settings", False, [])):
+            self.forget()
+            c = self.make()
+            c.startup(watch=False)
+            self.assertEqual(c.answer(choice), choice)
+            self.assertEqual((c.links.first, c.links.auto, self.fetch.started, self.fetch.covers), (choice, auto, started, 0), choice)
+            self.assertEqual(self.make().links.first, choice)   # remembered
+
+    def test_answered_once_the_second_answer_and_a_wrong_word_do_nothing(self):
+        c = self.make()
+        c.startup(watch=False)
+        self.assertEqual(c.answer("nonsense"), "")
+        self.assertEqual(c.links.first, "pending")
+        c.answer("no")
+        self.assertEqual(c.answer("yes"), "no")
+        self.assertEqual((c.links.first, c.links.auto, self.fetch.started), ("no", False, []))
+
+    def test_after_yes_the_next_starts_ask_for_the_covers_after_no_they_do_not(self):
+        c = self.make()
+        c.startup(watch=False)
+        c.answer("yes")
+        c = self.make()
+        c.startup(watch=False)
+        self.assertEqual(self.fetch.covers, 1)
+        c = self.make()
+        c.links.set_auto(False)
+        c.startup(watch=False)
+        self.assertEqual(self.fetch.covers, 0)
+
+    def test_hub_json_is_the_owners_decision_no_question_and_the_old_behaviour(self):
+        c = self.make()
+        self.assertEqual(c.startup(watch=False, auto=True), "seeded")
+        self.assertEqual((c.links.first, c.status()["firstrun"], self.fetch.started), ("config", None, [[A, B]]))
+        self.forget()
+        c = self.make()
+        c.startup(watch=False, auto=False)   # false: the links are put, nothing is downloaded, no question
+        self.assertEqual((self.make().links.first, self.fetch.started), ("config", []))
+
+    def test_hub_json_that_comes_after_the_question_was_asked_settles_it(self):
+        self.make().startup(watch=False)
+        c = self.make()
+        self.assertEqual(c.links.first, "pending")
+        c.startup(watch=False, auto=False)
+        self.assertEqual(self.make().links.first, "config")
+
+    def test_a_plugin_that_had_downloaded_before_the_question_is_not_asked(self):
+        os.makedirs(self.state, exist_ok=True)
+        with open(os.path.join(self.state, links.NAME), "w", encoding="utf-8") as f:
+            json.dump({"links": [{"url": A, "default": True}], "seeded": True, "auto": True}, f)
+        c = self.make()
+        self.assertEqual(c.links.first, "legacy")
+        self.assertEqual(c.startup(watch=False), "")
+        self.assertEqual((c.status()["firstrun"], self.fetch.covers), (None, 1))   # as before: the covers come
+
+    def test_the_post_goes_once_and_a_press_in_telegram_does_not_unpost_what_telegram_settles_itself(self):
+        c = self.make()
+        c.startup(watch=False)
+        self.assertIsNotNone(c.to_post())
+        c.mark_posted()
+        self.assertIsNone(c.to_post())
+        c.answer("no", via="tg")
+        self.assertEqual(self.facts, [])
+
+    def test_an_answer_on_the_page_erases_the_post_in_telegram_only_if_it_went(self):
+        c = self.make()
+        c.startup(watch=False)
+        c.answer("no")
+        self.assertEqual(self.facts, [])   # it was never posted: nothing to erase
+        self.forget()
+        c = self.make()
+        c.startup(watch=False)
+        c.mark_posted()
+        c.act({"action": "firstrun", "choice": "no"})
+        self.assertEqual(self.facts, [("telegram.unpost", {"ref": "hd:first"})])
+
+    def test_asking_again_from_the_settings_brings_the_question_and_a_new_post(self):
+        c = self.make()
+        c.startup(watch=False)
+        c.mark_posted()
+        c.answer("no", via="tg")
+        self.assertEqual(c.act({"action": "firstrun", "choice": "again"}), (200, {"first": "pending"}))
+        self.assertIsNotNone(c.to_post())   # the old post is settled in Telegram: a new one goes
+        self.assertEqual(c.act({"action": "firstrun", "choice": "huh"})[0], 400)
+
+    def test_a_download_started_by_hand_in_the_settings_answers_the_question(self):
+        c = self.make()
+        c.startup(watch=False)
+        c.mark_posted()
+        c.by_hand()
+        self.assertEqual(c.links.first, "settings")
+        self.assertEqual(self.facts, [("telegram.unpost", {"ref": "hd:first"})])
+        c.by_hand()   # answered already: nothing more
+        self.assertEqual(len(self.facts), 1)
 
 
 def tearDownModule():

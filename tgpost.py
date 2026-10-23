@@ -17,6 +17,8 @@ import os
 import sys
 import time
 
+import firstrun
+
 EXT = "hub-design"   # the facts are signed ext:hub-design - the bot passes presses and replies back by this name
 LIKE, NOPE = "❤️", "👎"
 WHY = ["composition", "type", "illustration", "colors", "all"]   # reasons after 👎: STR key suffixes
@@ -82,7 +84,7 @@ def rules():
 class Poster:
     """shot(path) -> PNG bytes or None; config() -> hub.json; state(path) -> the hub state (sessions); emit(type, data) - a fact."""
 
-    def __init__(self, state_dir, shot, config, title=None, state=None, emit=None):
+    def __init__(self, state_dir, shot, config, title=None, state=None, emit=None, ask=None):
         from core import journal
         self.journal = journal
         self.dir, self.path = state_dir, os.path.join(state_dir, "journal.jsonl")
@@ -92,6 +94,7 @@ class Poster:
         self.title = title or (lambda p: "")
         self.state = state or (lambda: journal.load_state(state_dir))
         self.emit = emit or self.spool
+        self.ask = ask or (lambda: None)   # -> linkctl.Ctl: the question of the first start (firstrun.py) is posted here and its press is read here
         try:
             with open(self.mine, encoding="utf-8") as f:
                 self.st = json.load(f)
@@ -156,6 +159,8 @@ class Poster:
         if kind not in ("telegram.pressed", "telegram.replied") or data.get("ext") != EXT or ev.get("src") != "telegram":
             return
         ref = str(data.get("ref") or "")
+        if ref == firstrun.REF:
+            return self.first_pressed(data.get("button")) if kind == "telegram.pressed" else None
         if ref in self.st["why"]:
             return self.answer_why(ref, data.get("button"), (data.get("text") or "").strip() if kind == "telegram.replied" else None)
         s = self.st["sent"].get(ref)
@@ -195,6 +200,24 @@ class Poster:
             del self.st["sent"][next(iter(self.st["sent"]))]
         self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender, "bump": True,
                                     **({"path": png} if png else {})})
+
+    def first_pressed(self, button):
+        """A button under the question of the first start: the answer goes to the plugin (what is downloaded is decided there)."""
+        choice, ctl = firstrun.choice_of(button), self.ask()
+        if choice and ctl:
+            ctl.answer(choice, via="tg")
+
+    def first_question(self):
+        """The question of the first start goes to Telegram once (and again when the settings tab asks it again): only where the bot knows the post."""
+        ctl = self.ask()
+        facts = ctl.to_post() if ctl else None
+        if not facts or not rules():
+            return
+        lang = _lang()
+        lack = firstrun.missing((self.state() or {}).get("sessions"))
+        self.emit("telegram.post", {"text": firstrun.text(lang, facts["sources"], lack), "ref": firstrun.REF, "settle": firstrun.tr(lang, "settle"),
+                                    "buttons": [firstrun.tr(lang, c) for c in firstrun.CHOICES], "bump": True})
+        ctl.mark_posted()
 
     def answered_on_page(self, ev, data):
         """The owner wrote the author on the page (its chat or the Hub Design chat - both are /api/send): the posts of
@@ -279,12 +302,13 @@ class Poster:
                 except ValueError:
                     pass
         self.handle(events)
+        self.first_question()
 
 
-def run(state_dir, shot, config, title=None):
+def run(state_dir, shot, config, title=None, ask=None):
     """The process loop (a thread of server.py). No core nearby (not under a hub) - returns at once."""
     try:
-        p = Poster(state_dir, shot, config, title)
+        p = Poster(state_dir, shot, config, title, ask=ask)
     except Exception as e:
         sys.stderr.write(f"hub-design: telegram posts are off ({e})\n")
         return

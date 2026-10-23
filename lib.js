@@ -62,7 +62,7 @@ export const STR = {
     save_to: "Save it in the direction folder: {dir}/<design-name>/ (index.html, assets next to it), not in your own working folder.",
     gone_denied: "The file is outside the hub's project and session folders, so the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
-    t_designer: "designer", t_animator: "animator",
+    t_designer: "designer", t_writer: "writer", t_animator: "animator",
     install: "Install the specialist for Hub Design: specialists install {name}",
     banner: "Hub Design needs the {title}",
   },
@@ -124,7 +124,7 @@ export const STR = {
     save_to: "Сохрани в папку направления: {dir}/<имя-макета>/ (index.html, ресурсы рядом), не в свою рабочую папку.",
     gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
     gone_missing: "Файл не найден: {path}",
-    t_designer: "дизайнер", t_animator: "аниматор",
+    t_designer: "дизайнер", t_writer: "райтер", t_animator: "аниматор",
     install: "Поставь специалиста для Hub Design: specialists install {name}",
     banner: "Для Hub Design нужен {title}",
   },
@@ -955,6 +955,7 @@ export function exitTarget(session, known, back, id) {
 // specialists without whom Hub Design works incompletely - one place; installed from the specialists catalog (`specialists install <name>`)
 export const NEEDED = [
   { name: "designer", need: "required", get title() { return tr("t_designer"); } },
+  { name: "writer", need: "required", get title() { return tr("t_writer"); } },
   { name: "animator", need: "wanted", get title() { return tr("t_animator"); } },
 ];
 export const ASK_TTL = 30 * 60 * 1000;   // "asked the hub" lasts this long, then "Install" again

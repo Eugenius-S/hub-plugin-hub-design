@@ -18,6 +18,7 @@ export const STR = {
     del_q: "Delete this link and remove {styles} from the disk?", del_kept: "{kept} stay: they came by another link too.",
     del_yes: "Delete", del_no: "Cancel", deleted: "Deleted: {styles}.",
     auto: "Download the links above by default when Hub Design is turned on",
+    again: "Show the first-start question again", waiting: "The question about downloading the library waits for your answer on the page and in Telegram.",
     np_q: "{styles} without a preview. Ask a designer to make previews?", np_give: "Give the task", np_no: "Not needed",
     np_sent: "The task is with the designer: {styles}.",
     np_task: "Please make previews for {styles} of the Hub Design style library. The list with the paths is in {path}: for each style save a picture of its design (about 1280×800, png, jpg or webp) to the path from preview_to (the folder is {dir}). Hub Design picks the pictures up by itself. Do not change the .md files.",
@@ -65,6 +66,7 @@ export const STR = {
     del_q: "Удалить эту ссылку и стереть с диска {styles}?", del_kept: "Останутся {kept}: они пришли и по другой ссылке.",
     del_yes: "Удалить", del_no: "Отмена", deleted: "Удалено: {styles}.",
     auto: "Скачивать ссылки по умолчанию при включении Hub Design",
+    again: "Показать вопрос первого запуска снова", waiting: "Вопрос о скачке библиотеки ждёт ответа на странице и в Telegram.",
     np_q: "{styles} без превью. Дать дизайнеру задание сделать превью?", np_give: "Дать задание", np_no: "Не надо",
     np_sent: "Задание у дизайнера: {styles}.",
     np_task: "Сделайте, пожалуйста, превью для {styles} из библиотеки стилей Hub Design. Список с путями лежит в {path}: для каждого стиля сохраните картинку его дизайна (около 1280×800, png, jpg или webp) по пути из preview_to (папка {dir}). Hub Design подхватит картинки сам. Файлы .md не меняйте.",
@@ -145,9 +147,9 @@ export function styles(n) {
   return t(cat === "one" ? "n_one" : cat === "few" ? "n_few" : "n_many", { n });
 }
 
-export function createFetchUi({ hub, base, local = () => true, onAdded = () => {}, ask = null, store = globalThis.localStorage }) {
+export function createFetchUi({ hub, base, local = () => true, onAdded = () => {}, onAgain = () => {}, ask = null, store = globalThis.localStorage }) {
   const el = hub.el;
-  const S = { st: null, count: null, err: "", info: "", timer: 0, busy: false, added: 0, off: false, tried: 0, links: [], auto: true, np: { n: 0 }, confirm: null, drafts: [], sig: "", legacy: false };
+  const S = { st: null, count: null, err: "", info: "", timer: 0, busy: false, added: 0, off: false, tried: 0, links: [], auto: true, np: { n: 0 }, confirm: null, drafts: [], sig: "", legacy: false, first: "" };
   const go = el("button", "hdf-go btn");
   go.type = "button";
   const stop = el("button", "hdf-stop btn quiet");
@@ -161,6 +163,9 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
   autoBox.type = "checkbox";
   const autoText = el("span", "hdf-auto-text");
   autoLab.append(autoBox, autoText);
+  const again = el("button", "hdf-again btn quiet");   // the question of the first start (firstrun.js): asked again from here
+  again.type = "button";
+  const wait = el("p", "hdf-lead hdf-wait");
   const npBox = el("div", "hdf-np");
   const npQ = el("span", "hdf-np-q");
   const npGive = el("button", "hdf-np-give btn");
@@ -181,7 +186,7 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
   const row = el("div", "hdf-row");
   row.append(go, stop);
   const box = el("div", "hdf");
-  box.append(lead, lab, lst, hosts, autoLab, npBox, row, bar, prog, now, msg, cnt, terms);
+  box.append(lead, lab, lst, hosts, autoLab, again, wait, npBox, row, bar, prog, now, msg, cnt, terms);
 
   const call = async (method, body) => {
     const res = await fetch(`${base()}/__canvas/fetch`, {
@@ -285,6 +290,11 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     autoText.textContent = t("auto");
     autoBox.checked = !!S.auto;
     autoBox.disabled = S.off;
+    const pending = S.first === "pending";
+    again.textContent = t("again");
+    again.hidden = pending || !S.first || S.off;
+    wait.textContent = t("waiting");
+    wait.hidden = !pending || S.off;
     // the list is built again only when it changed: a field that is typed in must not lose its focus
     const sig = JSON.stringify([currentLang(), run, S.links.map((l) => [l.url, l.n]), S.confirm, S.drafts.length, S.off]);
     if (sig !== S.sig) {
@@ -325,6 +335,7 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     if (typeof st.count === "number") S.count = st.count;
     if (Array.isArray(st.links)) S.links = st.links;   // the answer to a start has no links: the last ones stay
     if (typeof st.auto === "boolean") S.auto = st.auto;
+    if (typeof st.first === "string") S.first = st.first;
     if (st.nopreview && typeof st.nopreview === "object") S.np = st.nopreview;
     const grew = (st.added || 0) > S.added || (was && isRunning(was) && !isRunning(st) && (st.added || 0) > 0);
     S.added = st.added || 0;
@@ -379,6 +390,11 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
   });
   stop.addEventListener("click", async () => {
     try { take((await call("POST", { action: "stop" })).data); } catch { S.err = t("e_page"); paint(); }
+  });
+  again.addEventListener("click", async () => {
+    try { await call("POST", { action: "firstrun", choice: "again" }); } catch { S.err = t("e_page"); }
+    await poll(true);
+    onAgain();   // the card on the page asks the plugin at once
   });
   autoBox.addEventListener("change", async () => {
     try { await call("POST", { action: "auto", on: !!autoBox.checked }); } catch { S.err = t("e_page"); }
