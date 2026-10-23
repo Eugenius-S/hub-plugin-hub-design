@@ -172,7 +172,7 @@ export default function register(h) {
   // the task for the designer (previews of the styles that came without one) goes through the hub like the "Install" button
   const askDesigner = (text) => hub.post("/api/send", { session: "designer", text, action: true });
   // the question of the first start (what is preinstalled, how long and how much the download takes): a card over the page until it is answered; in Telegram too
-  const first = createFirstRun({ hub, base: origin, local, agents: () => lackNow(), install });
+  const first = createFirstRun({ hub, base: origin, local, agents: () => lackNow().filter((n) => n.need === "required"), install });
   document.body.append(first.node);
   first.refresh();
   const fetchUi = createFetchUi({ hub, base: origin, local, onAdded: () => { if (ui) ui.st.refresh(); }, onAgain: () => first.refresh(), ask: askDesigner });
