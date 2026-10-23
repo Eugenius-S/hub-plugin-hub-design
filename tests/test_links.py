@@ -208,7 +208,7 @@ class Previews(Lib):
 
 class FakeFetch:
     def __init__(self):
-        self.state, self.started = "idle", []
+        self.state, self.started, self.covers = "idle", [], 0
 
     def status(self):
         return {"state": self.state}
@@ -216,6 +216,10 @@ class FakeFetch:
     def start(self, urls):
         self.started.append(list(urls))
         return True, "", ""
+
+    def start_covers(self):
+        self.covers += 1
+        return True, ""
 
     def join(self, timeout=0):
         pass
@@ -248,6 +252,18 @@ class Ctl(Lib):
         self.assertEqual(c.startup(watch=False), "")
         self.assertEqual(self.fetch.started, [])
         self.assertEqual(c.links.urls(), [B])
+
+    def test_every_start_asks_the_styles_that_have_no_cover_yet_not_only_the_first(self):
+        c = self.make()
+        c.startup(watch=False)
+        self.assertEqual((self.fetch.started, self.fetch.covers), ([[A, B]], 0))   # the first start: the download goes first, the covers come after it
+        c = self.make()
+        c.startup(watch=False)
+        self.assertEqual((self.fetch.started, self.fetch.covers), ([], 1))
+        c = self.make()
+        c.links.set_auto(False)
+        c.startup(watch=False)
+        self.assertEqual(self.fetch.covers, 0)   # the option off: the network is not touched
 
     def test_with_the_option_off_the_links_are_put_but_nothing_is_downloaded(self):
         c = self.make()

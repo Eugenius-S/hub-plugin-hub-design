@@ -26,6 +26,9 @@ export const STR = {
     go: "Download", stop: "Stop", stopping: "Stopping…",
     count: "In the library: {n}",
     prog: "{done} of {total}", counts: "added {added}, skipped {skipped}, failed {failed}", covers: "covers {n}",
+    cprog: "Animated covers: {done} of {total} · found {n}",
+    s_cdone: "Animated covers are done: found {n} of {total} styles.",
+    s_cstopped: "Stopped. Animated covers: found {n}, checked {done} of {total}. They continue at the next start.",
     now: "Now: {name}",
     s_done: "Done. Added {added}, skipped as already downloaded {skipped}, failed {failed}.",
     s_stopped: "Stopped. Added {added}, skipped {skipped}, failed {failed}. Press Download to continue: what is saved is skipped.",
@@ -70,6 +73,9 @@ export const STR = {
     go: "Скачать", stop: "Стоп", stopping: "Останавливается…",
     count: "В библиотеке: {n}",
     prog: "{done} из {total}", counts: "добавлено {added}, пропущено {skipped}, с ошибкой {failed}", covers: "обложек {n}",
+    cprog: "Анимированные обложки: {done} из {total} · найдено {n}",
+    s_cdone: "Анимированные обложки готовы: найдено {n} из {total} стилей.",
+    s_cstopped: "Остановлено. Анимированные обложки: найдено {n}, проверено {done} из {total}. Продолжатся при следующем запуске.",
     now: "Сейчас: {name}",
     s_done: "Готово. Добавлено {added}, пропущено как уже скачанные {skipped}, с ошибкой {failed}.",
     s_stopped: "Остановлено. Добавлено {added}, пропущено {skipped}, с ошибкой {failed}. «Скачать» продолжит: сохранённое пропускается.",
@@ -126,6 +132,7 @@ export function problem(st) {
 // the line under the buttons: how the run ended (an error is shown by problem())
 export function summary(st) {
   if (!st) return "";
+  if (st.mode === "covers") return st.state === "done" ? t("s_cdone", { n: st.covers || 0, total: st.total || 0 }) : st.state === "stopped" ? t("s_cstopped", { n: st.covers || 0, done: st.done || 0, total: st.total || 0 }) : "";
   const v = { added: st.added || 0, skipped: st.skipped || 0, failed: st.failed || 0 };
   if (st.state === "done") return t("s_done", v);
   if (st.state === "stopped") return t("s_stopped", v);
@@ -302,7 +309,8 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     bar.hidden = prog.hidden = !show;
     fill.style.transform = `scaleX(${percent(st) / 100})`;   // transform, not width: no layout on every tick
     bar.setAttribute("aria-valuenow", String(percent(st)));
-    prog.textContent = show ? `${t("prog", { done: st.done, total: st.total })} · ${t("counts", { added: st.added, skipped: st.skipped, failed: st.failed })}${st.covers > 0 ? " · " + t("covers", { n: st.covers }) : ""}` : "";
+    prog.textContent = show && st.mode === "covers" ? t("cprog", { done: st.done, total: st.total, n: st.covers || 0 })
+      : show ? `${t("prog", { done: st.done, total: st.total })} · ${t("counts", { added: st.added, skipped: st.skipped, failed: st.failed })}${st.covers > 0 ? " · " + t("covers", { n: st.covers }) : ""}` : "";
     now.textContent = run && st.name ? t("now", { name: st.name }) : "";
     const bad = S.off ? t("e_local") : S.err || problem(st);
     msg.textContent = bad || (run ? "" : S.info || summary(st));
