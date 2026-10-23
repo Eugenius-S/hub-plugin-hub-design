@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TMP = tempfile.mkdtemp(prefix="hd-links-test-")
+TMP = os.path.realpath(tempfile.mkdtemp(prefix="hd-links-test-"))
 os.environ["HUB_STATE_DIR"] = os.path.join(TMP, "state")
 os.environ["HUB_CONFIG"] = os.path.join(TMP, "hub.json")
 sys.path.insert(0, HERE)
