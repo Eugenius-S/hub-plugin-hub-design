@@ -397,6 +397,30 @@ class Library(Base):
         self.assertEqual((st["added"], st["skipped"]), (0, 3))   # no duplicates on the next press
         self.assertEqual(len(self.index()), 4)
 
+    def test_the_index_write_survives_a_file_held_for_a_moment_but_not_a_dead_disk(self):
+        os.makedirs(self.lib)
+        real, calls = os.replace, []
+
+        def busy(src, dst, left=[2]):   # Windows: "access denied" while a scanner holds the file; it passes
+            calls.append(src)
+            if left[0]:
+                left[0] -= 1
+                raise PermissionError(13, "denied")
+            return real(src, dst)
+        old_sleep, fetcher.time.sleep = fetcher.time.sleep, lambda s: None
+        try:
+            fetcher.os.replace = busy
+            fetcher.write_index(self.lib, {"a": {"file": "a.md"}})
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(self.index(), {"a": {"file": "a.md"}})
+            fetcher.os.replace = lambda s, d: (_ for _ in ()).throw(PermissionError(13, "denied"))
+            with self.assertRaises(PermissionError):
+                fetcher.write_index(self.lib, {"b": {}})
+        finally:
+            fetcher.os.replace = real
+            fetcher.time.sleep = old_sleep
+        self.assertEqual(self.index(), {"a": {"file": "a.md"}})
+
     def test_a_broken_index_is_not_overwritten(self):
         os.makedirs(self.lib)
         with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:

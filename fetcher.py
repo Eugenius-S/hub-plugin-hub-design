@@ -174,12 +174,21 @@ def on_disk(root):
     return out
 
 
+REPLACE_TRIES = 8
+
+
 def write_index(root, data):
     path = os.path.join(root, styles.INDEX)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+    for n in range(REPLACE_TRIES):   # Windows refuses the replace for a moment while a scanner or another program holds the file: that is not a dead disk
+        try:
+            return os.replace(tmp, path)
+        except PermissionError:
+            if n == REPLACE_TRIES - 1:
+                raise
+            time.sleep(0.3 * (n + 1))
 
 
 INDEX_LOCK = threading.RLock()   # read index -> change -> write index is one step: the run, a deleted link and the previews of a designer meet in index.json
