@@ -31,7 +31,7 @@ export const STR = {
     empty_folder: "No designs in this folder yet. Write on the left what you need: the designer will save it here.",
     os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
     peer_head: "{where} · designs: {n}",
-    peer_note: "A picture only: the file, the canvas and the edits are on {where}",
+    peer_note: "A picture only: the file, the canvas and the edits stay in the hub \u201c{where}\u201d",
     peer_noshot: "No picture yet",
     peer_close: "Close",
   },
@@ -60,7 +60,7 @@ export const STR = {
     empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно: дизайнер сохранит его сюда.",
     os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
     peer_head: "{where} · макетов: {n}",
-    peer_note: "Только картинка: файл, холст и правки лежат на машине {where}",
+    peer_note: "Только картинка: файл, холст и правки остались в хабе \u00ab{where}\u00bb",
     peer_noshot: "Снимка пока нет",
     peer_close: "Закрыть",
   },
@@ -154,6 +154,30 @@ export function peerRows(items, { tab = "all", q = "" } = {}) {
   return items.filter((it) => !needle || [it.name, it.file, it.session].join(" ").toLowerCase().includes(needle))
     .sort((a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0));
 }
+// the name of the other machine on the dashboard: its hub name (hub.json title); none - its kind; two hubs of one name - with the machine name
+export function peerHub(peer, all = []) {
+  const hub = String(peer.hub || "").trim();
+  if (!hub) return peerWhere(peer, all);
+  return all.filter((x) => String(x.hub || "").trim() === hub).length > 1 ? `${hub} (${peer.machine})` : hub;
+}
+// the designs of one machine by direction (dir is a name the other machine sent, "" - none): the named ones, the one that was touched last first; "" - the last
+export function peerGroups(items) {
+  const by = new Map();
+  for (const it of items) {
+    const key = it.dir || "";
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(it);
+  }
+  const last = (g) => Math.max(...g.map((x) => x.last || x.ts || 0));
+  return [...by].map(([key, files]) => ({ key, files })).sort((a, b) => (!a.key) - (!b.key) || last(b.files) - last(a.files));
+}
+// what to show inside the folder of a machine: "folders" (one tile per direction) or "files"; the same rule as view() for the own designs
+export function peerView(rows, { dir = null, q = "" } = {}) {
+  if (dir !== null) return { mode: "files", rows: rows.filter((it) => (it.dir || "") === dir) };
+  const groups = peerGroups(rows);
+  if (String(q || "").trim() || !groups.some((g) => g.key)) return { mode: "files", rows };
+  return { mode: "folders", groups };
+}
 export const peerName = (it) => it.name || nameOf(it.file || "") || it.id;
 
 export const newest = (rows, n = PREVIEWS) => [...rows].sort((a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0)).slice(0, n);
@@ -162,7 +186,8 @@ export const newest = (rows, n = PREVIEWS) => [...rows].sort((a, b) => (b.last |
 //   peers() - [{machine, os, items}] of the other machines, peerShot(machine, shot) - the url of a picture }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
-  const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false, folder: null };   // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd)
+  // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd); peer: the machine whose folder is open (null - none), pdir: the direction inside it (null - all)
+  const S = { tab: "all", q: "", sort: "recent", list: false, search: false, path: false, folder: null, peer: null, pdir: null };
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
@@ -226,7 +251,7 @@ export function createDashboard(app) {
   crumb.hidden = true;
   const back = el("button", "hdd-back");
   back.type = "button";
-  back.addEventListener("click", () => { S.folder = null; paint(); });
+  back.addEventListener("click", () => { if (S.peer !== null && S.pdir !== null) S.pdir = null; else { S.peer = null; S.folder = null; } paint(); });
   const cname = el("span", "hdd-cname");
   crumb.append(back, cname);
   const folders = el("div", "hdd-folders");
@@ -292,21 +317,108 @@ export function createDashboard(app) {
     }
     return c;
   }
-  // returns how many cards of other machines are shown
-  function paintPeers(inFolder) {
-    const list = (!inFolder && app.peers && app.peers()) || [];
+  // a tile of a machine (key "machine") or of one of its directions ("machine/dir"): up to PREVIEWS pictures of the newest designs, a name, a count
+  const ptiles = new Map();
+  function ptile(key, pick) {
+    let tl = ptiles.get(key);
+    if (tl) return tl;
+    const node = el("button", "hdd-folder hdd-ptile");
+    node.type = "button";
+    node.dataset.ptile = key;
+    const shots = el("span", "hdd-fshots");
+    const cells = Array.from({ length: PREVIEWS }, () => {
+      const c = el("span", "hdd-fcell");
+      const img = el("img", "hdd-pimg");
+      img.loading = "lazy";
+      img.alt = "";
+      img.hidden = true;
+      c.append(img);
+      shots.append(c);
+      return { img, src: "" };
+    });
+    const icon = el("span", "hdd-ficon");
+    icon.innerHTML = FOLDER;
+    const name = el("span", "hdd-fname");
+    const count = el("span", "hdd-fcount");
+    const text = el("span", "hdd-ftext");
+    text.append(name, count);
+    const body = el("span", "hdd-fbody");
+    body.append(icon, text);
+    node.append(shots, body);
+    tl = { node, cells, name, count };
+    node.addEventListener("click", () => pick(tl));
+    ptiles.set(key, tl);
+    return tl;
+  }
+  function fillTile(tl, peer, files, title) {
+    tl.name.textContent = title;
+    tl.node.title = title;
+    tl.count.textContent = t("folder_count", { n: files.length });
+    const top = newest(files);
+    tl.cells.forEach((c, i) => {
+      const it = top[i];
+      const src = it && it.shot ? app.peerShot(peer.machine, it.shot) + "&v=" + encodeURIComponent(it.stamp || it.last || "") : "";
+      if (c.src !== src) { c.src = src; if (src) c.img.src = src; else c.img.removeAttribute("src"); }
+      c.img.hidden = !src;
+    });
+  }
+  // returns how many cards and tiles of other machines are shown
+  function paintPeers() {
+    const list = (S.folder === null && app.peers && app.peers()) || [];
     const live = new Set();
+    const liveTiles = new Set();
     let count = 0;
-    const blocks = list.map((peer) => {
+    let open = list.find((p) => p.machine === S.peer) || null;
+    if (!open) { S.peer = null; S.pdir = null; }
+    if (open && !peerRows(open.items || [], { tab: S.tab, q: S.q }).length) { S.peer = null; S.pdir = null; open = null; }
+    const hubName = open ? peerHub(open, list) : "";
+    let pv = null;
+    if (open) {
+      pv = peerView(peerRows(open.items || [], { tab: S.tab, q: S.q }), { dir: S.pdir, q: S.q });
+      if (S.pdir !== null && !pv.rows.length) { S.pdir = null; pv = peerView(peerRows(open.items || [], { tab: S.tab, q: S.q }), { q: S.q }); }
+    }
+    // the bar: inside a machine folder (and its direction) the owner sees where he is and how to go up
+    if (open) {
+      crumb.hidden = false;
+      back.textContent = "\u2190 " + (S.pdir !== null ? hubName : t("crumb_all"));
+      cname.textContent = S.pdir !== null ? (S.pdir || t("folder_none")) : hubName;
+      cname.title = hubName;
+    } else {
+      back.textContent = "\u2190 " + t("crumb_all");
+    }
+    // the folders of the machines: one tile each, as long as nothing is searched and no machine is open
+    const tilesOnly = !open && !S.q.trim();
+    const blocks = (open ? [open] : list).map((peer) => {
       const rows = peerRows(peer.items || [], { tab: S.tab, q: S.q });
       if (!rows.length) return null;
-      const where = peerWhere(peer, list);
+      const where = peerHub(peer, list);
+      if (tilesOnly) {
+        const tl = ptile(peer.machine, () => { S.peer = peer.machine; S.pdir = null; paint(); });
+        fillTile(tl, peer, rows, where);
+        liveTiles.add(peer.machine);
+        count += 1;
+        return tl.node;
+      }
+      if (open && pv.mode === "folders") {
+        const grid = el("div", "hdd-folders hdd-ptiles");
+        grid.classList.toggle("list", S.list);
+        grid.append(...pv.groups.map((g) => {
+          const key = peer.machine + "/" + g.key;
+          const tl = ptile(key, () => { S.pdir = g.key; paint(); });
+          fillTile(tl, peer, g.files, g.key || t("folder_none"));
+          liveTiles.add(key);
+          return tl.node;
+        }));
+        count += pv.groups.length;
+        return grid;
+      }
+      const shownRows = open ? pv.rows : rows;
       const box = el("section", "hdd-peer");
       box.dataset.machine = peer.machine;
-      const h = el("h2", "hdd-phead", t("peer_head", { where, n: rows.length }));
+      const h = open ? null : el("h2", "hdd-phead", t("peer_head", { where, n: rows.length }));
       const grid = el("div", "hdd-files hdd-pfiles");
       grid.classList.toggle("list", S.list);
-      grid.append(...rows.map((it) => {
+      grid.append(...shownRows.map((it) => {
         const c = pcard(peer, it);
         live.add(peer.machine + "/" + it.id);
         Object.assign(c, { peer, it, where });
@@ -321,13 +433,22 @@ export function createDashboard(app) {
         c.none.textContent = src ? "" : t("peer_noshot");
         return c.node;
       }));
-      count += rows.length;
-      box.append(h, grid);
+      count += shownRows.length;
+      if (h) box.append(h);
+      box.append(grid);
       return box;
     }).filter(Boolean);
-    others.replaceChildren(...blocks);
+    if (tilesOnly && blocks.length) {
+      const grid = el("div", "hdd-folders hdd-ptiles");
+      grid.classList.toggle("list", S.list);
+      grid.append(...blocks);
+      others.replaceChildren(grid);
+    } else {
+      others.replaceChildren(...blocks);
+    }
     others.hidden = !blocks.length;
     for (const key of [...pcards.keys()]) if (!live.has(key)) pcards.delete(key);
+    for (const key of [...ptiles.keys()]) if (!liveTiles.has(key)) ptiles.delete(key);
     return count;
   }
 
@@ -432,9 +553,10 @@ export function createDashboard(app) {
     const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine() }).filter((f) => !isGone(app.fileState(f.path)));
     // a folder that has nothing in it any more (and is not a known direction) is closed
     if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderOf(f.path, dirs) === S.folder)) S.folder = null;
-    const v = view(rows, dirs, { folder: S.folder, q: S.q });
+    const inPeer = S.peer !== null;   // inside the folder of another machine its designs only: the own ones are hidden
+    const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q });
     const inFolder = S.folder !== null;
-    crumb.hidden = !inFolder;
+    crumb.hidden = !inFolder && !inPeer;
     if (inFolder) { cname.textContent = folderTitle(S.folder, dirs); cname.title = S.folder; }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
@@ -475,8 +597,8 @@ export function createDashboard(app) {
       if (!thumbOnly && !shownNow.has(key) && c.frame.src) { c.frame.removeAttribute("src"); delete c.shot.dataset.live; c.visible = false; }
     }
     folders.hidden = !tnodes.length;
-    files.hidden = v.mode !== "files";
-    const peerCount = paintPeers(inFolder);
+    files.hidden = inPeer || v.mode !== "files";
+    const peerCount = paintPeers();
     empty.hidden = nodes.length > 0 || tnodes.length > 0 || peerCount > 0;
     // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"
     empty.textContent = inFolder && !S.q.trim() && S.tab === "all" ? t("empty_folder") : S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none");
@@ -517,5 +639,5 @@ export function createDashboard(app) {
     fade();
   }
   paint();
-  return { node: root, paint, state: S, setFolder: (key) => { S.folder = key; paint(); } };
+  return { node: root, paint, state: S, setFolder: (key) => { S.folder = key; S.peer = null; S.pdir = null; paint(); } };
 }
