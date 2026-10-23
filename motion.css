@@ -1,0 +1,61 @@
+/* Hub Design motion: hovers, presses, panels and entrances. Only transform and opacity move; colors fade.
+   --hd-m is the motion amount: 1 normally, 0 under reduced motion (fades stay, movement goes). */
+.hd,.hdd{
+  --hd-m:1;
+  --hd-ease-out:cubic-bezier(0.23,1,0.32,1);
+  --hd-ease-drawer:cubic-bezier(0.32,0.72,0,1);
+}
+@media (prefers-reduced-motion:reduce){.hd,.hdd{--hd-m:0}}
+
+/* hover: colors and shadows fade instead of snapping */
+.hd-tab,.hd-plus,.hd-segb,.hd-who,.hd-cx,.hd-exit,
+.hdc-tool,.hdc-pages,.hdc-zoom,.hdc-more,.hdc-mi,.hdc-lb,.hdc-gx,.hdc-eb,
+.hdd-tab,.hdd-tool,.hdd-back,.hdd-need-b,
+.hds-cat,.hds-x,.hds-backb,.hds-pg,.hdcard-btn{
+  transition:background-color 150ms ease,color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,opacity 150ms ease,transform 160ms var(--hd-ease-out);
+}
+.hdd-card,.hdd-folder{transition:box-shadow 150ms ease,background-color 150ms ease,border-color 150ms ease,transform 160ms var(--hd-ease-out)}
+
+/* press: a small give under the pointer */
+.hd-tab:active,.hd-plus:active,.hd-segb:active,.hd-exit:active,
+.hdc-tool:active,.hdc-pages:active,.hdc-zoom:active,.hdc-more:active,.hdc-lb:active,.hdc-eb:active,
+.hdd-tab:active,.hdd-tool:active,.hdd-back:active,.hdd-need-b:active,
+.hds-cat:active,.hds-backb:active,.hds-pg:active,.hdcard-btn:active{
+  transform:scale(calc(1 - var(--hd-m) * .03));
+}
+.hdd-card:active,.hdd-folder:active{transform:scale(calc(1 - var(--hd-m) * .02))}
+
+/* canvas menus grow from their button */
+.hdc-pop{transform-origin:top left;transition:opacity 160ms var(--hd-ease-out),transform 160ms var(--hd-ease-out)}
+.hdc-pop[style*="left: auto"]{transform-origin:top right}
+@starting-style{.hdc-pop{opacity:0;transform:translateY(calc(var(--hd-m) * -4px)) scale(calc(1 - var(--hd-m) * .03))}}
+
+/* comment editor opens at its pin */
+.hdc-ed{transform-origin:top left;transition:opacity 180ms var(--hd-ease-out),transform 180ms var(--hd-ease-out)}
+@starting-style{.hdc-ed{opacity:0;transform:translateY(calc(var(--hd-m) * 4px)) scale(calc(1 - var(--hd-m) * .03))}}
+
+/* properties panel slides in from the right edge */
+.hd-props{transition:opacity 220ms var(--hd-ease-drawer),transform 220ms var(--hd-ease-drawer)}
+@starting-style{.hd-props{opacity:0;transform:translateX(calc(var(--hd-m) * 12px))}}
+
+/* dashboard and style picker: full overlays fade in, and fade out over the canvas */
+.hdd,.hds{transition:opacity 200ms var(--hd-ease-out),display 160ms allow-discrete}
+.hdd[hidden],.hds[hidden]{opacity:0;pointer-events:none;transition-duration:160ms}
+@starting-style{.hdd,.hds{opacity:0}}
+
+/* dashboard cards rise in a short stagger each time the grid appears */
+@keyframes hd-rise{from{opacity:0;transform:translateY(calc(var(--hd-m) * 8px))}}
+.hdd-card,.hdd-folder{animation:hd-rise 260ms var(--hd-ease-out) backwards}
+:is(.hdd-card,.hdd-folder):nth-child(2){animation-delay:40ms}
+:is(.hdd-card,.hdd-folder):nth-child(3){animation-delay:80ms}
+:is(.hdd-card,.hdd-folder):nth-child(4){animation-delay:120ms}
+:is(.hdd-card,.hdd-folder):nth-child(5){animation-delay:160ms}
+:is(.hdd-card,.hdd-folder):nth-child(6){animation-delay:200ms}
+:is(.hdd-card,.hdd-folder):nth-child(7){animation-delay:240ms}
+:is(.hdd-card,.hdd-folder):nth-child(n+8){animation-delay:280ms}
+
+/* screenshot lightbox: backdrop fades, the picture settles from slightly smaller */
+.hdd-lb{transition:opacity 200ms var(--hd-ease-out)}
+@starting-style{.hdd-lb{opacity:0}}
+.hdd-lb-box{transition:opacity 240ms var(--hd-ease-out),transform 240ms var(--hd-ease-out)}
+@starting-style{.hdd-lb-box{opacity:0;transform:scale(calc(1 - var(--hd-m) * .04))}}
