@@ -13,6 +13,7 @@ import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
 import { createFetchUi, t as tf } from "./fetchui.js";
 import { createFirstRun } from "./firstrun.js";
+import { createLaneAsk, withLane } from "./lane.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { currentLang, makeT, setLangSource } from "./i18n.js";
 
@@ -971,7 +972,7 @@ async function sendOne(pin) {
   if (!text) return;
   P.busy = true;
   paint();
-  const r = await hub.post("/api/send", { session: to, text });
+  const r = await hub.post("/api/send", withLane({ session: to, text }, pin.file));   // the edit lane of this design (hub.json design_lane)
   P.busy = false;
   if (r.error) { P.note = tr("not_sent", { err: r.error }); return paint(); }
   P.note = "";
@@ -985,6 +986,8 @@ async function sendOne(pin) {
 }
 // manual edits, tweaks and drawings go by themselves to whoever is chosen at the bottom ("Who receives the edits"), AUTO_MS after the last edit;
 // comments (pins, notes) and design errors — with their own button or together with the text from the input. A busy recipient — the message joins its queue
+// the design an edit is about: its lane (the first item with a file, else the design edited last or in focus)
+const laneFile = (items) => (items.find((x) => x && x.file) || {}).file || P.lastEdit || P.focus || "";
 const autoItems = () => ({ changes: draftChanges().filter(hasEffect), tweaks: draftTweaks(), drawings: draftDrawings() });
 const auto = createAuto({ fire: () => autoSend() });
 async function autoSend() {
@@ -996,7 +999,7 @@ async function autoSend() {
   const text = batchText({ comments: [], notes: [], errors: [], auto: true, ...a });
   if (!text || !P.session) return;
   P.busy = true;
-  const r = await hub.post("/api/send", { session: P.session, text });
+  const r = await hub.post("/api/send", withLane({ session: P.session, text }, laneFile([...a.changes, ...a.tweaks, ...a.drawings])));
   P.busy = false;
   if (r.error) { auto.fail(); P.note = tr("not_sent", { err: r.error }); return paint(); }
   P.note = "";
@@ -1220,11 +1223,15 @@ function build(root) {
   const chat = el("div", "hd-chat");
   const list = el("div", "hd-comments");
   const card = el("div", "hd-card");
+  const lane = createLaneAsk({ hub, hubName: () => hubName((hub.snapshot() || {}).sessions) });   // "turn the edit lane on?" once
   const need = createNeed({ hub, install }, "chat");   // no recipient in the hub — not silently into the void: the same banner
   const chips = el("div", "hd-chips");
   const input = hub.input({
     to: P.session, key: ID, placeholder: tr("placeholder"),
     prefix: (text) => { if (home()) return withStyle(withSave(newDesignPrefix() + text)); const b = batchText() || selText(); return withStyle(b ? b + "\n\n" + text : text); },   // the style line is the last line of the message
+    // the owner's words with the canvas edits go to the design's lane; on the start screen (a new design) - to the designer as before
+    ...(hub.capabilities && hub.capabilities.composerTransport === 1 && hub.send
+      ? { send: (body) => hub.send(home() ? body : withLane(body, laneFile([...P.pins.filter((x) => x.state === "draft"), ...draftChanges(), ...draftDrawings()]))) } : {}),
     onSent: () => {
       if (P.style) attachStyle(null);
       if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // on the start screen they wrote — this is a task for a new design
@@ -1261,7 +1268,7 @@ function build(root) {
   styleBtn.append(styleOpen, styleX);
   styleBtn.hidden = !st.shown();
   foot.append(icon("gear"), who);
-  card.append(need.node, chips, strip, input.node, foot, note);
+  card.append(lane.node, need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card, styleBtn);
 
   // the right part: the canvas with floating toolbars, the styles panel and the file list while the canvas is empty
@@ -1280,7 +1287,7 @@ function build(root) {
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, chips, strip, input, who, note, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
+  return { root, wrap, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, lane, chips, strip, input, who, note, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
 }
 
 function render(root, snap) {
@@ -1328,6 +1335,7 @@ function paint() {
   ui.note.textContent = P.note;
   ui.note.hidden = !P.note;
   ui.cv.paint();
+  ui.lane.paint(snap);
   ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // on the start screen the dashboard shows the required one itself
   ui.dash.node.hidden = !home();
   if (home()) ui.dash.paint();

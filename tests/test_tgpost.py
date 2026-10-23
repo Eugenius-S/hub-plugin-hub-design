@@ -94,6 +94,22 @@ class Posts(unittest.TestCase):
         self.press(why["ref"], why["buttons"][0])          # answered - a late press changes nothing
         self.assertEqual(len(self.said()), 4)
 
+    def test_the_owners_dislike_and_its_reason_go_as_a_reject_to_the_designs_edit_lane(self):
+        # the core gives a reject to the design's lane and the author mid-turn only on the owner's own reaction to that ref
+        self.file()
+        ref = self.posts()[0]["ref"]
+        self.press(ref, "❤️")
+        self.assertNotIn("lane", self.said()[-1])          # a like is not a reject
+        self.press(ref, "👎")
+        nope = self.said()[-1]
+        self.assertEqual((nope["lane"], nope["reject"], nope["react"], nope["ref"]), ("/w/landing.html", True, self.seq, ref))
+        why = self.posts()[1]
+        self.press(why["ref"], "Colors")
+        reason = self.said()[-1]
+        self.assertEqual((reason["lane"], reason["reject"], reason["react"], reason["ref"]),
+                         ("/w/landing.html", True, self.seq, why["ref"]))
+        self.assertIn("Colors", reason["text"])
+
     def test_posts_ask_the_bot_to_bump_them_down_the_chat(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")

@@ -151,8 +151,16 @@ class Poster:
         from core import spool
         spool.put(os.path.join(self.dir, "spool"), type, None, data, src=f"ext:{EXT}")
 
-    def say(self, session, text):
-        self.emit("message.received", {"to": session, "channel": "session", "owner": False, "sender": EXT, "text": text})
+    def say(self, session, text, extra=None):
+        self.emit("message.received", {"to": session, "channel": "session", "owner": False, "sender": EXT, "text": text,
+                                       **(extra or {})})
+
+    @staticmethod
+    def reject(ev, path):
+        """The owner's own 👎 or its reason is a reject of the design: the core gives it to the design's edit lane and to
+        the author mid-turn (hub.json design_lane). It checks that the owner did react to this ref (react = the seq of
+        his telegram.pressed/replied); a core without lanes ignores the fields."""
+        return {"lane": path, "reject": True, "react": ev["seq"], "ref": str((ev.get("data") or {}).get("ref") or "")}
 
     def handle(self, events):
         changed = False
@@ -181,12 +189,12 @@ class Poster:
         if ref == firstrun.REF:
             return self.first_pressed(data.get("button")) if kind == "telegram.pressed" else None
         if ref in self.st["why"]:
-            return self.answer_why(ref, data.get("button"), (data.get("text") or "").strip() if kind == "telegram.replied" else None)
+            return self.answer_why(ref, data.get("button"), (data.get("text") or "").strip() if kind == "telegram.replied" else None, ev)
         s = self.st["sent"].get(ref)
         if not s:
             return
         if kind == "telegram.pressed" and data.get("button") in (LIKE, NOPE):
-            return self.rated(ref, s, data["button"])
+            return self.rated(ref, s, data["button"], ev)
         if kind == "telegram.replied" and (data.get("text") or "").strip():   # the author's session was gone when it was posted
             self.say(s["session"], f"hub-design: the owner replied in Telegram to your design \"{s['title']}\" ({s['path']}): "
                                    f"{data['text'].strip()}")
@@ -273,11 +281,11 @@ class Poster:
         except OSError:
             return None
 
-    def rated(self, ref, s, button):
+    def rated(self, ref, s, button, ev=None):
         what = ("liked it - keep this direction" if button == LIKE
                 else "disliked it - the reason follows if the owner gives one")
         self.say(s["session"], f"hub-design: the owner gave your design \"{s['title']}\" ({s['path']}) a {button} in "
-                               f"Telegram: {what}.")
+                               f"Telegram: {what}.", self.reject(ev, s["path"]) if ev and button == NOPE else None)
         if button == NOPE and not s.get("asked"):
             s["asked"] = True
             n = self.st["n"] = self.st["n"] + 1
@@ -289,7 +297,7 @@ class Poster:
             self.emit("telegram.post", {"text": tr(lang, "why_ask"), "ref": why, "settle": tr(lang, "why_settle"),
                                         "buttons": [tr(lang, f"why_{k}") for k in WHY], "bump": True})
 
-    def answer_why(self, why, button=None, text=None):
+    def answer_why(self, why, button=None, text=None, ev=None):
         code = why_key(button) if button else None
         if not (text or code):
             return
@@ -302,7 +310,8 @@ class Poster:
         else:
             todo = ("Redo only this in this design, leave the rest as it is, and send the fixed version again "
                     "(hub send-file) - it comes to the owner as a new post.")
-        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {reason}. {todo}")
+        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {reason}. {todo}",
+                 self.reject(ev, s["path"]) if ev else None)
 
     def poll(self):
         ino = self.journal.identity(self.path)
