@@ -691,7 +691,7 @@ class Handler(BaseHTTPRequestHandler):
             # the designs ever made on this machine (registry.py) with the state of each file: the start screen lists them whatever sessions exist now
             rows = REG.listing() if REG else []
             out = [{**r, "state": file_state(os.path.expanduser(r["path"]))} for r in rows]
-            return self.say(200, {"ready": bool(REG and REG.ready), "items": out}, self.cors())
+            return self.say(200, {"ready": bool(REG and REG.ready), "items": out, "tasks": REG.task_rows() if REG else []}, self.cors())
         if url.path == "/__canvas/peers":
             # the designs of the other machines of the owner (peers.py): names and shots only, the files stay there. Off: {"on": false}
             root = peers_root()
@@ -982,7 +982,9 @@ def peer_rows():
     """The designs of this machine that may go to the others: only files we serve (gone and hidden ones are not exported)."""
     rows = [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok"]
     dirs = peer_dirs()
-    return [{**r, "dir": peers.folder_label(os.path.expanduser(r["path"]), dirs)} for r in rows]
+    titles = {t["id"]: t["title"] for t in REG.task_rows()} if REG else {}
+    many = registry.task_folders(rows)   # the designs of one task go to one folder on the other machine too: its name is the title of the task
+    return [{**r, "dir": (titles.get(r.get("task")) if r.get("task") in many else "") or peers.folder_label(os.path.expanduser(r["path"]), dirs)} for r in rows]
 
 
 def peer_dirs():

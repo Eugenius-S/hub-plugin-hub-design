@@ -99,6 +99,18 @@ def clean_title(text, words=False):
     return t
 
 
+TASK_MIN = 2   # designs a task needs to get a folder of its own: one design lies where it lay
+
+
+def task_folders(rows, minimum=TASK_MIN):
+    """The ids of the tasks that have a folder: those with at least `minimum` of the designs (rows have a `task`)."""
+    count = {}
+    for r in rows:
+        if r.get("task"):
+            count[r["task"]] = count.get(r["task"], 0) + 1
+    return {k for k, n in count.items() if n >= minimum}
+
+
 def new_state():
     """What the fold keeps besides the designs: the tasks {id: {title, by, who, ts, root}} and the task each session works on now."""
     return {"tasks": {}, "cur": {}}

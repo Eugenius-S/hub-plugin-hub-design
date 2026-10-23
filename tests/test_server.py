@@ -1131,7 +1131,27 @@ class DesignRegistry(unittest.TestCase):
         r, _ = self.get("/__canvas/registry", {"Sec-Fetch-Site": "cross-site"})
         self.assertEqual(r.status, 403)
 
+    def test_the_answer_names_the_tasks_of_the_designs_and_the_other_machines_get_the_title_as_the_folder(self):
+        here, other = os.path.join(os.path.realpath(self.old), "a.html"), os.path.join(os.path.realpath(self.old), "b.html")
+        for path in (here, other):
+            self.put(path)
+            self.reg.items[self.registry.key_of(path)]["task"] = "d10"
+        self.put(os.path.join(os.path.realpath(self.old), "lone.html"))
+        self.reg.items[self.registry.key_of(os.path.join(os.path.realpath(self.old), "lone.html"))]["task"] = "d11"
+        self.reg.state["tasks"] = {"d10": {"title": "Ролик Ouch", "by": "rewarded", "who": "designer", "ts": 1, "root": "d10"},
+                                   "d11": {"title": "Один", "by": "x", "who": "designer", "ts": 2, "root": "d11"}}
+        for n in ("lone.html", "b.html"):
+            with open(os.path.join(os.path.realpath(self.old), n), "w") as f:
+                f.write("<p>x</p>")
+        _, body = self.get("/__canvas/registry", self.ORIGIN)
+        d = json.loads(body)
+        self.assertEqual([t["id"] for t in d["tasks"]], ["d10", "d11"])
+        self.assertEqual({os.path.basename(x["path"]): x.get("task") for x in d["items"]}, {"a.html": "d10", "b.html": "d10", "lone.html": "d11"})
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
+            rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
+        self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Ролик Ouch", "lone.html": ""})   # one design makes no folder
+
     def test_no_registry_means_an_empty_not_ready_list(self):
         with unittest.mock.patch.object(server, "REG", None):
             _, body = self.get("/__canvas/registry", self.ORIGIN)
-        self.assertEqual(json.loads(body), {"ready": False, "items": []})
+        self.assertEqual(json.loads(body), {"ready": False, "items": [], "tasks": []})
