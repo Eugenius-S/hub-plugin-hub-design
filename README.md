@@ -108,6 +108,10 @@ Drafts live in the browser until sent: a page reload does not lose them. The que
 
 "Settings" → "Plugins" → paste the link to this repository → "Check and install". You need Python 3 and a browser on the same computer as the hub: the preview is served from `localhost`.
 
+**Downloading styles.** Settings has a tab "Hub Design: styles" (`hub.addSettings`). Paste a link to a style site (several, one per line), press "Download": the plugin process (`fetcher.py`) saves each style into the library above (the `.md` file, the preview picture, an entry in `index.json`), and the Style window sees them at once, without a restart. The library folder is created if it does not exist yet. A link may be the whole site, a collection page or one style. The tab shows "N of M", what was added, skipped and failed, and the name of the style in work; "Stop" ends the run after the current style. A style that is already in the library (the entry is in `index.json` and the file is on the disk) is skipped, so a stopped or broken run continues from the same place and a repeated run costs nothing. The pace is slow on purpose (a pause of one to two and a half seconds between styles); on a refusal of the site (HTTP 403 or 429) or a captcha the run stops with a plain line instead of pushing on. An `index.json` that cannot be read is left untouched. Only the process downloads; the page does it on the machine where the hub runs.
+
+A site is a source module in `sources/` (`sources/__init__.py` describes what one provides: its links, its page parser). The first one is `styles.refero.design`, the page of a style carries its `DESIGN.md` in the HTML, no sign-in needed. A link to a site without a source is refused with the list of the supported ones. **You are responsible for the terms of the site you download from**; the plugin downloads for your own use, and the library stays on your machine (it is not part of this repository).
+
 ## How it is built
 
 The plugin process (`server.py`) listens on `127.0.0.1` at the hub page's port + 11 (8787 → 8798; a different one via `HUB_DESIGN_PORT`) and serves web files from the hub's session and project working folders, without hidden ones. Into HTML it injects `agent.js`: it draws frames, pins and drawings over the design and talks to the hub page through `postMessage`. It needs its own address so the design's scripts do not run with the hub page's rights; it allows only the hub page to embed it and rejects requests from foreign sites.
@@ -122,6 +126,6 @@ The plugin process (`server.py`) listens on `127.0.0.1` at the hub page's port +
 
 ## Tests
 
-`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests` — the server, writing to the file (`handwrite.py`), PDF, Telegram posts (`tgpost.py`), the manifest; the registry (`registry.py`); `node --test tests/*.test.mjs` — the logic, element landmarks, the en/ru tables. No browser needed.
+`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests` — the server, writing to the file (`handwrite.py`), PDF, Telegram posts (`tgpost.py`), the manifest; the style downloader (`sources/`, `fetcher.py`: a made-up site on localhost, no real pages); the registry (`registry.py`); `node --test tests/*.test.mjs` — the logic, element landmarks, the en/ru tables. No browser needed.
 
 Icon — [3D Fluency](https://icons8.com/icons/3d-fluency) by Icons8.
