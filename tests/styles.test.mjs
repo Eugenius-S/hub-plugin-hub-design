@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { AXES, DEFAULT_ID, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
+import { AXES, DEFAULT_ID, btnShown, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
 import { setLangSource } from "../i18n.js";
 
 const cyr = /[Ѐ-ӿ]/;
@@ -240,4 +240,12 @@ test("in view: the stop frees the video and the observer; a failing cover leaves
     coverInView(r.card, r.card, () => "/r", { Observer: o3.Observer });
     assert.equal(o3.made.length, 0);   // reduced motion: not even an observer
   } finally { delete globalThis.matchMedia; }
+});
+
+test("btnShown: the Style button is visible until the library is proven absent - not hidden while the first probe is still on its way", () => {
+  assert.equal(btnShown(null, null), true);    // the first visit, the probe has not answered yet: the button is there (waiting)
+  assert.equal(btnShown(null, "1"), true);
+  assert.equal(btnShown(null, "0"), false);    // the last visit found no library: no flash of a button that goes away
+  assert.equal(btnShown(true, "0"), true);     // the answer beats the memory
+  assert.equal(btnShown(false, "1"), false);
 });

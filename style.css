@@ -115,6 +115,7 @@
 .hdc-world{position:absolute;left:0;top:0;width:0;height:0;transform-origin:0 0}
 .hdc-frame{position:absolute;background:#fff;box-shadow:var(--shadow-lift);border-radius:2px}
 .hdc-frame.focus{box-shadow:0 0 0 calc(2px * var(--inv,1)) var(--primary),var(--shadow-lift)}
+.hdc-wait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--muted);color:var(--muted-foreground);font-size:var(--text-sm);pointer-events:none}
 .hdc-iframe{width:100%;height:100%;border:0;display:block;background:#fff}
 .hdc[data-capture="1"] .hdc-iframe{pointer-events:none}
 .hdc-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}

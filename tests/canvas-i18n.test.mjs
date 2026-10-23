@@ -20,3 +20,11 @@ test("canvas: English texts contain no Cyrillic, Russian ones do", () => {
 test("canvas: every shape named in the menus has a label", () => {
   for (const id of ["free", "arrow", "rect", "oval"]) assert.ok(STR.en["shape_" + id] && STR.ru["shape_" + id], id);
 });
+
+test("canvas: a frame says it is loading instead of showing a bare white box (text in both languages, removed on load)", async () => {
+  assert.ok(STR.en.frame_loading && STR.ru.frame_loading);
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../canvas.js", import.meta.url), "utf8");
+  assert.match(src, /hdc-wait/);
+  assert.match(src, /wait\.remove\(\)|wait\.hidden = true/);
+});

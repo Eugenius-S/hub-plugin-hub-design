@@ -9,6 +9,7 @@ import { makeT } from "./i18n.js";
 export const STR = {
   en: {
     shape_free: "Pencil", shape_arrow: "Arrow", shape_rect: "Rectangle", shape_oval: "Oval",
+    frame_loading: "Loading the design…",
     err_one: "Error in the design", err_many: "Errors in the design: {n}",
     err_draft: "Added to edits", err_sent: "Sent to the designer", err_ask: "Ask the designer to fix",
     err_title: "Add the errors to the edits for the designer",
@@ -30,6 +31,7 @@ export const STR = {
   },
   ru: {
     shape_free: "Карандаш", shape_arrow: "Стрелка", shape_rect: "Прямоугольник", shape_oval: "Овал",
+    frame_loading: "Загружаю макет…",
     err_one: "Ошибка в макете", err_many: "Ошибок в макете: {n}",
     err_draft: "Добавлено в правки", err_sent: "Отправлено дизайнеру", err_ask: "Попросить исправить",
     err_title: "Добавить ошибки в правки дизайнеру",
@@ -273,8 +275,12 @@ export function createCanvas(app) {
     const iframe = el("iframe", "hdc-iframe");
     iframe.setAttribute("title", nameOf(f.path));
     const ep = { id: "f:" + f.path, path: f.path, iframe, external: true, ready: false };
-    iframe.addEventListener("load", () => app.hello(ep));
-    box.append(iframe);
+    // until the document is loaded the iframe is a bare white box: a line says what is going on
+    const wait = el("div", "hdc-wait", t("frame_loading"));
+    const done = () => wait.remove();
+    iframe.addEventListener("load", () => { done(); app.hello(ep); });
+    iframe.addEventListener("error", done);
+    box.append(iframe, wait);
     world.append(box);
 
     const label = el("div", "hdc-label");
@@ -333,7 +339,7 @@ export function createCanvas(app) {
     const n = { box, iframe, label, title, err, ep, gone, goneMsg, shown: false };
     fr.set(f.path, n);
     app.register(ep);
-    if (!isGone(app.fileState(f.path))) { iframe.src = app.fileUrl(f.path) + "&t=" + Date.now(); n.shown = true; }
+    if (!isGone(app.fileState(f.path))) { iframe.src = app.fileUrl(f.path) + "&t=" + Date.now(); n.shown = true; } else done();
     return n;
   }
   function dropFrame(path) {

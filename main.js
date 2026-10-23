@@ -7,7 +7,7 @@ import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, cha
   goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
-import { spread, styleLine } from "./lib.js";
+import { spread, styleLine, waitFresh } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
@@ -194,7 +194,7 @@ export default function register(h) {
   });
   hub.addView({
     id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", full: true,
-    render, show() { P.shown = true; sidebar(true); fromAddress(); ping(); }, hide() { P.shown = false; sidebar(false); },
+    render, show() { P.shown = true; sidebar(true); fromAddress(); ping(); }, hide() { P.shown = false; P.openFrom = null; sidebar(false); },
   });
   // a palette button in the session input (the composer.tools slot — an addition of this hub): open Hub Design with this conversation
   if (typeof hub.addSlot === "function") {
@@ -239,7 +239,7 @@ function applyHandoff() {
   P.origin = h.session;
   P.originNew = true;
   adoptOrigin();
-  P.openFrom = h.session;   // open this session's last design on the canvas if it has one (while it is not in the list — wait for the feeds)
+  P.openFrom = { session: h.session, ts: Date.now() / 1000 };   // open this session's last design on the canvas if it has one (while it is not in the list — wait for the feeds)
   const ta = ui.input.node.querySelector("textarea");
   if (ta && h.text) {
     ta.value = ta.value ? ta.value + "\n" + h.text : h.text;
@@ -251,7 +251,8 @@ function applyHandoff() {
   ui.input.focus();
 }
 function openFromSession() {
-  const from = P.openFrom;
+  P.openFrom = waitFresh(P.openFrom, Date.now() / 1000);   // a stale wait does not open the first new design of that session on its own
+  const from = P.openFrom && P.openFrom.session;
   if (!from) return;
   const mine = P.authors.find((a) => a.session === from);
   if (!mine) return;
@@ -1245,7 +1246,7 @@ function build(root) {
   styleX.hidden = true;
   const styleBtn = el("div", "hd-style-w");
   styleBtn.append(styleOpen, styleX);
-  styleBtn.hidden = true;
+  styleBtn.hidden = !st.shown();
   foot.append(icon("gear"), who);
   card.append(need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card, styleBtn);
@@ -1708,7 +1709,7 @@ function paintCard() {
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: tr("note_chip", { text: d.text }), ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
     ...draftErrs().map((e) => ({ text: tr("design_errors", { n: normErrors(e.items).length }), ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
   ];
-  ui.styleBtn.hidden = !ui.st.avail();
+  ui.styleBtn.hidden = !ui.st.shown();
   const def = !P.style && ui.st.def();
   ui.styleBtn.querySelector(".hd-style-t").textContent = P.style ? ts("chip", { name: P.style.name }) : def ? ts("def_chip", { name: def.name }) : ts("btn");
   ui.styleBtn.lastChild.hidden = !P.style;

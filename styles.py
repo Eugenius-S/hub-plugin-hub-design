@@ -18,6 +18,7 @@ auto-tagger from the label dictionary style-vocab.json. With it the search under
 gets filter chips and a style shows its labels. Without it the search is by name, category and tags, as before."""
 import json
 import os
+import threading
 import re
 
 import stylesearch
@@ -267,8 +268,14 @@ def _read_tags(path):
     return data if isinstance(data, dict) else {}
 
 
-def load(root):
-    """The library of the folder (cached until index.json changes); None - no index or nothing usable in it."""
+_building = set()   # index files being re-read behind a request (one thread each)
+_lock = threading.Lock()
+
+
+def load(root, stale_ok=False):
+    """The library of the folder (cached until index.json changes); None - no index or nothing usable in it.
+    stale_ok: index.json changed but an earlier library is in the cache - answer with it now and re-read behind (a big index takes seconds,
+    and the download of the covers rewrites it all the time: the page must not wait for that)."""
     if not root:
         return None
     index = os.path.join(root, INDEX)
@@ -279,6 +286,9 @@ def load(root):
         sig = (st.st_mtime_ns, st.st_size, _stat(os.path.join(root, TAGS)))
         hit = _cache.get(index)
         if hit and hit[0] == sig:
+            return hit[1]
+        if hit and stale_ok:
+            _reload_behind(root, index)
             return hit[1]
         with open(index, encoding="utf-8") as f:
             data = json.load(f)
@@ -296,6 +306,29 @@ def load(root):
     lib = Library(root, entries) if entries else None
     _cache[index] = (sig, lib)
     return lib
+
+
+def _reload_behind(root, index):
+    with _lock:
+        if index in _building:
+            return
+        _building.add(index)
+
+    def run():
+        try:
+            load(root)
+        finally:
+            with _lock:
+                _building.discard(index)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def warm(root):
+    """Read the library into the cache ahead of the first request (the plugin process start)."""
+    try:
+        load(root)
+    except Exception:   # a broken folder is the request's business: here it only means no warm-up
+        pass
 
 
 def _section(lines, word):

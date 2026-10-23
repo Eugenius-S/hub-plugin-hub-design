@@ -207,9 +207,9 @@ def gone_page(real, state, lang="en"):
     return body
 
 
-def library():
-    """The style reference library of this hub (styles.py), None - the feature is off."""
-    return styles.load(styles.folder(config(), state_dir()))
+def library(stale_ok=False):
+    """The style reference library of this hub (styles.py), None - the feature is off. stale_ok: the list and the probe do not wait for a re-read."""
+    return styles.load(styles.folder(config(), state_dir()), stale_ok)
 
 
 def page_origins():
@@ -815,7 +815,7 @@ class Handler(BaseHTTPRequestHandler):
         files = route in ("/__canvas/style-preview", "/__canvas/style-cover", "/__canvas/style-md")   # an <img> and a link send no Origin: guard() already refused foreign sites
         if not extra and not files:
             return self.say(403, {"error": "origin"})
-        lib = library()
+        lib = library(stale_ok=route == "/__canvas/styles" and q.get("limit") == "0")   # the probe (limit 0) never waits for a re-read; a list is fresh
         dflt = styles.default_library(config())   # the default style: a library of one, outside the main one
         if route == "/__canvas/styles":
             if not lib and not dflt:   # no folder or an empty one: the page hides the feature
@@ -1060,6 +1060,8 @@ def main():
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
         # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
         threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready, peers.EVERY, peer_hub), daemon=True).start()
+    if os.environ.get("HUB_STATE_DIR"):   # under a hub: the library is read before the page asks (the Style button waits for the first answer)
+        threading.Thread(target=lambda: styles.warm(styles.folder(config(), state_dir())), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the links by default are put once, the first time they are downloaded (linkctl.py)
         threading.Thread(target=lambda: ctl().startup(auto=setting("auto_download_defaults")), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)

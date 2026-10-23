@@ -1009,3 +1009,7 @@ export const CARD_STR = {
   ru: { by: "Hub Design", hide: "Свернуть", show: "Развернуть", share: "Скопировать путь", copied: "Путь скопирован", open: "Открыть в Hub Design", hd: "Hub Design", open_file: "Открыть", open_file_title: "Открыть файл", hide_title: "Свернуть карточку в строку", show_title: "Развернуть карточку", design: "макет", video: "видео", pdf: "PDF", svg: "SVG", gone: "файл недоступен" },
 };
 export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CARD_STR.en;
+
+// a wait for the design of a session (after a handoff from its chat): fresh for FROM_TTL seconds; a stale or empty one - null
+export const FROM_TTL = 180;
+export const waitFresh = (w, now) => (w && now - w.ts <= FROM_TTL ? w : null);

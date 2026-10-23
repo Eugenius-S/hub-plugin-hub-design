@@ -148,11 +148,21 @@ export function textOn(hex) {
 }
 const initials = (name) => String(name || "?").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 
+// The Style button: visible until the library is proven absent. The probe can take seconds (a big index), and a button that
+// appears only after it looks like it is missing; the last answer is remembered so that "no library" does not flash a button
+const MEM_KEY = "hub-design:style-lib";
+const recall = () => { try { return localStorage.getItem(MEM_KEY); } catch { return null; } };
+const remember = (ok) => { try { localStorage.setItem(MEM_KEY, ok ? "1" : "0"); } catch { /* no storage - the next visit asks again */ } };
+export function btnShown(avail, mem) {
+  if (avail === true || avail === false) return avail;
+  return mem !== "0";
+}
+
 // --- the panel ---------------------------------------------------------------------------------------------------------
 // base: () => the address of the plugin process; get/set: the style attached now (the page keeps it); hub.el builds the nodes
 export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   const el = hub.el;
-  const S = { avail: false, def: null, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0, stops: [] };
+  const S = { avail: null, def: null, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0, stops: [] };
   const node = el("div", "hds");
   node.hidden = true;
   node.setAttribute("role", "dialog");
@@ -192,7 +202,8 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     try { const r = await ask("styles", listQuery({ limit: 0 })); ok = !!r.ok; answered = true; S.count = r.count || 0; def = defaultStyle(r.default); } catch { ok = false; }
     const was = S.def;
     if (answered) S.def = def;   // the process not answering proves nothing: the default stays
-    if (ok !== S.avail || (answered && JSON.stringify(def) !== JSON.stringify(was))) { S.avail = ok; onChange(); }
+    if (answered) remember(ok);
+    if (answered && (ok !== S.avail || JSON.stringify(def) !== JSON.stringify(was))) { S.avail = ok; onChange(); }
     await recheck(answered, ok);
     return ok;
   }
@@ -218,7 +229,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     try {
       const r = await ask("styles", listQuery({ q: S.q, cat: S.cat, f: S.f, offset: S.offset, lang: currentLang() }));
       if (my !== S.seq) return;
-      if (!r.ok) { S.avail = false; S.def = null; onChange(); return close(); }
+      if (!r.ok) { S.avail = false; S.def = null; remember(false); onChange(); return close(); }
       S.def = defaultStyle(r.default);
       Object.assign(S, { items: r.items, total: r.total, cats: r.cats || [], facets: r.facets || {}, count: r.count, state: "ok" });
     } catch {
@@ -397,5 +408,5 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     if (!node.hidden && !S.detail && S.avail) load();
   }
 
-  return { node, open, close, probe, refresh, avail: () => S.avail, def: () => S.def, state: S, repaint: () => { if (!node.hidden) paint(); } };
+  return { node, open, close, probe, refresh, avail: () => S.avail === true, shown: () => btnShown(S.avail, recall()), def: () => S.def, state: S, repaint: () => { if (!node.hidden) paint(); } };
 }

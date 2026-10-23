@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
+import { FROM_TTL, waitFresh, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -852,4 +852,12 @@ test("pathKey: one key for slashes and the drive letter's case, the case of a Un
   assert.equal(pathKey("/u/A.html"), "/u/A.html");
   assert.notEqual(pathKey("/u/A.html"), pathKey("/u/a.html"));
   assert.equal(pathKey("/u/dir/"), "/u/dir");
+});
+
+test("waitFresh: a wait for a session's design (handoff) is good for FROM_TTL seconds, not for the life of the tab", () => {
+  const w = { session: "designer", ts: 1000 };
+  assert.equal(waitFresh(null, 1000), null);
+  assert.equal(waitFresh(w, 1000 + FROM_TTL - 1), w);
+  assert.equal(waitFresh(w, 1000 + FROM_TTL + 1), null);   // a stale wait must not pull the first new design of that session onto the canvas
+  assert.ok(FROM_TTL <= 300);
 });

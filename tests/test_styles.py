@@ -215,6 +215,39 @@ class Index(unittest.TestCase):
         self.assertEqual(len(styles.load(self.root).entries), 1)
 
 
+class Stale(unittest.TestCase):
+    """The probe must not wait for a re-read of a big index: a changed index.json is answered with the library in the cache, the new one loads behind."""
+    def setUp(self):
+        self.root = os.path.realpath(tempfile.mkdtemp(prefix="hd-stale-"))
+        make_library(self.root)
+        styles._cache.clear()
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def change(self):
+        path = os.path.join(self.root, "index.json")
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        data["d4"] = {"name": "Fourth", "file": "plain__c3.md", "category": "Dark", "tags": []}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.utime(path, ns=(time.time_ns() + 5_000_000_000, time.time_ns() + 5_000_000_000))
+
+    def test_cold_cache_loads_in_place(self):
+        self.assertEqual(len(styles.load(self.root, stale_ok=True).entries), 3)
+
+    def test_changed_index_answers_with_the_old_library_and_reloads_behind(self):
+        old = styles.load(self.root)
+        self.change()
+        self.assertIs(styles.load(self.root, stale_ok=True), old)   # no re-read in the request
+        self.assertEqual(len(styles.load(self.root).entries), 4)    # the strict call (or the one behind) gives the new one
+
+    def test_warm_loads_the_library_into_the_cache(self):
+        styles.warm(self.root)
+        self.assertIsNotNone(styles._cache.get(os.path.join(self.root, "index.json")))
+
+
 class Search(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
