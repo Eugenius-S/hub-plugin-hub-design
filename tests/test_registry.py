@@ -74,6 +74,17 @@ class Registry(unittest.TestCase):
         rows = self.reg().listing()
         self.assertEqual([r["path"] for r in rows], [src])   # twice sent, one entry, the path of the source
 
+    def test_a_core_copy_without_a_source_is_not_a_design_and_a_saved_one_is_dropped(self):
+        copy = p("hub-core", "attachments", "c99385c97cc9", "index.html")
+        self.live([ev(1, "owner.file", {"path": copy, "sender": "designer", "channel": "session", "owner": False}),
+                   wrote(2, "designer", copy), sent(3, "designer", p("d", "a", "ok.html"))])
+        self.assertEqual(sorted(self.paths(self.reg())), ["ok.html"])
+        os.makedirs(os.path.join(self.tmp, "hub-design"), exist_ok=True)
+        with open(os.path.join(self.tmp, "hub-design", "registry.json"), "w", encoding="utf-8") as f:
+            json.dump({"v": 1, "seq": 99, "items": [{"path": copy, "session": "designer", "ts": 1, "last": 1, "rank": 1},
+                                                    {"path": p("d", "a", "ok.html"), "session": "designer", "ts": 1, "last": 1, "rank": 1}]}, f)
+        self.assertEqual(sorted(self.paths(self.reg())), ["ok.html"])
+
     def test_one_file_written_as_c_slash_and_c_backslash_is_one_design(self):
         if not WIN:
             self.skipTest("drive paths are native on Windows only")

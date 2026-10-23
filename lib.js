@@ -157,6 +157,12 @@ export function fileUrl(origin, path) {
 const QUOTED_PATH = /(["'`])((?:~|\/|[A-Za-z]:[\\/])[^"'`\n<>]*?\.html?)\1/gu;
 const HTML_PATH = /(?<![\p{L}\p{N}_\/.~:!-])(?:~|\/|[A-Za-z]:[\\/])[^\s"'`<>()\[\]{}|,;*]*?\.html?(?![\w])/gu;
 
+// the core copy of a file sent to the owner (`hub send-file`): <state>/attachments/<id>/<name>, with no assets beside it and outside the folders of the
+// hub. It is never a design: the design is the file the session sent (`source` of the feed row). Without a source there is no design to show
+export const isCopy = (p) => /[\\/]attachments[\\/][0-9a-f]{12}[\\/][^\\/]+$/i.test(String(p || ""));
+// the design file of a feed row of the kind "file": the source, otherwise the path unless that is the core copy
+export const fileOf = (it) => { const p = it.source || it.path; return isCopy(p) ? "" : p; };
+
 export function htmlPaths(text) {
   const src = String(text || "");
   const found = [];
@@ -166,14 +172,14 @@ export function htmlPaths(text) {
     rest = rest.slice(0, m.index) + " ".repeat(m[0].length) + rest.slice(m.index + m[0].length);
   }
   for (const m of rest.matchAll(HTML_PATH)) found.push([m.index, m[0]]);
-  return found.sort((a, b) => a[0] - b[0]).map((x) => x[1]).filter((p) => !p.includes("://"));
+  return found.sort((a, b) => a[0] - b[0]).map((x) => x[1]).filter((p) => !p.includes("://") && !isCopy(p));
 }
 
 // HTML files the session worked with: what it wrote and edited, what it sent, what it named - the freshest first
 export function recentHtml(items, limit = 12) {
   const out = [];
   const add = (p) => {
-    if (!p || !/\.html?$/i.test(p) || p.startsWith("http")) return;
+    if (!p || !/\.html?$/i.test(p) || p.startsWith("http") || isCopy(p)) return;
     const i = out.indexOf(p);
     if (i >= 0) out.splice(i, 1);
     out.push(p);
@@ -182,7 +188,7 @@ export function recentHtml(items, limit = 12) {
     if (it.kind === "tool") {
       const inp = it.input || {};
       add(inp.file_path || inp.path || inp.notebook_path);
-    } else if (it.kind === "file") add(it.path);
+    } else if (it.kind === "file") add(fileOf(it));
     else if (it.kind === "out" || it.kind === "in") htmlPaths(it.text).forEach(add);
   }
   return out.reverse().slice(0, limit);
@@ -195,7 +201,7 @@ const WRITE_TOOLS = /^(Write|Edit|MultiEdit)$/;
 export function htmlAuthored(timelines, skip = () => false) {
   const best = new Map();
   const take = (path, session, ts, rank) => {
-    if (!path || !/\.html?$/i.test(path) || path.startsWith("http")) return;
+    if (!path || !/\.html?$/i.test(path) || path.startsWith("http") || isCopy(path)) return;
     const cur = best.get(path);
     const fresh = { path, session, ts, rank, wrote: rank === 2, sent: rank === 1, last: ts };
     if (!cur) return best.set(path, fresh);
@@ -209,7 +215,7 @@ export function htmlAuthored(timelines, skip = () => false) {
       if (it.kind === "tool") {
         const inp = it.input || {};
         take(inp.file_path || inp.path, session, ts, WRITE_TOOLS.test(it.name || "") ? 2 : 0);
-      } else if (it.kind === "file") take(it.path, session, ts, 1);
+      } else if (it.kind === "file") take(fileOf(it), session, ts, 1);
       else if (it.kind === "out") htmlPaths(it.text).forEach((p) => take(p, session, ts, 0));
     }
   }
@@ -221,7 +227,7 @@ export function htmlAuthored(timelines, skip = () => false) {
 export function mergeAuthors(...lists) {
   const best = new Map();
   for (const a of lists.flat()) {
-    if (!a || !a.path) continue;
+    if (!a || !a.path || isCopy(a.path)) continue;
     const cur = best.get(a.path);
     const rank = a.rank ?? (a.wrote ? 2 : a.sent ? 1 : 0);
     const fresh = { path: a.path, session: a.session, ts: a.ts || 0, rank, wrote: rank === 2, sent: rank === 1, last: a.last || a.ts || 0 };
@@ -284,7 +290,7 @@ export function chatLines(items, limit = 60, session = "") {
     .filter((it) => (it.kind === "in" || it.kind === "out") && String(it.text || "").trim() && !/^[\u2014\u2013-]\.?$/.test(String(it.text).trim()) || it.kind === "file")
     .slice(-limit)
     .map((it, i, all) => ({ head: i === 0 || whoOf(all[i - 1], session) !== whoOf(it, session), k: it.k ?? it.seq, kind: it.kind, ts: it.ts, who: whoOf(it, session), mine: it.kind === "in" && whoOf(it) === tr("you"),
-      text: it.kind === "file" ? (it.image ? String(it.caption || "") : `${it.caption ? it.caption + "\n" : ""}${it.path}`) : String(it.text),
+      text: it.kind === "file" ? (it.image ? String(it.caption || "") : `${it.caption ? it.caption + "\n" : ""}${it.source || it.path}`) : String(it.text),
       ...(it.kind === "file" && it.image ? { image: String(it.path) } : {}) }));
 }
 
@@ -887,8 +893,8 @@ export const basedOnText = (path) => tr("based_on", { f: path });
 const isHtml = (p) => /\.html?$/i.test(p || "");
 export function slimItems(items) {
   return (items || []).filter((it) => (it.kind === "tool" && isHtml((it.input || {}).file_path || (it.input || {}).path))
-    || (it.kind === "file" && isHtml(it.path)) || (it.kind === "out" && htmlPaths(it.text).length))
-    .map((it) => ({ kind: it.kind, name: it.name, ts: it.ts, path: it.path, input: it.input && { file_path: (it.input.file_path || it.input.path) },
+    || (it.kind === "file" && isHtml(fileOf(it))) || (it.kind === "out" && htmlPaths(it.text).length))
+    .map((it) => ({ kind: it.kind, name: it.name, ts: it.ts, path: it.kind === "file" ? fileOf(it) : it.path, input: it.input && { file_path: (it.input.file_path || it.input.path) },
       text: it.kind === "out" ? htmlPaths(it.text).join(" ") : undefined }));
 }
 // whom to re-read: timelines whose edit number has grown since last time (or the core epoch changed)

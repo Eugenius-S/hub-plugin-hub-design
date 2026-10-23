@@ -26,6 +26,8 @@ KEEP = 5000                         # entries kept: the freshest
 SKIP_PARTS = {"node_modules", ".git", ".claude", "site-packages", "__pycache__"}
 TEMP = re.compile(r"(?:^|/)(?:tmp|temp|var/folders|private/tmp|appdata/local/temp)(?:/|$)", re.I)   # a scratch file of a test is not a design
 ARCHIVE = re.compile(r"journal-(\d+)-(\d+)\.jsonl")
+# the core copy of a file sent to the owner (hub send-file): <state>/attachments/<id>/<name>, no assets beside it - never a design, the design is `source`
+COPY = re.compile(r"(?:^|/)attachments/[0-9a-f]{12}/[^/]+$", re.I)
 WIN_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 _EDIT_LINE = re.compile(rb'"name"\s*:\s*"(?:Write|Edit|MultiEdit)"')
 _KIND_LINE = re.compile(rb'\.(?:html?|pdf|svg)"', re.I)
@@ -54,7 +56,7 @@ def design_path(path):
     if not p or "://" in p or not p.lower().endswith(KINDS) or not native(p):
         return None
     k = key_of(p)
-    if TEMP.search(k) or SKIP_PARTS & set(k.split("/")):
+    if TEMP.search(k) or COPY.search(k) or SKIP_PARTS & set(k.split("/")):
         return None
     return p
 
@@ -145,7 +147,8 @@ class Registry:
         try:
             with open(self.path, encoding="utf-8") as f:
                 saved = json.load(f)
-            self.items = {key_of(v["path"]): v for v in saved.get("items", []) if isinstance(v, dict) and v.get("path")}
+            self.items = {key_of(v["path"]): v for v in saved.get("items", [])
+                          if isinstance(v, dict) and v.get("path") and not COPY.search(key_of(v["path"]))}
             self.seq = int(saved.get("seq") or 0)
         except (OSError, ValueError, TypeError, KeyError):
             pass

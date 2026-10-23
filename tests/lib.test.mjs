@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FROM_TTL, waitFresh, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
+import { FROM_TTL, waitFresh, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -860,4 +860,27 @@ test("waitFresh: a wait for a session's design (handoff) is good for FROM_TTL se
   assert.equal(waitFresh(w, 1000 + FROM_TTL - 1), w);
   assert.equal(waitFresh(w, 1000 + FROM_TTL + 1), null);   // a stale wait must not pull the first new design of that session onto the canvas
   assert.ok(FROM_TTL <= 300);
+});
+
+// the core copy of a file sent to the owner (<state>/attachments/<id>/<name>): no assets beside it, outside the folders of the hub - not a design;
+// the design is data.source (the feed row carries it as `source`)
+const COPY = "C:\\Users\\me\\AppData\\Local\\hub-core\\attachments\\c99385c97cc9\\index.html";
+const SRC = "D:\\work\\summary\\index.html";
+test("a core copy in attachments is not a design: the source is taken, without a source - nothing", () => {
+  assert.equal(isCopy(COPY), true);
+  assert.equal(isCopy("/home/me/.hub-core/attachments/0123456789ab/a.html"), true);
+  assert.equal(isCopy(SRC), false);
+  assert.equal(isCopy("/d/attachments/logo.html"), false);
+  const sentRow = { kind: "file", ts: 5, path: COPY, source: SRC, name: "index.html" };
+  assert.deepEqual(recentHtml([sentRow]), [SRC]);
+  assert.deepEqual(recentHtml([{ kind: "file", path: COPY }]), []);
+  assert.deepEqual(recentHtml([{ kind: "out", text: `see ${COPY}` }]), []);
+  assert.deepEqual(htmlAuthored({ designer: [sentRow] }).map((a) => a.path), [SRC]);
+  assert.deepEqual(htmlAuthored({ designer: [{ kind: "file", ts: 1, path: COPY }] }), []);
+  assert.deepEqual(htmlAuthored({ designer: [{ kind: "tool", name: "Write", ts: 1, input: { file_path: COPY } }] }), []);
+  assert.deepEqual(htmlPaths(`copy ${COPY} and ${SRC}`), [SRC]);
+  assert.deepEqual(slimItems([sentRow]).map((i) => i.path), [SRC]);
+  assert.deepEqual(slimItems([{ kind: "file", path: COPY }]), []);
+  assert.deepEqual(mergeAuthors([{ path: COPY, session: "d", ts: 1 }, { path: SRC, session: "d", ts: 1 }]).map((a) => a.path), [SRC]);
+  assert.equal(chatLines([{ kind: "file", k: 1, path: COPY, source: SRC, caption: "x" }])[0].text, `x\n${SRC}`);
 });

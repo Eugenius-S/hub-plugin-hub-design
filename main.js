@@ -3,7 +3,7 @@
 // shapes — mark a place, a note — a sticker on the canvas. Manual edits go by themselves 8 s after the last one — to whoever is chosen at
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
-import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, fileUrl, nameOf,
+import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
   goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -275,7 +275,7 @@ function save() {
 function loadKnown() {
   let k = null;
   try { k = JSON.parse(getKey("known") || "null"); } catch { k = null; }
-  P.known = Array.isArray(k && k.list) ? k.list.filter((a) => a && a.path && a.session) : [];
+  P.known = Array.isArray(k && k.list) ? k.list.filter((a) => a && a.path && a.session && !isCopy(a.path)) : [];   // a core copy saved before 0.26.2 is not a design
   P.histSeq = (k && k.seq) || {};
   P.histAt = (k && k.at) || 0;
 }
@@ -287,10 +287,10 @@ function load() {
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
-  P.frames = (b.frames || []).filter((f) => f && f.path).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // before 0.4.1 the frame stretched to the document height
+  P.frames = (b.frames || []).filter((f) => f && f.path && !isCopy(f.path)).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // before 0.4.1 the frame stretched to the document height
   P.picked = b.picked || {};
   P.found = b.found || {};
-  P.opened = b.opened || {};   // designs ever opened on the canvas: a frame leaves the canvas, the dashboard keeps the design
+  P.opened = Object.fromEntries(Object.entries(b.opened || {}).filter(([p]) => !isCopy(p)));   // designs ever opened on the canvas: a frame leaves the canvas, the dashboard keeps the design
   P.pins = b.pins || [];
   P.changes = b.changes || [];
   P.drawings = b.drawings || [];
@@ -503,6 +503,7 @@ function goHome() {
 }
 // open a design on the canvas: first make sure the file exists — instead of an empty frame the owner reads what is missing
 async function openChecked(path, focus = true, only = false) {
+  if (isCopy(path)) return;   // the core copy of a sent file: no assets, outside the hub folders - the design is its source
   await verify([path], true);
   const st = fileState(path);
   if (isGone(st)) {

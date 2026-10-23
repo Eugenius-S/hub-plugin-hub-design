@@ -2,7 +2,7 @@
 // sent as a file (hub send-file) or named by a full path in its reply becomes a card in the feed: a tile with a preview, a name, "Hub Design · agent",
 // the "Open in Hub Design" button, "share" and "Hide". A click on a card opens the file in Hub Design. Pictures are not cards. The feed is rebuilt from core snapshots, so the card nodes and everything asynchronous
 // (title, shot - failures too) are kept in the page memory: a repaint takes the ready result, with no flicker and no requests.
-import { CARD_MAX, cardKind, cardName, cardText, hideToggle, isAbsPath, pathFromHref } from "./lib.js";
+import { CARD_MAX, cardKind, cardName, cardText, hideToggle, isAbsPath, isCopy, pathFromHref } from "./lib.js";
 
 const HIDE_KEY = "hub-design:card-hidden";
 const META_TTL = 60000, FAIL_TTL = 120000;
@@ -178,7 +178,7 @@ function found(row) {
   if (row.classList.contains("sent-file")) {
     const v = row.querySelector("video.sent-video"), box = row.querySelector(".attach-list");
     const path = v ? pathFromHref(v.src) : pathFromHref(box?.querySelector("a")?.href) || pathFromHref(box?.querySelector("img")?.dataset.full);
-    const kind = cardKind(path);
+    const kind = isCopy(path) ? null : cardKind(path);   // a core copy without a source is not a design
     if (kind && (v || box)) out.push({ path, kind, replace: v || box });
     return out;
   }
@@ -186,7 +186,7 @@ function found(row) {
   const seen = new Set();
   for (const a of row.querySelectorAll("a[data-path]")) {
     const path = a.dataset.path, kind = cardKind(path);
-    if (!kind || !isAbsPath(path) || seen.has(path)) continue;
+    if (!kind || !isAbsPath(path) || isCopy(path) || seen.has(path)) continue;
     seen.add(path);
     out.push({ path, kind, replace: null });
     if (out.length >= CARD_MAX) break;
