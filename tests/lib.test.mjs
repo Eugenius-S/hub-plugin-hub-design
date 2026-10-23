@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FROM_TTL, waitFresh, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
+import { FROM_TTL, waitFresh, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, editsTo, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -924,4 +925,20 @@ test("hand edits: the designer is told to keep the owner's positions as they are
     assert.match(text, /owner's manual positions as is|поставил руками, оставь как есть/, String(inFile));
     assert.doesNotMatch(text, /ordinary layout|обычной вёрсткой|not a transform on top|не transform поверх/, String(inFile));
   }
+});
+
+test("manual edits go to the author of the design, not to whoever the chat is with", () => {
+  const authorOf = (f) => ({ "/d/tenner-post-a.html": "designer" })[f] || "";
+  const ok = new Set(["designer", "hub-dev"]);
+  assert.equal(editsTo("/d/tenner-post-a.html", authorOf, "hub-dev", ok), "designer");   // the owner talked to hub-dev, the file is the designer's
+  assert.equal(editsTo("/d/other.html", authorOf, "hub-dev", ok), "designer");            // no author known: the designer, as everywhere
+  assert.equal(editsTo("/d/other.html", authorOf, "hub-dev", new Set(["hub-dev"])), "hub-dev");   // no designer in the hub: the chat's session
+  assert.equal(editsTo("", authorOf, "hub-dev", ok), "designer");
+});
+
+test("autoSend sends to the design's author (autoTo), never to the chat's session", () => {
+  const main = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+  const fn = main.slice(main.indexOf("async function autoSend()"), main.indexOf("\n}\n", main.indexOf("async function autoSend()")));
+  assert.match(fn, /autoTo\(file\)/);
+  assert.doesNotMatch(fn, /session: P\.session/);
 });

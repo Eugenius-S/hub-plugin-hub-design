@@ -972,6 +972,8 @@ export function saveLine(cwd) {
 
 // who gets the edits of the open design: its author; no author (the path was only mentioned) - the designer if the hub has one, not the session we came from
 export const whoGets = (author, current, ok, dflt = "designer") => author || (ok && ok.has(dflt) ? dflt : current);
+// where the manual edits of a design go by themselves: to its author whoever the chat at the bottom is with (the chat is a talk, the edits are the author's work)
+export const editsTo = (file, authorOf, current, ok, dflt = "designer") => whoGets(file ? authorOf(file) : "", current, ok, dflt);
 
 // the canvas button theme: tool -> the script mode in the design
 export const TOOLS = { select: "edit", hand: "view", text: "text", note: "view", comment: "comment", pencil: "draw", shape: "draw" };

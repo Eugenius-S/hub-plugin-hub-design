@@ -4,7 +4,7 @@
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
-  goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
+  goneText, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh } from "./lib.js";
@@ -1012,6 +1012,7 @@ async function sendOne(pin) {
 const laneFile = (items) => (items.find((x) => x && x.file) || {}).file || P.lastEdit || P.focus || "";
 const autoItems = () => ({ changes: draftChanges().filter(hasEffect), tweaks: draftTweaks(), drawings: draftDrawings() });
 const auto = createAuto({ fire: () => autoSend() });
+const autoTo = (file) => editsTo(file, authorOf, P.session, P.ok, DEFAULT_SESSION);
 async function autoSend() {
   if (P.busy) return auto.retry(1000);
   const sig = auto.sig();
@@ -1019,9 +1020,12 @@ async function autoSend() {
   if (auto.sig() !== sig || home()) return;   // while we were writing the owner moved on — the countdown starts again
   const a = autoItems();
   const text = batchText({ comments: [], notes: [], errors: [], auto: true, ...a });
-  if (!text || !P.session) return;
+  const file = laneFile([...a.changes, ...a.tweaks, ...a.drawings]);
+  await ensureAuthor(file);
+  const to = autoTo(file);   // the author of the design, not whoever the owner talked to in the chat (0.34.1: the edits of a design went to the chat's session)
+  if (!text || !to) return;
   P.busy = true;
-  const r = await hub.post("/api/send", withLane({ session: P.session, text }, laneFile([...a.changes, ...a.tweaks, ...a.drawings])));
+  const r = await hub.post("/api/send", withLane({ session: to, text }, file));
   P.busy = false;
   if (r.error) { auto.fail(); P.note = tr("not_sent", { err: r.error }); return paint(); }
   P.note = "";
@@ -1747,7 +1751,7 @@ function field(f) {
 // the input card: comment chips (pins, notes, design errors) and the field; manual edits are not shown above the field — they are in the "Comments" tab
 function paintCard() {
   const n = drafts();
-  auto.watch(autoSig(autoItems(), P.session, home()));
+  auto.watch(autoSig(autoItems(), autoTo(laneFile([...autoItems().changes, ...autoItems().tweaks, ...autoItems().drawings])), home()));
   const items = [
     ...draftPins().map((p) => ({ text: p.text, ic: "comment", del: () => { P.pins = P.pins.filter((q) => q !== p); renumber(); syncAll(); } })),
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: tr("note_chip", { text: d.text }), ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
