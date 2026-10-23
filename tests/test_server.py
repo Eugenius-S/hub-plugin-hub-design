@@ -201,6 +201,22 @@ class Server(unittest.TestCase):
         r, _ = self.get(q, headers={"Sec-Fetch-Site": "cross-site"})
         self.assertEqual(r.status, 403)
 
+    def test_missing_document_page_speaks_the_hub_language(self):
+        gone = os.path.join(os.path.realpath(SITE), "weekly", "nope.html")
+        r, body = self.get(self.url(gone) + "&lang=ru" if "?" in self.url(gone) else self.url(gone) + "?lang=ru")
+        self.assertEqual(r.status, 404)
+        self.assertIn("Файл не найден", body.decode())
+        self.assertIn('lang="ru"', body.decode())
+        r, body = self.get(self.url(gone), headers={"Accept-Language": "ru-RU,ru;q=0.9"})   # no ?lang=: the browser's
+        self.assertIn("Файл не найден", body.decode())
+        r, body = self.get(self.url(gone), headers={"Accept-Language": "de"})
+        self.assertIn("File not found", body.decode())
+
+    def test_pdf_error_carries_a_code_for_the_page(self):
+        e = server.PdfError("Chrome did not print the PDF in 30 s", "timeout", 30)
+        self.assertEqual((e.code, e.n), ("timeout", 30))
+        self.assertEqual(server.PdfError("x").code, "")
+
     def test_missing_document_is_a_page_not_raw_json(self):
         gone = os.path.join(os.path.realpath(SITE), "weekly", "a&b.html")
         r, body = self.get(self.url(gone))
@@ -489,7 +505,7 @@ class Pdf(unittest.TestCase):
         finally:
             server.PDF_TIMEOUT = old
         self.assertEqual(r.status, 500)
-        self.assertIn("did not finish", json.loads(body)["error"])
+        self.assertIn("did not print", json.loads(body)["error"])
         pid = int(open(self.log + ".pid").read())
         time.sleep(0.3)
         with self.assertRaises(ProcessLookupError):

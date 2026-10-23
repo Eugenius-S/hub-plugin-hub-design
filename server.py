@@ -160,12 +160,24 @@ def file_state(path):
     return "denied" if os.path.exists(real) else "missing"
 
 
-def gone_page(real, state):
+GONE = {
+    "en": {"missing": "File not found", "denied": "The file is outside the hub's project and session folders, so the plugin will not show it"},
+    "ru": {"missing": "Файл не найден", "denied": "Файл вне папок проектов и сессий хаба, плагин его не покажет"},
+}
+
+
+def page_lang(q, headers):
+    """ru or en: ?lang= from the page (the hub language), else the browser's Accept-Language."""
+    pick = str(q.get("lang") or "") or str(headers.get("Accept-Language") or "")
+    return "ru" if pick.lower().startswith("ru") else "en"
+
+
+def gone_page(real, state, lang="en"):
     """Instead of a raw {"error": "no file"} in the frame and on the card: a page with the file name and the reason."""
-    why = "File not found" if state == "missing" else "The file is outside the project and session folders of the hub, the plugin will not show it"
-    body = ('<!doctype html><meta charset="utf-8"><title>%s</title><body style="margin:0;display:flex;align-items:center;justify-content:center;'
+    why = GONE.get(lang, GONE["en"])["missing" if state == "missing" else "denied"]
+    body = ('<!doctype html><html lang="%s"><meta charset="utf-8"><title>%s</title><body style="margin:0;display:flex;align-items:center;justify-content:center;'
             'height:100vh;font:14px system-ui,sans-serif;color:#555;background:#f4f4f5;text-align:center"><div><p style="font-size:16px;color:#222">%s</p>'
-            '<p style="max-width:560px;overflow-wrap:anywhere">%s</p></div>' % (why, why, html.escape(real))).encode()
+            '<p style="max-width:560px;overflow-wrap:anywhere">%s</p></div>' % (lang, why, why, html.escape(real))).encode()
     return body
 
 
@@ -238,7 +250,10 @@ _pdf_lock = threading.Lock()
 
 
 class PdfError(Exception):
-    pass
+    """The text is English (logs); `code` and `n` let the page say it in the hub language: timeout, nopdf, notpdf."""
+    def __init__(self, text, code="", n=None):
+        super().__init__(text)
+        self.code, self.n = code, n
 
 
 def pdf(real, w, h):
@@ -266,14 +281,14 @@ def pdf(real, w, h):
             try:
                 proc.wait(PDF_TIMEOUT)
             except subprocess.TimeoutExpired:
-                raise PdfError("Chrome did not finish printing in %d s" % PDF_TIMEOUT)
+                raise PdfError("Chrome did not print the PDF in %d s" % PDF_TIMEOUT, "timeout", PDF_TIMEOUT)
             try:
                 with open(out, "rb") as f:
                     data = f.read()
             except OSError:
-                raise PdfError("Chrome left no PDF (code %s)" % proc.returncode)
+                raise PdfError("Chrome left no PDF (code %s)" % proc.returncode, "nopdf", proc.returncode)
             if not data.startswith(b"%PDF"):
-                raise PdfError("Chrome returned something that is not a PDF")
+                raise PdfError("Chrome returned something that is not a PDF", "notpdf")
             return data
         finally:
             if proc is not None:
@@ -402,14 +417,14 @@ def chrome_shot(real, win, scale, fmt="png"):
             try:
                 proc.wait(THUMB_TIMEOUT)
             except subprocess.TimeoutExpired:
-                raise PdfError("Chrome did not shoot the design in %d s" % THUMB_TIMEOUT)
+                raise PdfError("Chrome did not take a screenshot of the design in %d s" % THUMB_TIMEOUT)
             try:
                 with open(shot, "rb") as f:
                     data = f.read()
             except OSError:
                 raise PdfError("Chrome left no shot (code %s)" % proc.returncode)
             if not data.startswith(MAGIC[fmt]):
-                raise PdfError("Chrome returned not an image")
+                raise PdfError("Chrome returned something that is not an image")
         finally:
             if proc is not None:
                 kill_tree(proc)
@@ -620,7 +635,7 @@ class Handler(BaseHTTPRequestHandler):
         except WriteError as e:
             return self.say(e.code, {"error": e.text}, extra)
         except OSError as e:
-            return self.say(500, {"error": "cannot write: " + (e.strerror or str(e))}, extra)
+            return self.say(500, {"error": "Cannot write the file: " + (e.strerror or str(e))}, extra)
 
     def do_HEAD(self):
         self.do_GET()
@@ -731,7 +746,7 @@ class Handler(BaseHTTPRequestHandler):
             real = from_url(url.path)
             if not allowed(real):
                 if real.lower().endswith(PAGES):   # a document in a frame: a human page, not JSON
-                    body = gone_page(real, file_state(real))
+                    body = gone_page(real, file_state(real), page_lang(q, self.headers))
                     self.head(404, TYPES[".html"], len(body))
                     return self.wfile.write(body) if self.command != "HEAD" else None
                 return self.say(404, {"error": "no file"})
@@ -853,7 +868,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             data = pdf(real, num("w", PDF_SIZE[0]), num("h", PDF_SIZE[1]))
         except PdfError as e:
-            return self.say(500, {"error": str(e)}, extra)
+            return self.say(500, {"error": str(e), "code": e.code, "n": e.n}, extra)
         if data is None:   # no Chrome configured for printing: the page prints the frame itself
             return self.say(501, {"error": "no chrome"}, extra)
         name = os.path.splitext(os.path.basename(real))[0] + ".pdf"

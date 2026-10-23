@@ -7,12 +7,12 @@ import { allLangs, makeT } from "./i18n.js";
 // UI strings: en by default, ru when the hub language is Russian (see i18n.js); texts are resolved at use time, never at load
 export const STR = {
   en: {
-    preset_slides: "Presentation", preset_design: "Design", preset_codebase: "Design in code", preset_system: "Design system", preset_motion: "Animation",
+    preset_slides: "Presentation", preset_design: "Design", preset_codebase: "Your code", preset_system: "Design system", preset_motion: "Animation",
     lead_slides: "new presentation: ", lead_design: "new design: ", lead_codebase: "new design in the project code: ", lead_system: "new design system: ", lead_motion: "new animation: ",
     tab_all: "All", tab_mine: "Mine", tab_others: "Others",
     sort_recent: "Newest first", sort_name: "By name",
     edited: "edited {ago}",
-    asked: "Asked the hub, waiting",
+    asked: "Request sent to the hub, waiting",
     install: "Install",
     title: "Design",
     search_ph: "Search designs",
@@ -22,8 +22,8 @@ export const STR = {
     sort: "Sort",
     open_by_path: "Open a design by path",
     path_ph: "Open by path: /…/index.html",
-    empty_found: "Nothing found.",
-    empty_none: "No designs yet. Pick a kind above or write on the left what you need: a specialist will make a new file.",
+    empty_found: "Nothing found",
+    empty_none: "No designs yet. Pick a preset above or write on the left what you need: a specialist will make a new file.",
     no_specialist: "no specialist {name}",
     crumb_all: "All folders",
     folder_none: "No direction",
@@ -31,17 +31,17 @@ export const STR = {
     empty_folder: "No designs in this folder yet. Write on the left what you need: the designer will save it here.",
     os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
     peer_head: "{where} · designs: {n}",
-    peer_note: "A picture only: the file, the canvas and edits are on {where}.",
+    peer_note: "A picture only: the file, the canvas and the edits are on {where}",
     peer_noshot: "No picture yet",
     peer_close: "Close",
   },
   ru: {
-    preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Дизайн в коде", preset_system: "Дизайн-система", preset_motion: "Анимация",
+    preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Свой код", preset_system: "Дизайн-система", preset_motion: "Анимация",
     lead_slides: "новая презентация: ", lead_design: "новый дизайн: ", lead_codebase: "новый дизайн в коде проекта: ", lead_system: "новая дизайн-система: ", lead_motion: "новая анимация: ",
-    tab_all: "Все", tab_mine: "Мои", tab_others: "Чужие",
+    tab_all: "Все", tab_mine: "Мои", tab_others: "Остальные",
     sort_recent: "Сначала новые", sort_name: "По названию",
     edited: "изменён {ago}",
-    asked: "Запрос у хаба, ждём",
+    asked: "Запрос отправлен хабу, ждём",
     install: "Поставить",
     title: "Дизайн",
     search_ph: "Поиск по макетам",
@@ -51,16 +51,16 @@ export const STR = {
     sort: "Сортировка",
     open_by_path: "Открыть макет по пути",
     path_ph: "Открыть по пути: /…/index.html",
-    empty_found: "Ничего не нашлось.",
-    empty_none: "Макетов пока нет. Выберите вид выше или напишите слева, что нужно: специалист сделает новый файл.",
+    empty_found: "Ничего не нашлось",
+    empty_none: "Макетов пока нет. Выберите пресет выше или напишите слева, что нужно: специалист сделает новый файл.",
     no_specialist: "нет специалиста {name}",
     crumb_all: "Все папки",
     folder_none: "Без направления",
     folder_count: "Макетов: {n}",
     empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно: дизайнер сохранит его сюда.",
-    os_mac: "Мак", os_windows: "Windows", os_linux: "Linux",
+    os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
     peer_head: "{where} · макетов: {n}",
-    peer_note: "Только картинка: файл, холст и правки — на машине {where}.",
+    peer_note: "Только картинка: файл, холст и правки лежат на машине {where}",
     peer_noshot: "Снимка пока нет",
     peer_close: "Закрыть",
   },
@@ -70,7 +70,7 @@ export const t = makeT(STR);
 // a preset is a new file of that kind: the chat goes to the specialist of the kind, a stub "new <kind>: …" lands in the input.
 // title and lead are getters: they follow the hub language at the moment they are read
 const preset = (id, to) => ({ id, to, get title() { return t("preset_" + id); }, get lead() { return t("lead_" + id); } });
-export const PRESETS = [preset("slides", "designer"), preset("design", "designer"), preset("codebase", "designer"), preset("system", "designer"), preset("motion", "animator")];
+export const PRESETS = [preset("slides", "designer"), preset("design", "designer"), preset("system", "designer"), preset("motion", "animator"), preset("codebase", "designer")];
 export const TABS = ["all", "mine", "others"];   // ids; the label is t("tab_<id>")
 export const SORTS = ["recent", "name"];         // ids; the label is t("sort_<id>")
 // stubs in EVERY language: the language may change between putting a stub in the input and checking it

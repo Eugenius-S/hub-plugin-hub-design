@@ -40,6 +40,11 @@ class Manifest(unittest.TestCase):
             self.assertFalse(cyr.search(m[key]), key)
             self.assertTrue(cyr.search(m["i18n"]["ru"][key]), key)
 
+    def test_description_fits_the_catalog_limit(self):
+        m = json.loads(read("hub-plugin.json"))
+        self.assertLessEqual(len(m["description"]), 300)
+        self.assertLessEqual(len(m["i18n"]["ru"]["description"]), 300)
+
 
 @unittest.skipUnless(NODE, "node not found")
 class Scripts(unittest.TestCase):
@@ -148,7 +153,7 @@ class Scripts(unittest.TestCase):
         self.assertIn("ui.need.paint(", main)                            # a chat without a specialist: the same banner
         dash = read("dashboard.js")
         self.assertIn("export function createNeed(", dash)
-        self.assertIn('asked: "Asked the hub, waiting"', dash)
+        self.assertIn('asked: "Request sent to the hub, waiting"', dash)
         self.assertIn('no_specialist: "no specialist {name}"', dash)     # animator: a line by the preset, not a banner
         self.assertIn("Hub Design installs the designer specialist from the specialists catalog (a button on the start screen)", read("README.md"))
 

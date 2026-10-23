@@ -19,31 +19,32 @@ import { currentLang, makeT, setLangSource } from "./i18n.js";
 const STR = {
   en: {
     subtitle: "canvas, pins and edits for the designer",
-    open_in: "Open in Hub Design: this session's conversation and the typed text",
-    local_only: "Hub Design works only on this computer: open the hub via localhost.",
-    no_proc: "The plugin process is not responding at {origin}. Restart the plugin: hub restart ext:{id}",
-    write_fail: "The edits did not reach the file. They will go to the designer as text",
+    open_in: "Open in Hub Design: the conversation and typed text come along",
+    local_only: "Hub Design works only on this computer: open the hub via localhost",
+    no_proc: "No answer from Hub Design at {origin}. Restart the plugin: hub restart ext:{id}",
+    write_fail: "The edits did not reach the file. They will be sent to the designer as text.",
     not_sent: "Not sent: {err}",
-    pdf_fail: "PDF failed: {why}",
+    pdf_fail: "Could not make the PDF: {why}",
+    pdf_timeout: "Chrome did not print the PDF in {n} s", pdf_nopdf: "Chrome left no PDF (code {n})", pdf_notpdf: "Chrome returned something that is not a PDF",
     del_edit: "Remove the edit",
     pick_to: "Choose who to send the comment to",
-    home_title: "Start screen: presets and previous files",
+    home_title: "Start screen: presets and past designs",
     tab_chat: "Chat",
     tab_comments: "Comments",
     tab_comments_n: "Comments {n}",
     add_design: "Add a design",
     add_html: "Add an HTML file to the canvas",
     placeholder: "Describe what to change…",
-    who_title: "Who receives the edits",
-    exit: "Exit Hub Design", exit_title: "Leave Hub Design for the chat: {name}",
-    q_failed: "Not removed",
+    who_title: "Send the edits to",
+    exit: "Exit Hub Design", exit_title: "Exit Hub Design: back to the chat with {name}",
+    q_failed: "Could not remove",
     q_removed: "Removed from the queue",
     q_retry: "Retry",
     q_undo: "Undo",
     q_n: "Queued · {n}",
     q_now: "Send now",
     q_remove: "Remove",
-    props_hint: "Select an element on the canvas to change its color and styles.",
+    props_hint: "Select an element on the canvas to change its color and styles",
     colors: "Color",
     fill: "Fill",
     text: "Text",
@@ -57,44 +58,46 @@ const STR = {
     bi_pad: "Margins", bi_fs: "Font size", bi_ls: "Tracking", bi_lh: "Leading",
     own_color: "Custom color",
     note_chip: "Note: {text}",
-    design_errors: "Design errors: {n}",
+    design_errors: "Errors in the design: {n}",
     remove: "Remove",
     lost_prefix: "⚠ element not found · ",
     area_title: "Area x {x}, y {y}, {w}\u00d7{h} px",
-    lost_title: "Element not found: the design was re-laid out. The point stays where it was",
+    lost_title: "Element not found: the layout of the design changed. The point stays where it was.",
     in_file: "in the file",
+    none: "(none)",
     not_written: "{sel}: not written to the file. {why}",
     no_comments: "No comments yet. Choose “Comment” on the canvas toolbar and click the place you mean.",
     show_on_canvas: "Show on the canvas: {path}",
-    no_talk: "No conversation with {name} yet.",
+    no_talk: "No conversation with {name} yet",
   },
   ru: {
     subtitle: "холст, пины и правки дизайнеру",
-    open_in: "Открыть в Hub Design: разговор этой сессии и набранный текст",
-    local_only: "Hub Design работает только на этом компьютере: откройте хаб по localhost.",
-    no_proc: "Процесс плагина не отвечает на {origin}. Перезапустите плагин: hub restart ext:{id}",
-    write_fail: "Правки не записались в файл. Они уйдут дизайнеру текстом",
-    not_sent: "Не ушло: {err}",
-    pdf_fail: "PDF не вышел: {why}",
+    open_in: "Открыть в Hub Design: разговор и набранный текст перенесутся",
+    local_only: "Hub Design работает только на этом компьютере: откройте хаб по localhost",
+    no_proc: "Нет ответа от Hub Design на {origin}. Перезапустите плагин: hub restart ext:{id}",
+    write_fail: "Правки не записались в файл. Они отправятся дизайнеру текстом.",
+    not_sent: "Не отправлено: {err}",
+    pdf_fail: "Не удалось сделать PDF: {why}",
+    pdf_timeout: "Chrome не успел напечатать PDF за {n} с", pdf_nopdf: "Chrome не оставил PDF (код {n})", pdf_notpdf: "Chrome вернул не PDF",
     del_edit: "Убрать правку",
     pick_to: "Выберите, кому отправить комментарий",
-    home_title: "Стартовый экран: пресеты и прошлые файлы",
+    home_title: "Стартовый экран: пресеты и прошлые макеты",
     tab_chat: "Чат",
     tab_comments: "Комментарии",
     tab_comments_n: "Комментарии {n}",
     add_design: "Добавить макет",
     add_html: "Добавить HTML на холст",
     placeholder: "Опишите, что нужно изменить…",
-    who_title: "Кому уходят правки",
+    who_title: "Кому отправлять правки",
     exit: "Выйти из Hub Design", exit_title: "Выйти из Hub Design в чат: {name}",
-    q_failed: "Не убрано",
+    q_failed: "Не удалось убрать",
     q_removed: "Убрано из очереди",
     q_retry: "Повторить",
     q_undo: "Отменить",
     q_n: "В очереди · {n}",
     q_now: "Отправить сейчас",
     q_remove: "Убрать",
-    props_hint: "Выберите элемент на холсте, чтобы поменять цвет и стили.",
+    props_hint: "Выберите элемент на холсте, чтобы поменять цвет и стили",
     colors: "Цвет",
     fill: "Заливка",
     text: "Текст",
@@ -105,19 +108,20 @@ const STR = {
     grid_title: "display: grid, две колонки",
     tweaks: "Крутилки",
     bi_title: "Поля и шрифты",
-    bi_pad: "Поля", bi_fs: "Шрифт", bi_ls: "Трекинг", bi_lh: "Интерлиньяж",
+    bi_pad: "Поля", bi_fs: "Размер шрифта", bi_ls: "Трекинг", bi_lh: "Интерлиньяж",
     own_color: "Свой цвет",
     note_chip: "Заметка: {text}",
-    design_errors: "Ошибки макета: {n}",
+    design_errors: "Ошибок в макете: {n}",
     remove: "Убрать",
     lost_prefix: "⚠ элемент не найден · ",
     area_title: "Область x {x}, y {y}, {w}\u00d7{h} px",
-    lost_title: "Элемент не найден: макет перевёрстан. Точка осталась на прежнем месте",
+    lost_title: "Элемент не найден: в макете изменилась вёрстка. Точка осталась на прежнем месте.",
     in_file: "в файле",
+    none: "(пусто)",
     not_written: "{sel}: не записано в файл. {why}",
     no_comments: "Комментариев пока нет. Выберите «Комментарий» на панели холста и нажмите на нужное место.",
     show_on_canvas: "Показать на холсте: {path}",
-    no_talk: "С {name} ещё не говорили.",
+    no_talk: "С {name} ещё не говорили",
   },
 };
 const tr = makeT(STR);
@@ -830,6 +834,7 @@ async function install(name) {
   }
 }
 
+const PDF_WHY = { timeout: "pdf_timeout", nopdf: "pdf_nopdf", notpdf: "pdf_notpdf" };   // the server's PdfError code -> the STR key (the server's own text is English)
 // "Download PDF": the plugin process prints with its own Chrome (hub.json testchrome.path); Chrome is not set up — the page prints itself
 async function savePdf(path) {
   const f = P.frames.find((q) => q.path === path) || {};
@@ -848,7 +853,10 @@ async function savePdf(path) {
   }
   if (!res || res.status === 501) return printFrame(`${base}?print=1&auto=1&${size}`, f);
   let why = "";
-  try { why = (await res.json()).error || ""; } catch { /* not JSON */ }
+  try {
+    const j = await res.json();
+    why = PDF_WHY[j.code] ? tr(PDF_WHY[j.code], { n: j.n }) : j.error || "";
+  } catch { /* not JSON */ }
   P.note = tr("pdf_fail", { why: why || res.status });
   paint();
   return false;
@@ -870,7 +878,7 @@ const app = {
   errState, askFix, saveView: () => save(), save: () => { save(); paint(); }, tellEp, tellCanvas: tellAll,
   hello: (ep) => tellEp(ep, { t: "hello", props: PROP_LIST, external: true, theme: theme(), lang: currentLang() }),
   register: (ep) => eps.set(ep.id, ep), unregister: (id) => eps.delete(id),
-  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["pdf", "svg"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1" }),
+  fileUrl: (path, o = {}) => fileUrl(origin(), path) + "?" + new URLSearchParams({ ...(o.raw ? { raw: "1" } : {}), ...(o.dl ? { dl: "1" } : {}), ...(["pdf", "svg"].includes(cardKind(path)) && !o.dl ? { player: "1" } : {}), v: "1", lang: String(hub.lang || "").slice(0, 2) }),
   pdf: (path) => savePdf(path),
   play: (path) => { if (path) window.open(fileUrl(origin(), path) + (cardKind(path) === "svg" ? "?player=1&v=1" : ""), "_blank", "noopener"); },
   basedOn,
@@ -1639,7 +1647,7 @@ function field(f) {
   if (f.kind === "pick") {
     input = el("select");
     const vals = f.options.includes(cur) ? f.options : [cur, ...f.options];
-    for (const v of vals) { const o = el("option", null, v || "—"); o.value = v; input.append(o); }
+    for (const v of vals) { const o = el("option", null, v || tr("none")); o.value = v; input.append(o); }
     input.value = cur;
     input.addEventListener("change", () => apply(input.value));
   } else if (f.kind === "color") {

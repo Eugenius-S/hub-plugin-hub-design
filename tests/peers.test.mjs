@@ -14,9 +14,9 @@ const items = [
 test("another machine is named by its kind, in the hub language; two of a kind get the machine name", () => {
   assert.equal(peerWhere({ machine: "pc-two", os: "windows" }), "Windows");
   lang("ru");
-  assert.equal(peerWhere({ machine: "mac-one", os: "mac" }), "Мак");
+  assert.equal(peerWhere({ machine: "mac-one", os: "mac" }), "Mac");
   const two = [{ machine: "mac-one", os: "mac" }, { machine: "mac-two", os: "mac" }];
-  assert.equal(peerWhere(two[1], two), "Мак (mac-two)");
+  assert.equal(peerWhere(two[1], two), "Mac (mac-two)");
   assert.equal(peerWhere({ machine: "box", os: "plan9" }), "box");
 });
 

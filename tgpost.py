@@ -27,7 +27,7 @@ DECKS = (".pptx",)   # no shot to make: the post carries the file itself (the bo
 STR = {
     "en": {
         "caption": "**{title}** · {who}\nReply to send {who} an edit.",
-        "why_ask": "Why 👎? Press a button - or reply in your own words.",
+        "why_ask": "Why 👎? Press a button or reply in your own words.",
         "why_settle": "Why: {}",
         "why_composition": "Composition",
         "why_type": "Typography",
@@ -36,8 +36,8 @@ STR = {
         "why_all": "Everything",
     },
     "ru": {
-        "caption": "**{title}** · {who}\nРеплай — правка для {who}.",
-        "why_ask": "Почему 👎? Кнопка — или реплаем своими словами.",
+        "caption": "**{title}** · {who}\nОтветьте на пост, чтобы отправить правку {who}.",
+        "why_ask": "Почему 👎? Нажмите кнопку или ответьте своими словами.",
         "why_settle": "Почему: {}",
         "why_composition": "Композиция",
         "why_type": "Типографика",
