@@ -23,9 +23,10 @@ import fetcher  # noqa: E402
 import server  # noqa: E402
 import styles  # noqa: E402
 from sources.refero import Refero  # noqa: E402
-from test_sources import page  # noqa: E402
+from test_sources import page, rsc  # noqa: E402
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 40
+MP4 = b"\x00\x00\x00\x18ftypmp42" + bytes(range(120))
 
 
 def uid(n):
@@ -36,6 +37,7 @@ class Site(http.server.BaseHTTPRequestHandler):
     """/sitemap.xml, /style/<id>, /img/<id>.png; `plan` says what each address does: a status, "challenge", a redirect, "ok"."""
     plan = {}
     names = {}
+    covers = set()   # ids of the styles whose page names a moving cover
     hits = []
 
     def log_message(self, *a):
@@ -65,10 +67,13 @@ class Site(http.server.BaseHTTPRequestHandler):
             return self.reply(what)
         if self.path.startswith("/img/"):
             return self.reply(200, PNG, "image/png")
+        if self.path.startswith("/video/"):
+            return self.reply(200, MP4, "video/mp4")
         sid = self.path.rsplit("/", 1)[-1]
         if self.path.startswith("/style/") and sid in self.names:
             md = f"# {self.names[sid]} - design system\n\n" + "line of the style file\n" * 80
-            return self.reply(200, page(md=md, h1=self.names[sid], og=f"{base}/img/{sid}.png").encode())
+            extra = rsc((uid(9), f"{base}/img/other.png", f"{base}/video/other.mp4"), (sid, f"{base}/img/{sid}.png", f"{base}/video/{sid}.mp4")) if sid in self.covers else ""
+            return self.reply(200, page(md=md, h1=self.names[sid], og=f"{base}/img/{sid}.png", extra=extra).encode())
         self.reply(404)
 
 
@@ -92,7 +97,7 @@ class Base(unittest.TestCase):
         cls.httpd.server_close()
 
     def setUp(self):
-        Site.plan, Site.hits = {}, []
+        Site.plan, Site.hits, Site.covers = {}, [], set()
         Site.names = {uid(1): "Alder", uid(2): "Birch", uid(3): "Cedar"}
         self.lib = os.path.join(TMP, "lib-" + self.id().rsplit(".", 1)[-1])   # not made: the fetcher makes it
         self.pauses = []
@@ -138,14 +143,14 @@ class Run(Base):
         self.assertEqual((st["state"], st["added"], st["skipped"]), ("done", 0, 3))
         self.assertEqual(Site.hits, ["/sitemap.xml"])
 
-    def old_library(self, with_entry=(1, 2), files=(1, 2, 3)):
+    def old_library(self, with_entry=(1, 2), files=(1, 2, 3), covers=True):
         """What the old script (hub-sync/refero/download.py) leaves: index.json is a dict {uuid: entry} with `uuid` and `file`, md files <slug>__<uuid>.md,
-        other entries (the sets: no uuid, a `set` field) and a tags.json beside."""
+        other entries (the sets: no uuid, a `set` field) and a tags.json beside. covers=False: as it was before covers (no cover_video: their pages are read for it)."""
         os.makedirs(os.path.join(self.lib, "previews"), exist_ok=True)
         for n in files:
             with open(os.path.join(self.lib, f"old-{n}__{uid(n)}.md"), "w", encoding="utf-8") as fh:
                 fh.write("# old\n" * 300)
-        idx = {uid(n): {"uuid": uid(n), "name": f"Old {n}", "file": f"old-{n}__{uid(n)}.md", "labels": ["kept"], "preview": ""} for n in with_entry}
+        idx = {uid(n): {"uuid": uid(n), "name": f"Old {n}", "file": f"old-{n}__{uid(n)}.md", "labels": ["kept"], "preview": "", **({"cover_video": ""} if covers else {})} for n in with_entry}
         idx["set:one"] = {"name": "A set style", "file": "set-one.md", "set": "one", "source": "https://github.com/a/b", "license": "MIT"}
         with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:
             json.dump(idx, fh)
@@ -176,6 +181,64 @@ class Run(Base):
         self.old_library(with_entry=(1, 2, 3), files=(1, 2))
         st = self.run_to_end()
         self.assertEqual((st["added"], st["skipped"]), (1, 2))
+
+    def test_a_moving_cover_is_saved_beside_the_preview(self):
+        Site.covers = {uid(1)}
+        st = self.run_to_end()
+        self.assertEqual((st["state"], st["added"], st["covers"]), ("done", 3, 1))
+        e = self.index()[uid(1)]
+        self.assertEqual((e["cover_video"], e["cover_url"], e["preview"]), (f"previews/{uid(1)}.mp4", f"{self.root_url}/video/{uid(1)}.mp4", f"previews/{uid(1)}.png"))
+        with open(os.path.join(self.lib, e["cover_video"]), "rb") as fh:
+            self.assertEqual(fh.read(), MP4)
+        self.assertEqual(self.index()[uid(2)]["cover_video"], "")   # none: said once, not asked again
+        lib = styles.load(self.lib)
+        self.assertEqual(lib.cover(uid(1)), os.path.join(os.path.realpath(self.lib), "previews", f"{uid(1)}.mp4"))
+        self.assertIsNone(lib.cover(uid(2)))
+        self.assertTrue(lib.preview(uid(1)).endswith(".png"))   # the still picture stays: it is what shows until the cover plays
+        self.assertNotIn(f"/video/other.mp4", Site.hits)   # a related style's record is not ours
+
+    def test_covers_come_to_the_styles_saved_before_without_saving_them_again(self):
+        idx = self.old_library(files=(1, 2), covers=False)
+        Site.covers = {uid(1)}
+        st = self.run_to_end()
+        self.assertEqual((st["added"], st["skipped"], st["covers"]), (1, 2, 1))
+        self.assertEqual(Site.hits.count(f"/style/{uid(1)}"), 1)   # the page is read for the cover
+        self.assertEqual(Site.hits.count(f"/video/{uid(1)}.mp4"), 1)
+        after = self.index()
+        self.assertEqual(after[uid(1)]["cover_video"], f"previews/{uid(1)}.mp4")
+        self.assertEqual(after[uid(2)]["cover_video"], "")
+        for key in (uid(1), uid(2)):   # nothing else of the old entry is touched
+            self.assertEqual({k: v for k, v in after[key].items() if not k.startswith("cover_")}, idx[key])
+        self.assertEqual(after["set:one"], idx["set:one"])
+        with open(os.path.join(self.lib, f"old-1__{uid(1)}.md"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), "# old\n" * 300)   # the style file is not written again
+        with open(os.path.join(self.lib, "tags.json"), encoding="utf-8") as fh:
+            self.assertEqual(fh.read(), '{"keep": 1}')
+        Site.hits = []
+        st = self.run_to_end()   # once asked, never again: no page, no video
+        self.assertEqual((st["added"], st["skipped"], st["covers"]), (0, 3, 0))
+        self.assertEqual(Site.hits, ["/sitemap.xml"])
+
+    def test_a_cover_that_is_gone_or_a_page_that_fails_loses_no_style(self):
+        Site.covers = {uid(1), uid(2)}
+        Site.plan = {f"/video/{uid(1)}.mp4": 404, f"/video/{uid(2)}.mp4": 500}
+        st = self.run_to_end()
+        self.assertEqual((st["state"], st["added"], st["covers"]), ("done", 3, 0))
+        idx = self.index()
+        self.assertEqual(sorted(idx), [uid(1), uid(2), uid(3)])
+        self.assertEqual(idx[uid(1)]["cover_video"], "")   # gone: settled
+        self.assertNotIn("cover_video", idx[uid(2)])   # busy site: the next run asks again
+        self.assertEqual(sorted(os.listdir(os.path.join(self.lib, "previews"))), sorted(f"{uid(n)}.png" for n in (1, 2, 3)))
+
+    def test_a_cover_page_that_fails_leaves_the_old_entry_alone_and_is_asked_again(self):
+        idx = self.old_library(files=(1, 2), covers=False)
+        Site.covers = {uid(1)}
+        Site.plan = {f"/style/{uid(1)}": 500}
+        st = self.run_to_end()
+        self.assertEqual((st["state"], st["covers"]), ("done", 0))
+        after = self.index()
+        self.assertEqual(after[uid(1)], idx[uid(1)])   # untouched, no "cover_video": the next run tries again
+        self.assertEqual(after[uid(2)]["cover_video"], "")
 
     def test_the_link_without_a_scheme_is_https(self):
         for pasted, want in (("styles.refero.design", "https://styles.refero.design"), ("www.styles.refero.design/", "https://www.styles.refero.design/"),

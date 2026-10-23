@@ -35,6 +35,8 @@ TAGS_SHOWN = 6
 MD_MAX = 1024 * 1024     # a style file is read up to this size
 PREVIEW_MAX = 8 * 1024 * 1024   # a preview picture is served up to this size
 INDEX_MAX = 32 * 1024 * 1024
+COVER_MAX = 6 * 1024 * 1024     # a moving cover (a short mp4) is fetched and served up to this size
+COVERS = {".mp4": "video/mp4", ".webm": "video/webm"}
 IMAGES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".avif": "image/avif"}
 PALETTE_MAX = 24
 FONTS_MAX = 6
@@ -124,8 +126,11 @@ def _entry(root, key, raw):
     prev = _text(raw.get("preview"))
     if prev and (os.path.splitext(prev)[1].lower() not in IMAGES or _inside(root, prev.replace("\\", "/")) is None):
         prev = ""
+    cover = _text(raw.get("cover_video"))
+    if cover and (os.path.splitext(cover)[1].lower() not in COVERS or _inside(root, cover.replace("\\", "/")) is None):
+        cover = ""
     site = _text(raw.get("site"), 300)
-    return {"id": sid, "name": name, "file": file, "category": _text(raw.get("category"), 60), "tags": tags, "preview": prev.replace("\\", "/"),
+    return {"id": sid, "name": name, "file": file, "category": _text(raw.get("category"), 60), "tags": tags, "preview": prev.replace("\\", "/"), "cover": cover.replace("\\", "/"),
             "site": site if re.match(r"https?://", site) else "", "description": _text(raw.get("description"), 600)}
 
 
@@ -220,6 +225,10 @@ class Library:
         e = self.by_id.get(sid)
         return _inside(self.root, e["preview"]) if e and e["preview"] else None
 
+    def cover(self, sid):
+        e = self.by_id.get(sid)
+        return _inside(self.root, e["cover"]) if e and e.get("cover") else None
+
 
 def card_labels(e, lang="en", prefer=(), limit=LABELS_SHOWN):
     """Up to `limit` labels of a style for its card: first those the search was after, then its theme, style and mood, then the rest."""
@@ -235,7 +244,7 @@ def card_labels(e, lang="en", prefer=(), limit=LABELS_SHOWN):
 
 def brief(e, lang="en", prefer=()):
     return {"id": e["id"], "name": e["name"], "category": e["category"], "tags": e["tags"][:TAGS_SHOWN], "preview": bool(e["preview"]),
-            "labels": card_labels(e, lang, prefer)}
+            **({"cover": True} if e.get("cover") else {}), "labels": card_labels(e, lang, prefer)}
 
 
 def _stat(path):

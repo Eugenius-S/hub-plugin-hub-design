@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { AXES, DEFAULT_ID, PAGE, STR, chosen, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
+import { AXES, DEFAULT_ID, HOVER_MS, PAGE, STR, chosen, coverOnHover, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
 import { setLangSource } from "../i18n.js";
 
 const cyr = /[Ѐ-ӿ]/;
@@ -123,4 +123,76 @@ test("main: the style chip, once-only sending and no style on auto-send are in p
   assert.match(st, /=== "404"\) set\(null\)/);                         // and so is one the library no longer has
   assert.match(main, /ts\("chip", \{ name: P\.style\.name \}\)/);
   assert.match(main, /hub\.addStyle\("styles\.css"\)/);
+});
+
+// --- the moving cover: made on hover, removed on leave, one at a time ---
+function fakeCard() {
+  const doc = { made: [], createElement() { const v = fakeVideo(); doc.made.push(v); return v; } };
+  const on = {};
+  const card = { ownerDocument: doc, children: [], addEventListener(n, f) { on[n] = f; }, append(v) { card.children.push(v); v.parent = card; } };
+  return { card, doc, on };
+}
+function fakeVideo() {
+  const on = {};
+  const v = { className: "", muted: false, loop: false, src: "", played: 0, paused: 0, removed: false, attrs: {}, classes: new Set(), plays: Promise.resolve(),
+    addEventListener(n, f) { on[n] = f; }, fire(n) { on[n] && on[n](); },
+    setAttribute(k, x) { v.attrs[k] = x; }, removeAttribute(k) { delete v.attrs[k]; if (k === "src") v.src = ""; },
+    classList: { add(c) { v.classes.add(c); } }, play() { v.played++; return v.plays; }, pause() { v.paused++; }, load() {}, remove() { v.removed = true; if (v.parent) v.parent.children = v.parent.children.filter((c) => c !== v); } };
+  return v;
+}
+function clock() {
+  const c = { t: null, set(f, ms) { c.t = { f, ms }; return 1; }, clear() { c.t = null; }, fire() { const x = c.t; c.t = null; x && x.f(); } };
+  return c;
+}
+
+test("cover: nothing is made until the pointer stays, then one silent looping <video> that fades in when it has a frame", () => {
+  const { card, doc, on } = fakeCard(), c = clock();
+  coverOnHover(card, card, () => "/c?id=a", { setTimer: c.set.bind(c), clearTimer: c.clear.bind(c) });
+  assert.equal(doc.made.length, 0);   // a card on the page costs nothing
+  on.pointerenter({ pointerType: "mouse" });
+  assert.equal(c.t.ms, HOVER_MS);
+  assert.equal(doc.made.length, 0);   // still not: a pointer passing over the grid loads nothing
+  c.fire();
+  const [v] = doc.made;
+  assert.deepEqual([v.src, v.muted, v.loop, v.attrs.muted, v.played, card.children.length], ["/c?id=a", true, true, "", 1, 1]);
+  assert.ok(!v.classes.has("on"));   // the still picture shows until the first frame
+  v.fire("loadeddata");
+  assert.ok(v.classes.has("on"));
+  on.pointerleave();
+  assert.deepEqual([v.removed, v.paused, v.src, card.children.length], [true, 1, "", 0]);   // the download is dropped with the element
+});
+
+test("cover: a pointer that leaves before the stay ends makes nothing; touch makes nothing", () => {
+  const { card, doc, on } = fakeCard(), c = clock();
+  coverOnHover(card, card, () => "/c", { setTimer: c.set.bind(c), clearTimer: c.clear.bind(c) });
+  on.pointerenter({ pointerType: "mouse" });
+  on.pointerleave();
+  assert.equal(c.t, null);
+  on.pointerenter({ pointerType: "touch" });
+  assert.equal(c.t, null);
+  assert.equal(doc.made.length, 0);
+});
+
+test("cover: only one plays at a time, and a cover that fails to play goes away leaving the still picture", () => {
+  const a = fakeCard(), b = fakeCard(), c = clock();
+  const opts = { setTimer: c.set.bind(c), clearTimer: c.clear.bind(c) };
+  coverOnHover(a.card, a.card, () => "/a", opts);
+  coverOnHover(b.card, b.card, () => "/b", opts);
+  a.on.pointerenter({}); c.fire();
+  b.on.pointerenter({}); c.fire();   // the first one never got its leave (a re-render, a lost event): the next one stops it
+  assert.equal(a.doc.made[0].removed, true);
+  assert.equal(b.card.children.length, 1);
+  b.doc.made[0].fire("error");
+  assert.equal(b.card.children.length, 0);
+  const d = fakeCard();
+  coverOnHover(d.card, d.card, () => "/d", opts);
+  d.doc.createElement = () => { const v = fakeVideo(); v.plays = Promise.reject(new Error("NotAllowed")); d.doc.made.push(v); return v; };
+  d.on.pointerenter({}); c.fire();
+  return Promise.resolve().then(() => Promise.resolve()).then(() => assert.equal(d.card.children.length, 0));
+});
+
+test("cover: the card and the big picture make the video only through the hover (no <video> in the source of a card)", () => {
+  const src = readFileSync(new URL("../styles.js", import.meta.url), "utf8");
+  assert.equal([...src.matchAll(/createElement\("video"\)/g)].length, 1);   // the one place: coverOnHover
+  assert.ok(!/el\("video"/.test(src));
 });

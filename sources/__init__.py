@@ -5,8 +5,9 @@ A source has:
   matches(url) -> bool - is this link its own;
   allowed(url) -> bool - may the fetcher go to this address (the site itself and its picture host; a redirect elsewhere is refused);
   plan(url, get) -> [ref] - the styles a link stands for; ref = {id, url, lastmod?, image?}; raises SourceError(code);
-  parse(page, ref) -> style - {id, name, md, category, tags, site, description, image_url, lastmod} from the page text; raises SourceError(code);
-  image_ok(url) -> bool - may a preview be fetched from this address.
+  parse(page, ref) -> style - {id, name, md, category, tags, site, description, image_url, video_url?, lastmod} from the page text; raises SourceError(code);
+  image_ok(url) -> bool - may a preview be fetched from this address;
+  cover_url(page, ref) -> str - optional: the address of the moving cover of a style from its page ("" - none); parse() gives it as video_url.
 `get(url)` is given by the fetcher: the page text (None - the page is gone); a refusal of the site stops the whole run there."""
 from .refero import Refero, SourceError
 

@@ -764,10 +764,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def styles(self, route, q):
         """The style reference library (styles.py): /__canvas/styles - search and categories, /style - one card, /style-preview - its picture,
-        /style-md - its file as text. The data answers only to the hub page's origin; the picture and the file are plain GETs (an <img> and a link).
+        /style-cover - its moving cover (a short mp4), /style-md - its file as text. The data answers only to the hub page's origin; the picture and the file are plain GETs (an <img> and a link).
         Only what the library index lists, inside the library folder."""
         extra = self.cors()
-        files = route in ("/__canvas/style-preview", "/__canvas/style-md")   # an <img> and a link send no Origin: guard() already refused foreign sites
+        files = route in ("/__canvas/style-preview", "/__canvas/style-cover", "/__canvas/style-md")   # an <img> and a link send no Origin: guard() already refused foreign sites
         if not extra and not files:
             return self.say(403, {"error": "origin"})
         lib = library()
@@ -808,6 +808,14 @@ class Handler(BaseHTTPRequestHandler):
             if not data or len(data) > styles.PREVIEW_MAX:   # gone meanwhile, or not a preview but a huge picture
                 return self.say(404, {"error": "no preview"}, extra)
             return self.send(200, styles.IMAGES[os.path.splitext(real)[1].lower()], data, {**extra, "Cache-Control": "private, max-age=86400"})
+        if route == "/__canvas/style-cover":
+            real = lib.cover(sid)
+            try:
+                if not real or os.path.getsize(real) > styles.COVER_MAX:
+                    return self.say(404, {"error": "no cover"}, extra)
+            except OSError:
+                return self.say(404, {"error": "no cover"}, extra)
+            return self.file(real)   # with Range: a <video> seeks
         if route == "/__canvas/style-md":
             real = lib.path(sid)
             if not real:

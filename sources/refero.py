@@ -14,6 +14,7 @@ _LOC = re.compile(r"<loc>\s*([^<]*?)\s*</loc>")
 _LASTMOD = re.compile(r"<lastmod>\s*([^<]*?)\s*</lastmod>")
 _IMAGE = re.compile(r"<image:loc>\s*([^<]*?)\s*</image:loc>")
 _SITEMAP_LOC = re.compile(r"<sitemap>.*?<loc>\s*([^<]*?)\s*</loc>", re.S)
+_COVER = re.compile(r'"screenshotUrl":"([^"]+)"[^{}]*?"previewVideoUrl":"([^"]+)"')   # a style record in the page data: its picture and its moving cover
 PAGES_MAX = 80  # collection pages one link may stand for
 MD_MIN = 1000  # a style file shorter than this is not a style file (the real ones are 1500+)
 
@@ -188,6 +189,22 @@ class Refero:
             raise SourceError("no_styles")
         return refs
 
+    def _cover(self, page, image):
+        """The moving cover (a short muted mp4) of the style the page is about: the page data holds records of several styles (the related ones),
+        the one whose picture is this page's picture is ours. "" - the style has none, or it is not on the picture host."""
+        for shot, video in _COVER.findall((page or "").replace('\\"', '"')):
+            if shot == image and self.image_ok(video) and urlparse(video).path.lower().endswith((".mp4", ".webm")):
+                return video
+        return ""
+
+    def cover_url(self, page, ref):
+        """The address of the moving cover from a style page, without reading the style itself (for the styles saved before covers were fetched)."""
+        p = _Page(self.hosts)
+        p.feed(page or "")
+        p.close()
+        image = (p.meta.get("og:image") or [""])[0].strip()
+        return self._cover(page, image if self.image_ok(image) else ref.get("image") or "")
+
     def parse(self, page, ref):
         p = _Page(self.hosts)
         p.feed(page or "")
@@ -202,4 +219,4 @@ class Refero:
             image = ref.get("image") if self.image_ok(ref.get("image")) else ""
         return {"id": ref["id"], "name": name[:120], "md": md, "category": one("category")[:60],
                 "tags": [t.strip() for t in p.meta.get("article:tag", []) if t.strip()][:40], "site": p.site,
-                "description": one("description")[:600], "image_url": image, "lastmod": ref.get("lastmod", "")}
+                "description": one("description")[:600], "image_url": image, "video_url": self._cover(page, image), "lastmod": ref.get("lastmod", "")}

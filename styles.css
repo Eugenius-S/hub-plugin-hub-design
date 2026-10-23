@@ -42,6 +42,11 @@
 .hds-detail{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
 .hds-dl{flex:1 1 320px;min-width:0}
 .hds-dr{flex:1 1 320px;min-width:0}
+.hds-pic,.hds-bigw{position:relative;display:block}
+.hds-vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;pointer-events:none;opacity:0;transition:opacity .2s,transform .15s}
+.hds-bigw .hds-vid{border-radius:14px}
+.hds-vid.on{opacity:1}
+.hds-card:hover .hds-vid{transform:translateY(-1px)}
 .hds-big{display:block;width:100%;border-radius:14px;box-shadow:var(--shadow-plate);background:var(--muted)}
 .hds-dname{margin:0;font-family:var(--font-display,var(--font));font-size:22px;line-height:30px;font-weight:500}
 .hds-dmeta{color:var(--muted-foreground);margin-top:2px}

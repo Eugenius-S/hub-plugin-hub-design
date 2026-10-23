@@ -30,6 +30,16 @@ def page(md=BODY, h1="Marlin", og=f"https://{IMG}/p/a.jpg", extra=""):
 <pre><code>short</code></pre><pre><code>{esc}</code></pre>{extra}</main></body></html>"""
 
 
+def rsc(*records):
+    """The page data as the site ships it: records of styles in a script, quotes escaped (the first record is not ours, it is a related style)."""
+    body = ",".join('{"id":"%s","screenshotUrl":"%s","screenshotAlt":"x"%s}' % (i, shot, f',"previewVideoUrl":"{video}"' if video else "")
+                    for i, shot, video in records)
+    return '<script>self.__next_f.push([1,"%s"])</script>' % body.replace('"', '\\"')
+
+
+COVER = f"https://{IMG}/video/a.mp4"
+
+
 def src():
     return Refero(hosts=(HOST,), image_hosts=(IMG,))
 
@@ -59,6 +69,22 @@ class Parse(unittest.TestCase):
         self.assertEqual(s["image_url"], f"https://{IMG}/sm.png")   # the sitemap's one, the page's is foreign
         s = src().parse(page(og="https://evil.example/x.png"), {"id": A})
         self.assertEqual(s["image_url"], "")
+
+    def test_the_cover_is_the_record_of_this_style_not_of_a_related_one(self):
+        extra = rsc((B, f"https://{IMG}/p/b.jpg", f"https://{IMG}/video/b.mp4"), (A, f"https://{IMG}/p/a.jpg", COVER), (C, f"https://{IMG}/p/c.jpg", f"https://{IMG}/video/c.mp4"))
+        s = src().parse(page(extra=extra), {"id": A})
+        self.assertEqual(s["video_url"], COVER)
+        self.assertEqual(s["image_url"], f"https://{IMG}/p/a.jpg")   # the picture is as it was
+        self.assertEqual(src().cover_url(page(extra=extra), {"id": A}), COVER)   # for the styles saved before covers: no style file needed
+
+    def test_no_cover_when_the_style_has_none_or_it_is_foreign_or_not_a_video(self):
+        for extra in ("", rsc((A, f"https://{IMG}/p/a.jpg", "")),   # a record without one
+                      rsc((B, f"https://{IMG}/p/b.jpg", COVER)),   # only a related style has one
+                      rsc((A, f"https://{IMG}/p/a.jpg", "https://evil.example/a.mp4")),   # not the picture host
+                      rsc((A, f"https://{IMG}/p/a.jpg", f"https://{IMG}/video/a.html"))):   # not a video
+            self.assertEqual(src().parse(page(extra=extra), {"id": A})["video_url"], "", extra)
+            self.assertEqual(src().cover_url(page(extra=extra), {"id": A}), "", extra)
+        self.assertEqual(src().cover_url("", {"id": A}), "")
 
     def test_a_page_without_a_style_file_is_bad(self):
         for html in ("<html><body><main><h1>x</h1></main></body></html>", page(md="# tiny\n"), page(md="no heading " * 300), ""):

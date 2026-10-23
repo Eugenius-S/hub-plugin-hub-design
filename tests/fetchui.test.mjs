@@ -122,6 +122,20 @@ test("fetchui: Download sends the links, shows the run, tells the Style window a
   assert.equal(find(root, "hdf-count").textContent, "In the library: 10");
 });
 
+test("fetchui: the count of animated covers is shown only when there are some", async () => {
+  rig([{ json: st({ state: "running", total: 4, done: 2, added: 2, covers: 1 }) }, { json: st({ state: "running", total: 4, done: 3, added: 3 }) }]);
+  const ui = createFetchUi({ hub: page(), base: () => "http://x", onAdded: () => {}, store: store() });
+  const root = node("div");
+  ui.render(root);
+  await tick();
+  clearTimeout(ui.state.timer);
+  assert.equal(find(root, "hdf-prog").textContent, "2 of 4 · added 2, skipped 0, failed 0 · covers 1");
+  clearTimeout(ui.state.timer);
+  await ui.poll();
+  clearTimeout(ui.state.timer);
+  assert.equal(find(root, "hdf-prog").textContent, "3 of 4 · added 3, skipped 0, failed 0");
+});
+
 test("fetchui: a refused start is told in words, the buttons stay free", async () => {
   rig([{ json: st({}) }, { status: 400, json: { ...st({}), error: "no_source", link: "https://other.test/x" } }]);
   const ui = createFetchUi({ hub: page(), base: () => "http://x", store: store() });

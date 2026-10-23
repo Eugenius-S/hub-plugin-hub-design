@@ -174,6 +174,25 @@ class Index(unittest.TestCase):
         self.assertIsNone(lib.preview("a"))
         self.assertEqual(lib.preview("c"), os.path.join(self.root, "previews", "marlin.png"))
 
+    def test_a_cover_is_a_video_inside_the_folder_or_nothing(self):
+        for name in ("a.mp4", "b.webm"):
+            with open(os.path.join(self.root, "previews", name), "wb") as f:
+                f.write(b"\x00")
+        self.write_index({
+            "a": {"name": "A", "file": "plain__c3.md", "cover_video": "previews/a.mp4"},
+            "b": {"name": "B", "file": "plain__c3.md", "cover_video": "previews/b.webm"},
+            "c": {"name": "C", "file": "plain__c3.md", "cover_video": "previews/marlin.png"},
+            "d": {"name": "D", "file": "plain__c3.md", "cover_video": "../" + os.path.basename(self.out) + "/evil.mp4"},
+            "e": {"name": "E", "file": "plain__c3.md", "cover_video": ""},
+            "f": {"name": "F", "file": "plain__c3.md"},
+        })
+        lib = styles.load(self.root)
+        self.assertEqual({k: bool(e["cover"]) for k, e in lib.by_id.items()}, {"a": True, "b": True, "c": False, "d": False, "e": False, "f": False})
+        self.assertEqual(lib.cover("a"), os.path.join(self.root, "previews", "a.mp4"))
+        self.assertIsNone(lib.cover("c"))
+        self.assertEqual(styles.brief(lib.by_id["a"])["cover"], True)
+        self.assertNotIn("cover", styles.brief(lib.by_id["f"]))   # the card of a style without one is as it was
+
     def test_a_link_out_of_the_folder_is_not_followed(self):
         with open(os.path.join(self.out, "secret.md"), "w") as f:
             f.write("# secret")

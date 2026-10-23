@@ -47,6 +47,47 @@ export function pager(total, offset, size = PAGE) {
   const page = Math.min(pages, Math.floor(Math.max(0, offset) / size) + 1);
   return { page, pages, prev: page > 1 ? (page - 2) * size : null, next: page < pages ? page * size : null };
 }
+// a moving cover plays only under the pointer, one at a time, silent: the <video> is made after a short stay on the card and removed when the
+// pointer leaves (a library of over a thousand covers is never loaded at once, as in the gallery of motion); no cover or a failing one - the still picture stays
+export const HOVER_MS = 150;
+let playing = null;   // the stop of the cover that plays now
+export function coverOnHover(trigger, into, src, { delay = HOVER_MS, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+  let timer = 0, video = null;
+  const stop = () => {
+    clearTimer(timer);
+    timer = 0;
+    if (video) { video.pause(); video.removeAttribute("src"); video.load(); video.remove(); video = null; }
+    if (playing === stop) playing = null;
+  };
+  const start = () => {
+    timer = 0;
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;   // the still picture is enough
+    if (playing) playing();
+    playing = stop;
+    const v = into.ownerDocument.createElement("video");
+    video = v;
+    v.className = "hds-vid";
+    v.muted = true;
+    v.loop = true;
+    v.playsInline = true;
+    v.preload = "auto";
+    v.setAttribute("muted", "");
+    v.addEventListener("loadeddata", () => v.classList.add("on"));   // fades in over the still picture once it has a frame
+    v.addEventListener("error", () => { if (video === v) stop(); });
+    v.src = src();
+    into.append(v);
+    const p = v.play();
+    if (p && p.catch) p.catch(() => { if (video === v) stop(); });
+  };
+  trigger.addEventListener("pointerenter", (e) => {
+    if (e && e.pointerType === "touch") return;
+    clearTimer(timer);
+    if (!video) timer = setTimer(start, delay);
+  });
+  trigger.addEventListener("pointerleave", stop);
+  trigger.addEventListener("pointercancel", stop);
+  return stop;
+}
 export const DEFAULT_ID = "__default";   // the id of the default style (hub.json default_style, styles.py DEFAULT_ID)
 // the default style from the answer of the plugin process: only id, name, the path of the file and whether it has a picture; none - null
 export function defaultStyle(raw) {
@@ -110,6 +151,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
 
   const url = (route, params) => `${base()}/__canvas/${route}?${params}`;
   const preview = (id) => url("style-preview", new URLSearchParams({ id }).toString());
+  const cover = (id) => url("style-cover", new URLSearchParams({ id }).toString());
   async function ask(route, params) {
     const res = await fetch(url(route, params), { cache: "no-store" });
     if (!res.ok) throw new Error(String(res.status));
@@ -228,6 +270,12 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     } else {
       pic = el("span", "hds-img hds-none", initials(it.name));
     }
+    if (it.cover) {   // the video is not made here: only on hover
+      const wrap = el("span", "hds-pic");
+      wrap.append(pic);
+      coverOnHover(b, wrap, () => cover(it.id));
+      pic = wrap;
+    }
     b.append(pic, el("span", "hds-name", it.name), it.isDefault ? el("span", "hds-def", t("def_badge")) : el("span", "hds-cat-name", it.category || ""));
     if (it.labels && it.labels.length) b.append(el("span", "hds-labs", it.labels.map((x) => x.t).join(" · ")));
     b.addEventListener("click", () => show(it.id));
@@ -238,7 +286,17 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     const wrap = el("div", "hds-detail");
     if (d.loading || d.failed) { wrap.append(el("div", "hds-empty", d.failed ? t("failed") : t("loading"))); return wrap; }
     const left = el("div", "hds-dl");
-    if (d.preview) { const img = el("img", "hds-big"); img.alt = ""; img.src = preview(d.id); left.append(img); }
+    if (d.preview) {
+      const img = el("img", "hds-big");
+      img.alt = "";
+      img.src = preview(d.id);
+      if (d.cover) {   // the same: plays under the pointer only
+        const wrap = el("div", "hds-bigw");
+        wrap.append(img);
+        coverOnHover(wrap, wrap, () => cover(d.id));
+        left.append(wrap);
+      } else left.append(img);
+    }
     const right = el("div", "hds-dr");
     const meta = [d.category, d.theme === "dark" ? t("theme_dark") : d.theme === "light" ? t("theme_light") : ""].filter(Boolean).join(" · ");
     right.append(el("h3", "hds-dname", d.name), el("div", "hds-dmeta", meta));

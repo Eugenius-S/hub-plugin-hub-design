@@ -148,6 +148,17 @@ def known(data, kind):
     return out
 
 
+def entries(data, kind):
+    """[(id, entry)] of the index entries that are dicts (the entry itself, not a copy: a change is written back with write_index)."""
+    out = []
+    for key, e in (data.items() if kind == "dict" else enumerate(data)):
+        if isinstance(e, dict):
+            sid = str(e.get("id") or e.get("uuid") or (key if kind == "dict" else "")).strip()
+            if sid:
+                out.append((sid, e))
+    return out
+
+
 def on_disk(root):
     """{id: file} of the style files in the folder by their names <slug>__<id>.md - a style whose entry is lost from index.json is still there."""
     out = {}
@@ -182,7 +193,7 @@ class Fetcher:
         self.lock = threading.Lock()
         self.halt = threading.Event()
         self.thread = None
-        self.st = {"state": "idle", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "name": "", "code": "", "http": 0, "urls": [], "args": {}}
+        self.st = {"state": "idle", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0, "urls": [], "args": {}}
 
     def hosts(self):
         return sources.names(self.sources)
@@ -232,7 +243,7 @@ class Fetcher:
             if self.thread and self.thread.is_alive():
                 return False, "busy", ""
             self.halt.clear()
-            self.st.update({"state": "running", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "name": "", "code": "", "http": 0,
+            self.st.update({"state": "running", "total": 0, "done": 0, "added": 0, "skipped": 0, "failed": 0, "covers": 0, "name": "", "code": "", "http": 0,
                             "urls": links, "args": {}})
             self.thread = threading.Thread(target=self._run, args=(chosen,), daemon=True)
             self.thread.start()
@@ -275,11 +286,14 @@ class Fetcher:
             row = 0   # failures in a row
             data, kind = read_index(root)
             have = {**on_disk(root), **{k.lower(): v for k, v in known(data, kind).items() if os.path.isfile(os.path.join(root, v))}}   # id -> file
+            no_cover = {k.lower() for k, e in entries(data, kind) if "cover_video" not in e and k.lower() in have}   # saved before covers were fetched: not asked yet
             for source, ref in refs:
                 if self.halt.is_set():
                     raise Stop("stopped", "stopped")
                 if ref["id"].lower() in have:   # downloaded before, by this fetcher or by the old script: not a second copy
                     self._count("skipped")
+                    if ref["id"].lower() in no_cover and hasattr(source, "cover_url"):   # only its cover is missing: the page is read for it, the style is not saved again
+                        row = self._backfill(root, source, ref, row)
                     continue
                 self.pause()
                 try:
@@ -320,6 +334,44 @@ class Fetcher:
                     refs.append((source, ref))
         return refs
 
+    def _cover(self, root, source, sid, url):
+        """Saves the moving cover of a style as previews/<id>.<ext>; -> the path in the folder, or "" (no cover, too big, not a video, gone)."""
+        ext = os.path.splitext(urlparse(url).path)[1].lower()
+        if not url or ext not in styles.COVERS:
+            return ""
+        self.pause(IMAGE_GAP)
+        try:
+            data, _ = self._get(url, source.allowed, styles.COVER_MAX)
+        except Gone:
+            return ""
+        if not data:
+            return ""
+        with open(os.path.join(root, "previews", sid + ext), "wb") as f:
+            f.write(data)
+        return f"previews/{sid}{ext}"
+
+    def _backfill(self, root, source, ref, row):
+        """The cover of a style that is already in the library: its page is read, only the entry gets two fields (the style file and the labels stay).
+        -> the failures in a row (the network is gone: the run stops like it does for new styles)."""
+        self.pause()
+        try:
+            page = self._page(source, ref["url"])
+            url = source.cover_url(page, ref) if page else ""
+            path = self._cover(root, source, ref["id"], url)
+        except (OSError, sources.SourceError):
+            row += 1
+            if row >= FAILS_IN_A_ROW:
+                raise Stop("network")
+            return row
+        data, kind = read_index(root)
+        for key, e in entries(data, kind):
+            if key.lower() == ref["id"].lower():
+                e["cover_video"], e["cover_url"] = path, url if path else ""
+        write_index(root, data)
+        if path:
+            self._count("covers")
+        return 0
+
     def _one(self, root, source, ref):
         page = self._page(source, ref["url"])
         if page is None:
@@ -348,12 +400,18 @@ class Fetcher:
                     preview = f"previews/{sid}{ext}"
             except (Gone, OSError):
                 pass   # a style without a picture is still a style; only a refusal of the site (Stop) is not caught here
+        try:
+            cover = self._cover(root, source, sid, style.get("video_url") or "")
+        except OSError:
+            cover = None   # the style is worth saving without it; no cover_video in its entry: the next run asks for the cover again
         with open(os.path.join(root, fname), "w", encoding="utf-8", newline="\n") as f:
             f.write(style["md"])
         data, kind = read_index(root)   # read again: another process may have written there while the page came
         entry = {"uuid": sid, "name": style["name"], "url": ref["url"], "file": fname, "category": style["category"], "tags": style["tags"],
                  "collections": [], "preview": preview, "preview_url": style["image_url"], "site": style["site"], "description": style["description"],
                  "lastmod": style["lastmod"] or _stamp(), "bytes": len(style["md"].encode("utf-8"))}
+        if cover is not None:
+            entry["cover_video"], entry["cover_url"] = cover, (style.get("video_url") or "") if cover else ""
         if kind == "dict":
             data[sid] = entry
         else:
@@ -361,3 +419,5 @@ class Fetcher:
         write_index(root, data)
         self._set(name=style["name"])
         self._count("added")
+        if cover:
+            self._count("covers")

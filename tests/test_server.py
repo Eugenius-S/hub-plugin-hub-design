@@ -835,6 +835,50 @@ class StyleLibrary(unittest.TestCase):
         r, _ = self.get("/__canvas/style-preview?id=a1")
         self.assertEqual(r.status, 404)
 
+    def with_cover(self, name="previews/marlin.mp4", data=b"\x00\x00\x00\x18ftypmp42" + bytes(range(200))):
+        """The first style gets a moving cover: a file and a line in the index; both go back after the test."""
+        path = os.path.join(self.root, "index.json")
+        with open(path, "rb") as f:
+            keep = f.read()
+        self.addCleanup(lambda: open(path, "wb").write(keep))
+        index = json.loads(keep)
+        index["a1"]["cover_video"] = name
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(index, f)
+        real = os.path.join(self.root, name)
+        with open(real, "wb") as f:
+            f.write(data)
+        self.addCleanup(os.remove, real)
+        return data
+
+    def test_a_moving_cover_is_served_with_ranges_and_only_from_the_index(self):
+        data = self.with_cover()
+        r, body = self.get("/__canvas/style-cover?id=a1")
+        self.assertEqual((r.status, r.getheader("Content-Type"), body), (200, "video/mp4", data))
+        r, body = self.get("/__canvas/style-cover?id=a1", {"Range": "bytes=10-19"})   # a <video> seeks
+        self.assertEqual((r.status, body), (206, data[10:20]))
+        r, _ = self.get("/__canvas/style-cover?id=b2")   # listed, but without a cover
+        self.assertEqual(r.status, 404)
+        _, d = self.ask("/__canvas/styles?q=marlin")
+        self.assertEqual([(i["id"], i.get("cover")) for i in d["items"]], [("a1", True)])
+        _, d = self.ask("/__canvas/styles?q=neon")
+        self.assertNotIn("cover", d["items"][0])
+        for bad in ("../index", "marlin__a1.md", "previews/marlin.mp4", os.path.join(self.root, "previews", "marlin.mp4"), ""):
+            r, body = self.get(f"/__canvas/style-cover?id={bad}", self.ORIGIN)
+            self.assertEqual(r.status, 404, bad)
+        r, _ = self.get("/__canvas/style-cover?id=a1", {"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(r.status, 403)
+
+    def test_a_huge_cover_and_a_cover_that_is_not_a_video_are_not_served(self):
+        import styles
+        from test_styles import png
+        self.with_cover(data=b"\x00" * (styles.COVER_MAX + 1))
+        r, _ = self.get("/__canvas/style-cover?id=a1")
+        self.assertEqual(r.status, 404)
+        self.with_cover(name="previews/other.png", data=png())   # a picture is no cover: the entry drops it
+        r, _ = self.get("/__canvas/style-cover?id=a1")
+        self.assertEqual(r.status, 404)
+
     def test_the_data_answers_only_to_the_hub_page(self):
         r, _ = self.ask("/__canvas/styles", headers={})
         self.assertEqual(r.status, 403)
