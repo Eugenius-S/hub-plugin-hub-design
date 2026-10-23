@@ -17,7 +17,7 @@
 .hdd-search:focus,.hdd-path:focus{border-color:var(--ring)}
 
 /* presets */
-.hdd-presets{display:flex;flex-wrap:nowrap;gap:10px;margin:28px -6px 0;padding:6px 6px 8px;overflow-x:auto;scrollbar-width:none}   /* does not fit - the row scrolls without a bar, labels do not wrap */
+.hdd-presets{display:flex;flex-wrap:nowrap;gap:var(--space-4);margin:28px -6px 0;padding:6px 6px 8px;overflow-x:auto;scrollbar-width:none}   /* does not fit - the row scrolls without a bar, labels do not wrap */
 .hdd-presets::-webkit-scrollbar{display:none}
 .hdd-presets.more{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 56px),transparent)}   /* more on the right - the edge fades out */
 .hdd-preset{flex:0 0 134px;min-width:0;border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;gap:8px;color:var(--foreground)}
