@@ -76,7 +76,7 @@ class Scripts(unittest.TestCase):
         self.assertIn("hd-home", main)                                      # back to the dashboard: the logo
         dash = read("dashboard.js")
         self.assertIn("IntersectionObserver", dash)                         # previews load only near the screen
-        self.assertIn("LIVE_MAX", dash)                                     # and no more than a handful at once
+        self.assertIn("SHOTS_AT_ONCE", dash)                                # and no more than a handful at once
         self.assertIn("!S.list", dash)                                      # no previews in the list
         css = read("dashboard.css")
         self.assertIn(".hdd{position:absolute;inset:0", css)                # over the canvas, not instead of it

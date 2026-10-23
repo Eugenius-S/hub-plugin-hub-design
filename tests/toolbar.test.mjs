@@ -11,7 +11,7 @@ const rd = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8").repl
 test("sort button: its own up-and-down arrows icon, not the sliders of the frame menu", () => {
   assert.ok(CI.sort && CI.sort !== CI.sliders);
   assert.match(rd("dashboard.js"), /tool\("sort", \(\) => \{ S\.sort/);
-  assert.match(rd("dashboard.js"), /bSort\.title = t\("sort"\)/, "the title stays");
+  assert.match(rd("dashboard.js"), /setTitle\(bSort, t\("sort"\)/, "the title stays");
 });
 
 test("kebab: tilted by the rotate property, so the hover swell (transform) does not turn it", () => {

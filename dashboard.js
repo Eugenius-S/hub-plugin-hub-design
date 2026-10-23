@@ -189,8 +189,92 @@ export function place(parent, nodes) {
   for (const c of [...parent.children]) if (!keep.has(c)) c.remove();
   nodes.forEach((n, i) => { if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] || null); });
 }
+// rows by key: a row whose sig did not change keeps its node (its pictures do not reload, a selection in it stays), only new or changed ones are made
+export function keyed(parent, cache, items, keyOf, sigOf, make) {
+  const next = new Map();
+  const nodes = items.map((it, i) => {
+    const k = keyOf(it) ?? "#" + i, sig = sigOf(it), old = cache.get(k);
+    const node = old && old.sig === sig ? old.node : make(it);
+    next.set(k, { sig, node });
+    return node;
+  });
+  cache.clear();
+  for (const [k, v] of next) cache.set(k, v);
+  place(parent, nodes);
+}
 const setText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
 const setTitle = (node, text) => { if (node.title !== text) node.title = text; };
+const setAttr = (node, k, v) => { if (node.getAttribute(k) !== v) node.setAttribute(k, v); };
+const setHidden = (node, v) => { if (node.hidden !== v) node.hidden = v; };
+
+// previews: a shot of the design (PNG of the plugin process: its headless Chrome, cached on disk by path and edit time), not the live document -
+// a dozen live designs at once froze the page and the rest stayed grey. A shot this browser already had is put at once; a new one waits
+// in a queue: only what is in view, SHOTS_AT_ONCE at a time (each new one is a Chrome run of 1-3 s), a failed one again after RETRY
+export const SHOTS_AT_ONCE = 2;
+const RETRY = [3000, 10000, 30000];
+const KNOWN_KEY = "hub-design:shots", KNOWN_MAX = 400;
+let known = null;   // shot addresses that loaded in this browser (localStorage)
+const knownSet = () => {
+  if (!known) { try { known = new Set(JSON.parse(globalThis.localStorage?.getItem(KNOWN_KEY) || "[]")); } catch { known = new Set(); } }
+  return known;
+};
+const remember = (src) => {
+  const k = knownSet();
+  k.delete(src);
+  k.add(src);
+  while (k.size > KNOWN_MAX) k.delete(k.values().next().value);
+  try { globalThis.localStorage?.setItem(KNOWN_KEY, JSON.stringify([...k])); } catch { /* full or off: known for this page only */ }
+};
+export const forgetShots = () => { known = new Set(); try { globalThis.localStorage?.removeItem(KNOWN_KEY); } catch { /* off */ } };
+
+// the queue of shots: c = {img, shot, visible, want, shown}; the new shot is loaded aside and put into the card when it is there - the old
+// picture stays until then (a card never goes blank on an edit)
+function shotQueue(el, later, max = SHOTS_AT_ONCE) {
+  const waiting = new Set();
+  let busy = 0;
+  const put = (c, src) => { c.shown = src; if (c.img.src !== src) c.img.src = src; if (c.shot.dataset.live !== "1") c.shot.dataset.live = "1"; };
+  function start(c) {
+    const src = c.want, probe = el("img");
+    busy++;
+    c.loading = src;
+    let done = false;
+    const end = (ok) => {
+      if (done) return;
+      done = true;
+      busy--;
+      if (c.loading === src) c.loading = null;
+      if (ok) { remember(src); if (c.want === src) put(c, src); }
+      else if (c.want === src) {
+        c.tries = (c.tries || 0) + 1;
+        if (c.tries <= RETRY.length) later(() => { if (c.want === src && c.shown !== src) { waiting.add(c); pump(); } }, RETRY[c.tries - 1]);
+      }
+      pump();
+    };
+    probe.onload = () => end(true);
+    probe.onerror = () => end(false);
+    probe.src = src;
+  }
+  function pump() {
+    while (busy < max) {
+      let next = null;
+      for (const c of waiting) if (c.visible) { next = c; break; }
+      if (!next) return;
+      waiting.delete(next);
+      if (next.want && next.want !== next.shown && next.want !== next.loading) start(next);
+    }
+  }
+  return {
+    // the card wants this shot ("" - none)
+    want(c, src) {
+      if (!src || src === c.shown) { waiting.delete(c); return; }
+      if (c.want !== src) { c.want = src; c.tries = 0; }
+      if (knownSet().has(src)) { waiting.delete(c); put(c, src); return; }
+      if (src !== c.loading) { waiting.add(c); pump(); }
+    },
+    pump,
+    drop: (c) => waiting.delete(c),
+  };
+}
 // createDashboard(app): app = { hub, files(), dirs(), mine(), alive(), fileState(path), fileUrl(path), open(path), preset(p), openPath(path), lacking(), install(name),
 //   peers() - [{machine, os, items}] of the other machines, peerShot(machine, shot) - the url of a picture }
 export function createDashboard(app) {
@@ -403,12 +487,12 @@ export function createDashboard(app) {
     }
     // the bar: inside a machine folder (and its direction) the owner sees where he is and how to go up
     if (open) {
-      crumb.hidden = false;
-      back.textContent = "\u2190 " + (S.pdir !== null ? hubName : t("crumb_all"));
-      cname.textContent = S.pdir !== null ? (S.pdir || t("folder_none")) : hubName;
-      cname.title = hubName;
+      setHidden(crumb, false);
+      setText(back, "\u2190 " + (S.pdir !== null ? hubName : t("crumb_all")));
+      setText(cname, S.pdir !== null ? (S.pdir || t("folder_none")) : hubName);
+      setTitle(cname, hubName);
     } else {
-      back.textContent = "\u2190 " + t("crumb_all");
+      setText(back, "\u2190 " + t("crumb_all"));   // set here only: paint() setting it too made it flip on every snapshot inside a machine
     }
     // the folders of the machines: one tile each, as long as nothing is searched and no machine is open
     const tilesOnly = !open && !S.q.trim();
@@ -474,47 +558,37 @@ export function createDashboard(app) {
     return count;
   }
 
-  // a preview is the real document in a scaled-down iframe; only what is in view is loaded (and no more than LIVE_MAX at once)
-  const LIVE_MAX = 16;
-  const cards = new Map();   // path -> {path, node, shot, frame, meta, name, live}; the previews of folder tiles are "t:<path>"
-  const fit = (c) => {
-    const w = c.shot.clientWidth, h = c.shot.clientHeight;
-    if (!w || !h) return;
-    c.frame.style.transform = `scale(${w / 1440})`;   // fit to width, no side margins: the lower part is cropped
-  };
-  const sizes = new ResizeObserver((rows) => { for (const r of rows) { const c = [...cards.values()].find((x) => x.shot === r.target); if (c) fit(c); } });
+  // a preview is a shot of the design (see shotQueue): known ones at once, new ones from the queue while in view
+  const cards = new Map();   // path -> {path, node, shot, img, name, text, visible}; the previews of folder tiles are "t:<path>"
+  const queue = shotQueue(el, app.later || ((f, ms) => setTimeout(f, ms)));
   const seen = new IntersectionObserver((rows) => {
     for (const r of rows) {
-      const c = [...cards.values()].find((x) => x.node === r.target);
-      if (c) { c.visible = r.isIntersecting; load(c); }
+      for (const c of cards.values()) if (c.node === r.target) { c.visible = r.isIntersecting; load(c); }
     }
+    queue.pump();
   }, { root, rootMargin: "200px" });
   function load(c) {
-    const want = c.visible && app.alive() && !S.list && !isGone(app.fileState(c.path));
-    if (want && !c.frame.src && [...cards.values()].filter((x) => x.frame.src).length < LIVE_MAX) {
-      c.frame.src = app.fileUrl(c.path);
-      c.shot.dataset.live = "1";
-    }
+    const on = app.alive() && !S.list && !isGone(app.fileState(c.path));
+    queue.want(c, on && app.thumb ? app.thumb(c.path) : "");
   }
-  // a live preview: the real document in a scaled-down iframe
   function shotOf(path, cls) {
     const shot = el("span", cls);
-    const frame = el("iframe", "hdd-frame");
-    frame.setAttribute("tabindex", "-1");
-    frame.setAttribute("aria-hidden", "true");
-    frame.setAttribute("title", nameOf(path));
-    shot.append(frame);
-    return { shot, frame };
+    const img = el("img", "hdd-img");
+    img.draggable = false;
+    img.alt = "";
+    img.setAttribute("aria-hidden", "true");
+    shot.append(img);
+    return { shot, img };
   }
   function thumb(path) {
     const key = "t:" + path;
     let c = cards.get(key);
     if (c) return c;
-    const { shot, frame } = shotOf(path, "hdd-shot hdd-tshot");
-    c = { path, node: shot, shot, frame, visible: false };
+    const { shot, img } = shotOf(path, "hdd-shot hdd-tshot");
+    c = { path, node: shot, shot, img, visible: false };
     cards.set(key, c);
-    sizes.observe(shot);
     seen.observe(shot);
+    load(c);
     return c;
   }
   function card(f) {
@@ -524,7 +598,7 @@ export function createDashboard(app) {
     node.type = "button";
     node.dataset.path = f.path;
     node.title = f.path;
-    const { shot, frame } = shotOf(f.path, "hdd-shot");
+    const { shot, img } = shotOf(f.path, "hdd-shot");
     const tile = el("span", "hdd-tile");
     tile.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M 12 2 C 6.241 2 1.6193906 6.8668906 2.0253906 12.712891 C 2.3923906 18.001891 7.0056406 22 12.306641 22 L 13 22 C 14.105 22 15 21.105 15 20 L 15 17 C 15 15.895 15.895 15 17 15 L 20 15 C 21.105 15 22 14.105 22 13 L 22 12.306641 C 22 7.0056406 18.002844 2.3923906 12.714844 2.0253906 C 12.474844 2.0083906 12.236 2 12 2 z M 12 4 C 12.19 4 12.381219 4.0065313 12.574219 4.0195312 C 16.738219 4.3085313 20 7.9486406 20 12.306641 L 20 13 L 17 13 C 14.794 13 13 14.794 13 17 L 13 20 L 12.306641 20 C 7.9486406 20 4.3075312 16.737219 4.0195312 12.574219 C 3.8635312 10.324219 4.6194375 8.1839219 6.1484375 6.5449219 C 7.6794375 4.9039219 9.758 4 12 4 z M 12.5 5 A 1.5 1.5 0 0 0 11 6.5 A 1.5 1.5 0 0 0 12.5 8 A 1.5 1.5 0 0 0 14 6.5 A 1.5 1.5 0 0 0 12.5 5 z M 8.5 6 A 1.5 1.5 0 0 0 7 7.5 A 1.5 1.5 0 0 0 8.5 9 A 1.5 1.5 0 0 0 10 7.5 A 1.5 1.5 0 0 0 8.5 6 z M 16.5 7 A 1.5 1.5 0 0 0 15 8.5 A 1.5 1.5 0 0 0 16.5 10 A 1.5 1.5 0 0 0 18 8.5 A 1.5 1.5 0 0 0 16.5 7 z M 6.5 10 A 1.5 1.5 0 0 0 5 11.5 A 1.5 1.5 0 0 0 6.5 13 A 1.5 1.5 0 0 0 8 11.5 A 1.5 1.5 0 0 0 6.5 10 z M 10 14 A 2 2 0 0 0 8 16 A 2 2 0 0 0 10 18 A 2 2 0 0 0 12 16 A 2 2 0 0 0 10 14 z"/></svg>';
     const name = el("span", "hdd-name", nameOf(f.path));
@@ -537,10 +611,10 @@ export function createDashboard(app) {
     body.append(name, meta);
     node.append(shot, tile, body);
     node.addEventListener("click", () => app.open(f.path));
-    c = { path: f.path, node, shot, frame, name, text, visible: false };
+    c = { path: f.path, node, shot, img, name, text, visible: false };
     cards.set(f.path, c);
-    sizes.observe(shot);
     seen.observe(node);
+    load(c);
     return c;
   }
   // a folder tile: up to PREVIEWS of the newest designs (2x2) and the name of the direction
@@ -578,20 +652,18 @@ export function createDashboard(app) {
     const inPeer = S.peer !== null;   // inside the folder of another machine its designs only: the own ones are hidden
     const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q });
     const inFolder = S.folder !== null;
-    crumb.hidden = !inFolder && !inPeer;
-    if (inFolder) { cname.textContent = folderTitle(S.folder, dirs); cname.title = S.folder; }
+    setHidden(crumb, !inFolder && !inPeer);
+    if (inFolder) { setText(cname, folderTitle(S.folder, dirs)); setTitle(cname, S.folder); }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
     const named = !inFolder && dirs.length > 0;   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
       const where = named ? folderTitle(folderOf(f.path, dirs), dirs) : "";
-      c.text.textContent = [f.session, named && folderOf(f.path, dirs) ? where : "", editedText(f)].filter(Boolean).join(" · ");
+      setText(c.text, [f.session, named && folderOf(f.path, dirs) ? where : "", editedText(f)].filter(Boolean).join(" · "));
       return c.node;
     });
-    // move only the ones that shifted: moving an iframe in the DOM reloads it
-    nodes.forEach((n, i) => { if (files.children[i] !== n) files.insertBefore(n, files.children[i] || null); });
-    while (files.children.length > nodes.length) files.lastChild.remove();
+    place(files, nodes);   // move only the ones that shifted: a card put back replays its entrance animation
     // tiles
     const groups = v.mode === "folders" ? v.groups : [];
     const live = new Set();
@@ -608,53 +680,52 @@ export function createDashboard(app) {
       for (let i = Math.min(g.files.length, PREVIEWS); i < PREVIEWS; i++) if (tl.cells[i].firstChild) tl.cells[i].replaceChildren();
       return tl.node;
     });
-    tnodes.forEach((n, i) => { if (folders.children[i] !== n) folders.insertBefore(n, folders.children[i] || null); });
-    while (folders.children.length > tnodes.length) folders.lastChild.remove();
+    place(folders, tnodes);
     for (const key of [...tiles.keys()]) if (!groups.some((g) => g.key === key)) tiles.delete(key);
     const shownNow = new Set(list.map((f) => f.path));
     for (const [key, c] of cards) {
       const thumbOnly = key.startsWith("t:");
-      if (thumbOnly ? !live.has(key) : !all.some((f) => f.path === key)) { sizes.unobserve(c.shot); seen.unobserve(c.node); cards.delete(key); continue; }
-      // what is not on the screen now gives its live frame back: only visible previews take the LIVE_MAX places
-      if (!thumbOnly && !shownNow.has(key) && c.frame.src) { c.frame.removeAttribute("src"); delete c.shot.dataset.live; c.visible = false; }
+      if (thumbOnly ? !live.has(key) : !all.some((f) => f.path === key)) { seen.unobserve(c.node); queue.drop(c); cards.delete(key); continue; }
+      if (!thumbOnly && !shownNow.has(key)) { c.visible = false; queue.drop(c); }   // a card not on the screen now waits for no shot
     }
-    folders.hidden = !tnodes.length;
-    files.hidden = inPeer || v.mode !== "files";
+    setHidden(folders, !tnodes.length);
+    setHidden(files, inPeer || v.mode !== "files");
     const peerCount = paintPeers();
-    empty.hidden = nodes.length > 0 || tnodes.length > 0 || peerCount > 0;
+    setHidden(empty, nodes.length > 0 || tnodes.length > 0 || peerCount > 0);
     // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"
-    empty.textContent = inFolder && !S.q.trim() && S.tab === "all" ? t("empty_folder") : S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none");
-    for (const c of cards.values()) { load(c); fit(c); }
+    setText(empty, inFolder && !S.q.trim() && S.tab === "all" ? t("empty_folder") : S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none"));
+    for (const c of cards.values()) load(c);   // the edit time of a design changed - its new shot
     folders.classList.toggle("list", S.list);
   }
   function paint() {
     // static texts are set here, not at creation: the hub language is read at use time
-    head.textContent = t("title");
-    search.placeholder = t("search_ph");
-    pathIn.placeholder = t("path_ph");
-    bMore.title = t("open_by_path");
-    bMore.setAttribute("aria-label", bMore.title);
-    search.setAttribute("aria-label", t("search"));
-    bView.title = S.list ? t("tiles") : t("list");
-    bView.setAttribute("aria-label", bView.title);
-    bSort.title = t("sort") + ": " + t("sort_" + S.sort);
-    bSort.setAttribute("aria-label", bSort.title);
-    for (const [p, label] of labels) label.textContent = p.title.replace("-", "\u2011").replace(/ (\u0432|in) /, " $1\u00a0");   // wrap only between words: not at the hyphen, not after the preposition (0432 in Russian)
-    for (const [id, b] of tabBtns) { b.textContent = t("tab_" + id); b.classList.toggle("on", S.tab === id); }
-    back.textContent = "\u2190 " + t("crumb_all");
+    // every write here only when the value changed: this runs on every snapshot of the hub
+    setText(head, t("title"));
+    if (search.placeholder !== t("search_ph")) search.placeholder = t("search_ph");
+    if (pathIn.placeholder !== t("path_ph")) pathIn.placeholder = t("path_ph");
+    setTitle(bMore, t("open_by_path"));
+    setAttr(bMore, "aria-label", bMore.title);
+    setAttr(search, "aria-label", t("search"));
+    setTitle(bView, S.list ? t("tiles") : t("list"));
+    setAttr(bView, "aria-label", bView.title);
+    setTitle(bSort, t("sort") + ": " + t("sort_" + S.sort));
+    setAttr(bSort, "aria-label", bSort.title);
+    for (const [p, label] of labels) setText(label, p.title.replace("-", "\u2011").replace(/ (\u0432|in) /, " $1\u00a0"));   // wrap only between words: not at the hyphen, not after the preposition (0432 in Russian)
+    for (const [id, b] of tabBtns) { setText(b, t("tab_" + id)); b.classList.toggle("on", S.tab === id); }
     bView.classList.toggle("on", S.list);
-    bView.innerHTML = CI[S.list ? "grid" : "list"];
+    const icon = S.list ? "grid" : "list";
+    if (bView.dataset.icon !== icon) { bView.dataset.icon = icon; bView.innerHTML = CI[icon]; }
     bSort.classList.toggle("on", S.sort !== "recent");
     bMore.classList.toggle("on", S.path);
-    pathIn.hidden = !S.path;
+    setHidden(pathIn, !S.path);
     // the required specialist is missing - a banner; a wanted one - a quiet line by its preset
     const lack = app.lacking();
     need.paint(lack.filter((n) => n.need === "required"));
     for (const p of PRESETS) {
       const n = lack.find((x) => x.name === p.to && x.need !== "required");
       const sub = subs.get(p.id);
-      sub.hidden = !n;
-      sub.textContent = n ? t("no_specialist", { name: n.name }) : "";
+      setHidden(sub, !n);
+      setText(sub, n ? t("no_specialist", { name: n.name }) : "");
     }
     files.classList.toggle("list", S.list);
     paintFiles();

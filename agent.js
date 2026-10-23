@@ -693,8 +693,9 @@
     stop(e);
     if (mode !== "comment") return;
     if (Date.now() - swallow < 400) return;   // the click that ends a drag has already made a region
-    const el = e.target;
-    if (!pickable(el)) return;
+    // a click on the empty background of the design pins to the body: a comment is placed on every first click
+    const el = pickable(e.target) ? e.target : document.body;
+    if (!el || ours(e.target)) return;
     const r = pageRect(el);
     const x = e.clientX + scrollX, y = e.clientY + scrollY;
     send({ t: "pick", sel: selector(el), fp: A ? A.fingerprint(el, r) : null, label: label(el), tag: el.tagName.toLowerCase(), x, y, ex: r.x, ey: r.y, w: r.w, h: r.h,

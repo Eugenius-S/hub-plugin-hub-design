@@ -81,7 +81,9 @@ export function createCanvas(app) {
   const relabel = () => {
     for (let i = bound.length - 1; i >= 0; i--) {
       const [o, n, k, prop] = bound[i];
-      if (alive(o)) n[prop] = t(k); else bound.splice(i, 1);
+      if (!alive(o)) { bound.splice(i, 1); continue; }
+      const v = t(k);
+      if (n[prop] !== v) n[prop] = v;   // only a changed text: this runs on every snapshot of the hub
     }
   };
 
@@ -252,13 +254,14 @@ export function createCanvas(app) {
       const n = fr.get(f.path);
       if (!n) continue;
       const s = app.errState(f.path);
-      n.err.hidden = !s;
+      if (n.err.hidden !== !s) n.err.hidden = !s;
       if (!s) continue;
       const word = s.n === 1 ? t("err_one") : t("err_many", { n: s.n });
       const act = s.state === "draft" ? t("err_draft") : s.state === "sent" ? t("err_sent") : t("err_ask");
-      n.err.textContent = `⚠ ${word} · ${act}`;
-      n.err.disabled = !!s.state;
-      n.err.title = s.state ? "" : t("err_title");
+      const text = `⚠ ${word} · ${act}`, title = s.state ? "" : t("err_title");
+      if (n.err.textContent !== text) n.err.textContent = text;
+      if (n.err.disabled !== !!s.state) n.err.disabled = !!s.state;
+      if (n.err.title !== title) n.err.title = title;
     }
   }
   function placeLabels() {
@@ -364,9 +367,10 @@ export function createCanvas(app) {
   function showGone(f, n) {
     const state = app.fileState(f.path);
     const gone = isGone(state);
-    n.gone.hidden = !gone;
+    if (n.gone.hidden !== !gone) n.gone.hidden = !gone;
     if (gone) {
-      n.goneMsg.textContent = goneText(state, f.path);
+      const msg = goneText(state, f.path);
+      if (n.goneMsg.textContent !== msg) n.goneMsg.textContent = msg;
       if (n.shown) { n.iframe.src = "about:blank"; n.ep.ready = false; n.shown = false; }
     } else if (!n.shown) reloadFrame(f.path);
   }
@@ -660,8 +664,9 @@ export function createCanvas(app) {
       d.node.classList.toggle("sent", n.state === "sent");
       if (document.activeElement !== d.ta && d.ta.value !== (n.text || "")) d.ta.value = n.text || "";
     }
-    empty.hidden = P.alive !== false;
-    empty.textContent = P.alive === false ? P.note : "";
+    if (empty.hidden !== (P.alive !== false)) empty.hidden = P.alive !== false;
+    const emptyText = P.alive === false ? P.note : "";
+    if (empty.textContent !== emptyText) empty.textContent = emptyText;
     placeLabels();
     paintErrs();
     placeEditor();

@@ -10,12 +10,16 @@ import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
-import { createDashboard, createNeed, isStub, stubText } from "./dashboard.js";
+import { createDashboard, createNeed, isStub, keyed, stubText } from "./dashboard.js";
 import { createFetchUi, t as tf } from "./fetchui.js";
 import { createFirstRun } from "./firstrun.js";
 import { createLaneAsk, withLane } from "./lane.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { currentLang, makeT, setLangSource } from "./i18n.js";
+// writes only on a change: paint() runs on every snapshot of the hub, and a text written again is a new node and a new layout
+const setText = (n, v) => { if (n.textContent !== v) n.textContent = v; };
+const setHidden = (n, v) => { if (n.hidden !== v) n.hidden = v; };
+const chatRows = new Map();   // the chat rows by key: {sig, node}
 
 // UI strings: en by default, ru when the hub language is Russian (see i18n.js); texts are resolved at use time, never at load
 const STR = {
@@ -480,6 +484,8 @@ async function loadRegistry(force = false) {
   clearTimeout(regTimer);
   if (!r.ready) regTimer = setTimeout(() => loadRegistry(true), 5000);   // the first pass over the archive is still running
   if (changed) { recompute(); paint(); }
+  // the edit time is the address of a card's shot: the files the registry vouched for have not been through verify()
+  loadTimes(r.items.map((it) => abs(it.path)).filter((p) => P.have[p] === "ok" && !P.times[p]));
 }
 // the designs of the other machines of the owner (peers.py of the plugin process): pictures and names, refreshed at most once a minute
 async function loadPeers(force = false) {
@@ -578,7 +584,8 @@ async function designSize(f, fresh = false) {
   }
   save();
   paint();
-  if (ui) { ui.cv.paint(); if (P.frames.length === 1 || P.cv.auto) ui.cv.fit(); else if (fresh) ui.cv.focusOn(f.path); }
+  // the size came after a reload of the frame: the owner's zoom stays (fit only while the view follows the frames itself, or a just opened single frame)
+  if (ui) { ui.cv.paint(); if (P.cv.auto || (fresh && P.frames.length === 1)) ui.cv.fit(); else if (fresh) ui.cv.focusOn(f.path); }
 }
 function removeFrame(path, keepDrafts = false) {
   P.frames = P.frames.filter((f) => f.path !== path);
@@ -705,7 +712,13 @@ const epOf = (file) => eps.get("f:" + file);
 const tellFile = (file, msg) => tellEp(epOf(file), msg);
 const tellAll = (msg) => { for (const ep of eps.values()) tellEp(ep, msg); };
 
-// the hub's colors for frames and pins inside a frame: the frame lives at another address and does not see the theme variables
+// the hub's colors for frames and pins inside a frame: the frame lives at another address and does not see the theme variables.
+// themeSig - the variables as declared (no probe nodes): paint() runs on every snapshot, the probes only when the theme changed
+const THEME_VARS = ["--hd-acc", "--hd-on", "--foreground", "--background", "--border", "--muted-foreground"];
+function themeSig() {
+  const cs = getComputedStyle(ui?.wrap || document.body);
+  return THEME_VARS.map((v) => cs.getPropertyValue(v).trim()).join("|") + "|" + cs.fontFamily;
+}
 function theme() {
   const probe = (v) => {
     const n = document.createElement("span");
@@ -1278,6 +1291,8 @@ function build(root) {
   const tw = el("div", "hd-tw"), pbody = el("div", "hd-pbody");
   props.append(tw, pbody);
   const dash = createDashboard({
+    // a card's picture: the shot of the plugin process (cached by edit time); none until the edit time is known
+    thumb: (path) => { const m = P.times[abs(path)]; return m ? `${origin()}/__canvas/thumb?path=${encodeURIComponent(abs(path))}&m=${m}` : ""; },
     hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { registry: P.registry, skip: (n) => P.hubs.has(n), who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
     preset: (p) => startPreset(p), lacking: lackNow, install, peers: () => P.peers, peerShot,
@@ -1320,24 +1335,23 @@ function paint() {
   setSession(wanted());
   if (P.focus && P.shown) ensureAuthor(P.focus);
   if (ui.last.lang !== currentLang()) relang();
-  const th = theme();
-  const sig = JSON.stringify(th) + "#" + currentLang();
-  if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: th, lang: currentLang() }); }
-  ui.title.textContent = P.focus && !home() ? nameOf(P.focus) || "Hub Design" : "Hub Design";
+  const sig = themeSig() + "#" + currentLang();
+  if (ui.last.theme !== sig) { ui.last.theme = sig; tellAll({ t: "theme", theme: theme(), lang: currentLang() }); }
+  setText(ui.title, P.focus && !home() ? nameOf(P.focus) || "Hub Design" : "Hub Design");
   ui.tabChat.classList.toggle("on", P.tab === "chat");
   ui.tabComments.classList.toggle("on", P.tab === "comments");
   const live = P.pins.filter((p) => p.state !== "done" && String(p.text || "").trim()).length + P.changes.filter((c) => c.state !== "done" && hasEffect(c)).length +
     P.drawings.filter((d) => d.state !== "done").length + P.notes.filter((n) => String(n.text || "").trim()).length;
-  ui.tabChat.textContent = tr("tab_chat");
-  ui.tabComments.textContent = live ? tr("tab_comments_n", { n: live }) : tr("tab_comments");
-  ui.chat.hidden = P.tab !== "chat";
-  ui.list.hidden = P.tab !== "comments";
-  ui.note.textContent = P.note;
-  ui.note.hidden = !P.note;
+  setText(ui.tabChat, tr("tab_chat"));   // every write here only on a change: paint() runs on every snapshot of the hub
+  setText(ui.tabComments, live ? tr("tab_comments_n", { n: live }) : tr("tab_comments"));
+  setHidden(ui.chat, P.tab !== "chat");
+  setHidden(ui.list, P.tab !== "comments");
+  setText(ui.note, P.note);
+  setHidden(ui.note, !P.note);
   ui.cv.paint();
   ui.lane.paint(snap);
   ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // on the start screen the dashboard shows the required one itself
-  ui.dash.node.hidden = !home();
+  setHidden(ui.dash.node, !home());
   if (home()) ui.dash.paint();
 
   // to whom: the hub's agents and sessions, the designer first
@@ -1730,10 +1744,10 @@ function paintCard() {
     ...P.notes.filter((d) => d.state === "draft" && String(d.text || "").trim()).map((d) => ({ text: tr("note_chip", { text: d.text }), ic: "note", del: () => { P.notes = P.notes.filter((q) => q !== d); } })),
     ...draftErrs().map((e) => ({ text: tr("design_errors", { n: normErrors(e.items).length }), ic: "edit", del: () => { P.errs = P.errs.filter((q) => q !== e); } })),
   ];
-  ui.styleBtn.hidden = !ui.st.shown();
+  setHidden(ui.styleBtn, !ui.st.shown());
   const def = !P.style && ui.st.def();
-  ui.styleBtn.querySelector(".hd-style-t").textContent = P.style ? ts("chip", { name: P.style.name }) : def ? ts("def_chip", { name: def.name }) : ts("btn");
-  ui.styleBtn.lastChild.hidden = !P.style;
+  setText(ui.styleBtn.querySelector(".hd-style-t"), P.style ? ts("chip", { name: P.style.name }) : def ? ts("def_chip", { name: def.name }) : ts("btn"));
+  setHidden(ui.styleBtn.lastChild, !P.style);
   const sig = JSON.stringify([n, items.map((i) => i.text), P.busy]);
   if (ui.last.card === sig) return;
   ui.last.card = sig;
@@ -1808,7 +1822,9 @@ function paintChat() {
   ui.last.chat = sig;
   const stick = ui.chat.scrollHeight - ui.chat.scrollTop - ui.chat.clientHeight < 40;
   const el = hub.el;
-  ui.chat.replaceChildren(...lines.map((l) => {
+  if (!lines.length) { chatRows.clear(); ui.chat.replaceChildren(el("div", "hd-hint", tr("no_talk", { name: P.session }))); return; }
+  // only new and changed rows are made: the rest stay as they are (a picture does not reload, a selected text stays selected)
+  keyed(ui.chat, chatRows, lines, (l) => l.k, (l) => JSON.stringify([P.session, l.text, l.who, l.head, l.mine, l.image || ""]), (l) => {
     const row = el("div", "hd-msg " + (l.mine ? "me" : "them") + (l.head ? "" : " cont"));
     if (l.who && l.head) row.append(el("div", "hd-who-name", l.who));
     const body = el("div", "hd-mbody");
@@ -1837,7 +1853,6 @@ function paintChat() {
     body.append(document.createTextNode(rest));
     row.append(body);
     return row;
-  }));
-  if (!lines.length) ui.chat.append(el("div", "hd-hint", tr("no_talk", { name: P.session })));
+  });
   if (stick) ui.chat.scrollTop = ui.chat.scrollHeight;
 }

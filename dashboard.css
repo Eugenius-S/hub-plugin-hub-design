@@ -59,8 +59,8 @@
 .hdd-card:hover{box-shadow:var(--shadow-lift)}
 .hdd-card:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .hdd-shot{position:relative;display:block;height:160px;overflow:hidden;background:var(--muted)}
-.hdd-frame{position:absolute;left:0;top:0;width:1440px;height:900px;border:0;background:#fff;pointer-events:none;transform-origin:0 0;transform:scale(.1);opacity:0;transition:opacity .2s;box-shadow:0 0 0 1px color-mix(in oklab,var(--foreground) 8%,transparent)}
-.hdd-shot[data-live] .hdd-frame{opacity:1}
+.hdd-img{position:absolute;left:0;top:0;width:100%;height:auto;opacity:0;transition:opacity .2s;pointer-events:none;box-shadow:0 0 0 1px color-mix(in oklab,var(--foreground) 8%,transparent)}
+.hdd-shot[data-live] .hdd-img{opacity:1}
 .hdd-tile{position:absolute;left:12px;top:146px;width:28px;height:28px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--primary);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-plate)}
 .hdd-body{display:flex;flex-direction:column;gap:4px;padding:26px 14px 14px;min-width:0}
 .hdd-name{font-size:var(--text-base);font-weight:500;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

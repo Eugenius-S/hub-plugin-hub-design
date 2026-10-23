@@ -21,6 +21,7 @@ class El {
   set src(v) { this._src = v; this.log.srcSets.push(v); }
   get src() { return this._src || ""; }
   setAttribute(k, v) { this.attrs[k] = v; }
+  getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   removeAttribute(k) { delete this.attrs[k]; if (k === "src") this._src = ""; }
   addEventListener(t, f) { this.listeners[t] = f; }
   querySelector() { return null; }
