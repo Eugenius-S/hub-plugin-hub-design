@@ -1,17 +1,27 @@
-// Hub Design: the "Download styles" tab of the hub settings. Paste links to a style site, press "Download": the process of the plugin
-// (fetcher.py) saves the styles into the local library, the "Style" window sees them at once. All the work is in the process;
-// the page only starts, stops and shows the run (GET /__canvas/fetch once a second while a run is on).
-import { makeT } from "./i18n.js";
+// Hub Design: the "Download styles" tab of the hub settings. The links to the style sites are a list of fields (a new empty one appears when
+// one is filled); the plugin process remembers them (linkctl.py), press "Download": it saves the styles into the local library, the "Style"
+// window sees them at once. Deleting a link takes its styles from the disk (after the owner saw the number). All the work is in the process;
+// the page only asks and shows (GET /__canvas/fetch once a second while a run is on).
+import { currentLang, makeT } from "./i18n.js";
 
 export const LINKS_MAX = 20;      // the same as fetcher.LINKS_MAX
-export const STORE_KEY = "hub-design:fetch-links";
+export const STORE_KEY = "hub-design:fetch-links";   // the links were kept in the browser before; taken into the plugin once
 export const POLL_MS = 1000;
 
 export const STR = {
   en: {
     title: "Hub Design: styles",
-    lead: "Download style references (DESIGN.md and a preview each) into the local library. Paste a link, press Download. The link may be a whole site, a collection or a single style.",
-    links: "Links", ph: "https://… (one link per line)",
+    lead: "Download style references (DESIGN.md and a preview each) into the local library. Add links below: a whole site, a collection or a single style. Fill one field and a new empty one appears.",
+    links: "Links", ph: "https://… (link)",
+    n_one: "{n} style", n_few: "{n} styles", n_many: "{n} styles",
+    del: "Delete the link and its styles",
+    del_q: "Delete this link and remove {styles} from the disk?", del_kept: "{kept} stay: they came by another link too.",
+    del_yes: "Delete", del_no: "Cancel", deleted: "Deleted: {styles}.",
+    auto: "Download the links above by default when Hub Design is turned on",
+    np_q: "{styles} without a preview. Ask a designer to make previews?", np_give: "Give the task", np_no: "Not needed",
+    np_sent: "The task is with the designer: {styles}.",
+    np_task: "Please make previews for {styles} of the Hub Design style library. The list with the paths is in {path}: for each style save a picture of its design (about 1280×800, png, jpg or webp) to the path from preview_to (the folder is {dir}). Hub Design picks the pictures up by itself. Do not change the .md files.",
+    e_np_send: "Could not send the task to the designer: {err}",
     hosts: "Supported sites: {hosts}",
     go: "Download", stop: "Stop", stopping: "Stopping…",
     count: "In the library: {n}",
@@ -19,12 +29,18 @@ export const STR = {
     now: "Now: {name}",
     s_done: "Done. Added {added}, skipped as already downloaded {skipped}, failed {failed}.",
     s_stopped: "Stopped. Added {added}, skipped {skipped}, failed {failed}. Press Download to continue: what is saved is skipped.",
-    e_no_links: "Paste at least one link.",
+    e_no_links: "Add at least one link.",
     e_too_many: "At most {max} links at once.",
     e_bad_link: "This is not a link: {link}",
     e_no_source: "No parser for this site yet: {link}. Supported: {hosts}.",
     e_busy: "A download is already running.",
     e_no_styles: "No styles found at this link.",
+    e_no_link: "This link is no longer in the list.",
+    e_github_repo: "A link to a repository is needed: github.com/owner/name.",
+    e_github_unknown: "There is no parser for the repository {repo} yet.",
+    e_github_layout: "The repository {repo} has changed its layout and the parser no longer reads it.",
+    e_no_git: "Git is needed to download a repository, and it was not found on this computer.",
+    e_clone_failed: "Could not download the repository {repo}. Check the connection and try again.",
     e_forbidden: "The site refused (HTTP {http}). Stopped. Try again later, and not too often.",
     e_rate: "The site asks to slow down (HTTP {http}). Stopped. Try again in an hour or so.",
     e_captcha: "The site asks for a captcha. Stopped. Open it in a browser once, then try again later.",
@@ -39,8 +55,17 @@ export const STR = {
   },
   ru: {
     title: "Hub Design: стили",
-    lead: "Скачивает референсы стилей (DESIGN.md и превью) в локальную библиотеку. Вставьте ссылку и нажмите «Скачать». Ссылка может вести на весь сайт, на подборку или на один стиль.",
-    links: "Ссылки", ph: "https://… (по ссылке в строке)",
+    lead: "Скачивает референсы стилей (DESIGN.md и превью) в локальную библиотеку. Добавьте ссылки ниже: на весь сайт, на подборку или на один стиль. Заполните поле, и появится новое пустое.",
+    links: "Ссылки", ph: "https://… (ссылка)",
+    n_one: "{n} стиль", n_few: "{n} стиля", n_many: "{n} стилей",
+    del: "Удалить ссылку и её стили",
+    del_q: "Удалить эту ссылку и стереть с диска {styles}?", del_kept: "Останутся {kept}: они пришли и по другой ссылке.",
+    del_yes: "Удалить", del_no: "Отмена", deleted: "Удалено: {styles}.",
+    auto: "Скачивать ссылки по умолчанию при включении Hub Design",
+    np_q: "{styles} без превью. Дать дизайнеру задание сделать превью?", np_give: "Дать задание", np_no: "Не надо",
+    np_sent: "Задание у дизайнера: {styles}.",
+    np_task: "Сделайте, пожалуйста, превью для {styles} из библиотеки стилей Hub Design. Список с путями лежит в {path}: для каждого стиля сохраните картинку его дизайна (около 1280×800, png, jpg или webp) по пути из preview_to (папка {dir}). Hub Design подхватит картинки сам. Файлы .md не меняйте.",
+    e_np_send: "Не получилось отправить задание дизайнеру: {err}",
     hosts: "Поддерживаются сайты: {hosts}",
     go: "Скачать", stop: "Стоп", stopping: "Останавливается…",
     count: "В библиотеке: {n}",
@@ -48,12 +73,18 @@ export const STR = {
     now: "Сейчас: {name}",
     s_done: "Готово. Добавлено {added}, пропущено как уже скачанные {skipped}, с ошибкой {failed}.",
     s_stopped: "Остановлено. Добавлено {added}, пропущено {skipped}, с ошибкой {failed}. «Скачать» продолжит: сохранённое пропускается.",
-    e_no_links: "Вставьте хотя бы одну ссылку.",
+    e_no_links: "Добавьте хотя бы одну ссылку.",
     e_too_many: "Не больше {max} ссылок за раз.",
     e_bad_link: "Это не ссылка: {link}",
     e_no_source: "Для этого сайта пока нет разборщика: {link}. Поддерживаются: {hosts}.",
     e_busy: "Скачивание уже идёт.",
     e_no_styles: "По этой ссылке стилей не нашлось.",
+    e_no_link: "Этой ссылки уже нет в списке.",
+    e_github_repo: "Нужна ссылка на репозиторий: github.com/владелец/имя.",
+    e_github_unknown: "Для репозитория {repo} пока нет разборщика.",
+    e_github_layout: "В репозитории {repo} изменилась структура, разборщик её не читает.",
+    e_no_git: "Чтобы скачать репозиторий, нужен Git, а на этом компьютере его не нашлось.",
+    e_clone_failed: "Не получилось скачать репозиторий {repo}. Проверьте связь и повторите.",
     e_forbidden: "Сайт отказал (HTTP {http}). Скачивание остановлено. Попробуйте позже и не слишком часто.",
     e_rate: "Сайт просит помедленнее (HTTP {http}). Скачивание остановлено. Попробуйте через час-другой.",
     e_captcha: "Сайт просит капчу. Скачивание остановлено. Откройте сайт в браузере один раз, потом попробуйте позже.",
@@ -89,7 +120,7 @@ export function problem(st) {
   if (!code) return "";
   const key = "e_" + code;
   if (!(key in STR.en)) return t("e_internal");
-  return t(key, { http: st.http || "", link: st.link || "", max: LINKS_MAX, hosts: (st.hosts || []).join(", ") });
+  return t(key, { http: st.http || "", link: st.link || "", repo: (st.args || {}).repo || "", max: LINKS_MAX, hosts: (st.hosts || []).join(", ") });
 }
 
 // the line under the buttons: how the run ended (an error is shown by problem())
@@ -101,21 +132,35 @@ export function summary(st) {
   return "";
 }
 
-export function createFetchUi({ hub, base, local = () => true, onAdded = () => {}, store = globalThis.localStorage }) {
+// the number with its word: "5 styles"; Russian has three forms
+export function styles(n) {
+  const cat = new Intl.PluralRules(currentLang()).select(n);
+  return t(cat === "one" ? "n_one" : cat === "few" ? "n_few" : "n_many", { n });
+}
+
+export function createFetchUi({ hub, base, local = () => true, onAdded = () => {}, ask = null, store = globalThis.localStorage }) {
   const el = hub.el;
-  const S = { st: null, count: null, err: "", timer: 0, busy: false, added: 0, off: false, tried: 0 };
-  const ta = el("textarea", "hdf-links");
-  ta.rows = 3;
-  ta.spellcheck = false;
-  ta.value = (store && store.getItem(STORE_KEY)) || "";
-  ta.addEventListener("input", () => { if (store) store.setItem(STORE_KEY, ta.value); });
+  const S = { st: null, count: null, err: "", info: "", timer: 0, busy: false, added: 0, off: false, tried: 0, links: [], auto: true, np: { n: 0 }, confirm: null, drafts: [], sig: "", legacy: false };
   const go = el("button", "hdf-go btn");
   go.type = "button";
   const stop = el("button", "hdf-stop btn quiet");
   stop.type = "button";
   const lead = el("p", "hdf-lead");
   const lab = el("label", "hdf-lab");
+  const lst = el("div", "hdf-list");
   const hosts = el("div", "hdf-hosts");
+  const autoLab = el("label", "hdf-auto");
+  const autoBox = el("input", "hdf-auto-box");
+  autoBox.type = "checkbox";
+  const autoText = el("span", "hdf-auto-text");
+  autoLab.append(autoBox, autoText);
+  const npBox = el("div", "hdf-np");
+  const npQ = el("span", "hdf-np-q");
+  const npGive = el("button", "hdf-np-give btn");
+  npGive.type = "button";
+  const npNo = el("button", "hdf-np-no btn quiet");
+  npNo.type = "button";
+  npBox.append(npQ, npGive, npNo);
   const cnt = el("div", "hdf-count");
   const bar = el("div", "hdf-bar");
   const fill = el("div", "hdf-fill");
@@ -129,7 +174,7 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
   const row = el("div", "hdf-row");
   row.append(go, stop);
   const box = el("div", "hdf");
-  box.append(lead, lab, ta, hosts, row, bar, prog, now, msg, cnt, terms);
+  box.append(lead, lab, lst, hosts, autoLab, npBox, row, bar, prog, now, msg, cnt, terms);
 
   const call = async (method, body) => {
     const res = await fetch(`${base()}/__canvas/fetch`, {
@@ -139,15 +184,112 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     try { data = await res.json(); } catch { data = null; }
     return { ok: res.ok, data };
   };
+  const fail = (data, link) => problem({ error: (data && data.error) || "internal", link: link || (data && data.link) || "" });
+
+  // --- the fields: the links the plugin remembers, then the drafts (the last one is always empty) ---
+  function newDraft() {
+    const input = el("input", "hdf-field");
+    input.type = "text";
+    input.spellcheck = false;
+    const d = { input, wrap: el("div", "hdf-link draft") };
+    d.wrap.append(input);
+    input.addEventListener("input", () => {
+      if (input.value.trim() && S.drafts[S.drafts.length - 1] === d) { S.drafts.push(newDraft()); paint(); }
+    });
+    input.addEventListener("change", () => { commit(d); });
+    input.addEventListener("keydown", (e) => { if (e && e.key === "Enter") commit(d); });
+    return d;
+  }
+  S.drafts.push(newDraft());
+
+  // a filled field becomes a saved link (the plugin keeps it); true when nothing is left in it
+  async function commit(d) {
+    const urls = parseLinks(d.input.value);
+    if (!urls.length || d.busy) return true;
+    d.busy = true;
+    try {
+      for (const u of urls) {
+        const r = await call("POST", { action: "add", url: u });
+        if (!r.ok) { S.err = fail(r.data, u); paint(); return false; }
+      }
+    } catch { S.err = t("e_page"); paint(); return false; } finally { d.busy = false; }
+    S.drafts = S.drafts.filter((x) => x !== d);
+    if (!S.drafts.length || S.drafts[S.drafts.length - 1].input.value.trim()) S.drafts.push(newDraft());
+    S.err = "";
+    await poll(true);
+    return true;
+  }
+
+  async function del(url) {
+    S.err = S.info = "";
+    try {
+      const r = await call("POST", { action: "delete_preview", url });
+      if (!r.ok) { S.err = fail(r.data); return paint(); }
+      if (!r.data.n) return doDelete(url);   // nothing on the disk: only the link goes
+      S.confirm = { url, n: r.data.n, kept: r.data.kept || 0 };
+    } catch { S.err = t("e_page"); }
+    paint();
+  }
+  async function doDelete(url) {
+    S.confirm = null;
+    try {
+      const r = await call("POST", { action: "delete", url });
+      if (!r.ok) S.err = fail(r.data);
+      else {
+        S.info = r.data.n ? t("deleted", { styles: styles(r.data.n) }) : "";
+        onAdded();   // the library changed: the "Style" window reads it again
+      }
+    } catch { S.err = t("e_page"); }
+    await poll(true);
+  }
+
+  function linkRow(l, run) {
+    const w = el("div", "hdf-link saved");
+    const u = el("span", "hdf-url", l.url);
+    u.title = l.url;
+    w.append(u);
+    if (S.confirm && S.confirm.url === l.url) {
+      const q = el("span", "hdf-q", `${t("del_q", { styles: styles(S.confirm.n) })}${S.confirm.kept ? " " + t("del_kept", { kept: styles(S.confirm.kept) }) : ""}`);
+      const yes = el("button", "hdf-yes btn", t("del_yes"));
+      const no = el("button", "hdf-no btn quiet", t("del_no"));
+      yes.type = no.type = "button";
+      yes.addEventListener("click", () => doDelete(l.url));
+      no.addEventListener("click", () => { S.confirm = null; paint(); });
+      w.append(q, yes, no);
+      return w;
+    }
+    const n = el("span", "hdf-n", styles(l.n || 0));
+    const x = el("button", "hdf-del btn quiet", "✕");
+    x.type = "button";
+    x.disabled = run;
+    x.title = t("del");
+    x.setAttribute("aria-label", t("del"));
+    x.addEventListener("click", () => del(l.url));
+    w.append(n, x);
+    return w;
+  }
 
   function paint() {
     const st = S.st;
     const run = isRunning(st);
     lead.textContent = t("lead");
     lab.textContent = t("links");
-    ta.placeholder = t("ph");
-    ta.disabled = run;
     terms.textContent = t("terms");
+    autoText.textContent = t("auto");
+    autoBox.checked = !!S.auto;
+    autoBox.disabled = S.off;
+    // the list is built again only when it changed: a field that is typed in must not lose its focus
+    const sig = JSON.stringify([currentLang(), run, S.links.map((l) => [l.url, l.n]), S.confirm, S.drafts.length, S.off]);
+    if (sig !== S.sig) {
+      S.sig = sig;
+      for (const d of S.drafts) { d.input.placeholder = t("ph"); d.input.disabled = run || S.off; }
+      lst.replaceChildren(...S.links.map((l) => linkRow(l, run)), ...S.drafts.map((d) => d.wrap));
+    }
+    const np = S.np && S.np.n > 0 && !run && !S.off;
+    npBox.hidden = !np;
+    npQ.textContent = np ? t("np_q", { styles: styles(S.np.n) }) : "";
+    npGive.textContent = t("np_give");
+    npNo.textContent = t("np_no");
     go.textContent = t("go");
     go.disabled = run || S.busy || S.off;
     stop.textContent = st && st.state === "stopping" ? t("stopping") : t("stop");
@@ -163,7 +305,7 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     prog.textContent = show ? `${t("prog", { done: st.done, total: st.total })} · ${t("counts", { added: st.added, skipped: st.skipped, failed: st.failed })}${st.covers > 0 ? " · " + t("covers", { n: st.covers }) : ""}` : "";
     now.textContent = run && st.name ? t("now", { name: st.name }) : "";
     const bad = S.off ? t("e_local") : S.err || problem(st);
-    msg.textContent = bad || (run ? "" : summary(st));
+    msg.textContent = bad || (run ? "" : S.info || summary(st));
     msg.classList.toggle("bad", !!bad);
   }
 
@@ -173,6 +315,9 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     const was = S.st;
     S.st = st;
     if (typeof st.count === "number") S.count = st.count;
+    if (Array.isArray(st.links)) S.links = st.links;   // the answer to a start has no links: the last ones stay
+    if (typeof st.auto === "boolean") S.auto = st.auto;
+    if (st.nopreview && typeof st.nopreview === "object") S.np = st.nopreview;
     const grew = (st.added || 0) > S.added || (was && isRunning(was) && !isRunning(st) && (st.added || 0) > 0);
     S.added = st.added || 0;
     if (grew) onAdded();
@@ -182,24 +327,37 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
 
   const schedule = () => { clearTimeout(S.timer); S.timer = setTimeout(poll, POLL_MS); };
 
-  async function poll() {
+  // keep: after an action the word about its failure stays
+  async function poll(keep) {
     clearTimeout(S.timer);
     try {
       const r = await call("GET");
-      if (r.ok) { S.err = ""; return take(r.data); }
+      if (r.ok) { if (keep !== true) S.err = ""; take(r.data); return takeLegacy(); }
       S.err = t("e_page");
     } catch { S.err = t("e_page"); }
     paint();
     if (isRunning(S.st)) schedule();
   }
 
+  // the links that an older version kept in the browser go into the plugin once
+  async function takeLegacy() {
+    if (S.legacy || !store) return;
+    S.legacy = true;
+    const old = store.getItem(STORE_KEY);
+    if (!old) return;
+    store.setItem(STORE_KEY, "");
+    const first = S.drafts[0];
+    first.input.value = old;
+    await commit(first);
+  }
+
   go.addEventListener("click", async () => {
-    const urls = parseLinks(ta.value);
-    S.err = "";
+    S.err = S.info = "";
     S.busy = true;
     paint();
     try {
-      const r = await call("POST", { action: "start", urls });
+      for (const d of [...S.drafts]) if (d.input.value.trim() && !(await commit(d))) { S.busy = false; return paint(); }
+      const r = await call("POST", { action: "start", urls: S.links.map((l) => l.url) });
       if (r.data && r.data.error && r.data.error !== "body") {
         S.err = problem({ error: r.data.error, link: r.data.link, hosts: r.data.hosts, http: r.data.http });
         if (r.data.error === "busy") take(r.data);
@@ -214,6 +372,32 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
   stop.addEventListener("click", async () => {
     try { take((await call("POST", { action: "stop" })).data); } catch { S.err = t("e_page"); paint(); }
   });
+  autoBox.addEventListener("change", async () => {
+    try { await call("POST", { action: "auto", on: !!autoBox.checked }); } catch { S.err = t("e_page"); }
+    await poll(true);
+  });
+  // "Give the task": the list of the styles with no preview is written by the plugin, the task for the designer goes through the hub
+  npGive.addEventListener("click", async () => {
+    S.err = S.info = "";
+    try {
+      const r = await call("POST", { action: "nopreview", decline: false });
+      if (!r.ok) S.err = t("e_internal");
+      else {
+        const text = t("np_task", { styles: styles(r.data.n), path: r.data.path, dir: r.data.dir });
+        const sent = ask ? await ask(text) : { error: "no sender" };
+        if (!sent || sent.error) S.err = t("e_np_send", { err: (sent && sent.error) || "" });
+        else {
+          await call("POST", { action: "decline" });   // asked once: the question does not come back for these
+          S.info = t("np_sent", { styles: styles(r.data.n) });
+        }
+      }
+    } catch { S.err = t("e_page"); }
+    await poll(true);
+  });
+  npNo.addEventListener("click", async () => {
+    try { await call("POST", { action: "decline" }); } catch { S.err = t("e_page"); }
+    await poll(true);
+  });
 
   return {
     node: box,
@@ -227,5 +411,7 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     },
     state: S,
     poll,
+    commit,
+    del,
   };
 }

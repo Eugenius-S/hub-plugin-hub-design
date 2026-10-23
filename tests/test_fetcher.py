@@ -165,7 +165,10 @@ class Run(Base):
         self.assertEqual(Site.hits.count(f"/style/{uid(1)}") + Site.hits.count(f"/style/{uid(2)}"), 0)   # not asked for again
         after = self.index()
         for key in (uid(1), uid(2), "set:one"):
-            self.assertEqual(after[key], idx[key])   # the old fields (labels, set, license) stay
+            self.assertEqual({k: v for k, v in after[key].items() if k != "source_urls"}, idx[key])   # the old fields (labels, set, license) stay
+        self.assertEqual(after[uid(1)]["source_urls"], [self.root_url])   # a style that was there knows the link it was asked by now
+        self.assertEqual(after[uid(3)]["source_urls"], [self.root_url])
+        self.assertNotIn("source_urls", after["set:one"])   # a style that no link asked for is not marked
         self.assertIn(uid(3), after)
         self.assertEqual(sorted(f for f in os.listdir(self.lib) if f.endswith(".md")), sorted([f"old-1__{uid(1)}.md", f"old-2__{uid(2)}.md", f"cedar__{uid(3)}.md"]))   # no second copies
         with open(os.path.join(self.lib, "tags.json"), encoding="utf-8") as fh:
@@ -186,6 +189,7 @@ class Run(Base):
         Site.covers = {uid(1)}
         st = self.run_to_end()
         self.assertEqual((st["state"], st["added"], st["covers"]), ("done", 3, 1))
+        self.assertEqual((st["done"], st["total"]), (3, 3))   # a cover is not another item of the run
         e = self.index()[uid(1)]
         self.assertEqual((e["cover_video"], e["cover_url"], e["preview"]), (f"previews/{uid(1)}.mp4", f"{self.root_url}/video/{uid(1)}.mp4", f"previews/{uid(1)}.png"))
         with open(os.path.join(self.lib, e["cover_video"]), "rb") as fh:
@@ -202,13 +206,14 @@ class Run(Base):
         Site.covers = {uid(1)}
         st = self.run_to_end()
         self.assertEqual((st["added"], st["skipped"], st["covers"]), (1, 2, 1))
+        self.assertEqual((st["done"], st["total"]), (3, 3))
         self.assertEqual(Site.hits.count(f"/style/{uid(1)}"), 1)   # the page is read for the cover
         self.assertEqual(Site.hits.count(f"/video/{uid(1)}.mp4"), 1)
         after = self.index()
         self.assertEqual(after[uid(1)]["cover_video"], f"previews/{uid(1)}.mp4")
         self.assertEqual(after[uid(2)]["cover_video"], "")
         for key in (uid(1), uid(2)):   # nothing else of the old entry is touched
-            self.assertEqual({k: v for k, v in after[key].items() if not k.startswith("cover_")}, idx[key])
+            self.assertEqual({k: v for k, v in after[key].items() if not k.startswith("cover_") and k != "source_urls"}, idx[key])
         self.assertEqual(after["set:one"], idx["set:one"])
         with open(os.path.join(self.lib, f"old-1__{uid(1)}.md"), encoding="utf-8") as fh:
             self.assertEqual(fh.read(), "# old\n" * 300)   # the style file is not written again
@@ -237,7 +242,7 @@ class Run(Base):
         st = self.run_to_end()
         self.assertEqual((st["state"], st["covers"]), ("done", 0))
         after = self.index()
-        self.assertEqual(after[uid(1)], idx[uid(1)])   # untouched, no "cover_video": the next run tries again
+        self.assertEqual({k: v for k, v in after[uid(1)].items() if k != "source_urls"}, idx[uid(1)])   # untouched, no "cover_video": the next run tries again
         self.assertEqual(after[uid(2)]["cover_video"], "")
 
     def test_the_link_without_a_scheme_is_https(self):
@@ -465,6 +470,45 @@ class Endpoints(Base):
         c.close()
         r, st = self.call("POST", {"action": "stop"})
         self.assertEqual((r.status, st["state"]), (200, "idle"))
+
+    def test_the_links_of_the_tab_are_remembered_by_the_plugin_and_come_with_the_status(self):
+        os.environ["HUB_DESIGN_STYLES"] = self.lib
+        mem = os.path.join(os.environ["HUB_STATE_DIR"], "hub-design-links.json")
+        try:
+            os.makedirs(self.lib)
+            a, b = "https://github.com/acme/set-a", "https://github.com/acme/set-b"
+            with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:
+                json.dump({"s1": {"uuid": "s1", "file": "s1.md", "source_urls": [a]}, "s2": {"uuid": "s2", "file": "s2.md", "source_urls": [a, b]}}, fh)
+            for n in ("s1", "s2"):
+                with open(os.path.join(self.lib, n + ".md"), "w") as fh:
+                    fh.write("# x")
+            for link in (a, b):
+                r, st = self.call("POST", {"action": "add", "url": link})
+                self.assertEqual((r.status, st["link"]), (200, link))
+            r, st = self.call("GET")
+            self.assertEqual([(x["url"], x["n"]) for x in st["links"]], [(a, 2), (b, 1)])
+            self.assertTrue(st["auto"])
+            self.assertEqual(st["nopreview"]["n"], 2)
+            r, st = self.call("POST", {"action": "auto", "on": False})
+            self.assertEqual((r.status, st["auto"]), (200, False))
+            with open(mem, encoding="utf-8") as fh:   # kept in the state folder of the plugin, not in the browser
+                self.assertEqual([x["url"] for x in json.load(fh)["links"]], [a, b])
+            r, st = self.call("POST", {"action": "delete_preview", "url": a})
+            self.assertEqual((r.status, st["n"], st["kept"]), (200, 1, 1))
+            self.assertTrue(os.path.exists(os.path.join(self.lib, "s1.md")))
+            r, st = self.call("POST", {"action": "delete", "url": a})
+            self.assertEqual((r.status, st["n"], st["kept"]), (200, 1, 1))
+            self.assertEqual((os.path.exists(os.path.join(self.lib, "s1.md")), os.path.exists(os.path.join(self.lib, "s2.md"))), (False, True))
+            r, st = self.call("GET")
+            self.assertEqual([(x["url"], x["n"]) for x in st["links"]], [(b, 1)])
+            r, st = self.call("POST", {"action": "delete", "url": a})
+            self.assertEqual((r.status, st["error"]), (404, "no_link"))
+            r, st = self.call("POST", {"action": "add", "url": "nope"})
+            self.assertEqual((r.status, st["error"]), (400, "bad_link"))
+        finally:
+            del os.environ["HUB_DESIGN_STYLES"]
+            if os.path.exists(mem):
+                os.remove(mem)
 
     def test_the_target_is_the_library_folder_of_the_plugin(self):
         os.environ["HUB_DESIGN_STYLES"] = self.lib
