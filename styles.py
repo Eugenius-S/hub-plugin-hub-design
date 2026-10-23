@@ -44,17 +44,25 @@ _THEME = re.compile(r"^\*\*Theme:\*\*\s*(\w+)", re.M)
 _cache = {}   # index path -> (signature of index.json and tags.json, library)
 
 
-def folder(config, state_dir):
-    """The library folder: the setting of the plugin in hub.json, otherwise <state>/style-library; None if there is no such folder."""
+def _path(config, state_dir):
     path = (os.environ.get("HUB_DESIGN_STYLES") or "").strip()
     if not path:
         for key, val in ((config or {}).get("extensions") or {}).items():
             if isinstance(val, dict) and str(key).rsplit(":", 1)[-1] == "hub-design" and str(val.get("styles_dir") or "").strip():
                 path = str(val["styles_dir"]).strip()
                 break
-    path = os.path.expanduser(path) if path else os.path.join(state_dir, DEFAULT_DIR)
-    real = os.path.realpath(path)
+    return os.path.realpath(os.path.expanduser(path) if path else os.path.join(state_dir, DEFAULT_DIR))
+
+
+def folder(config, state_dir):
+    """The library folder: the setting of the plugin in hub.json, otherwise <state>/style-library; None if there is no such folder."""
+    real = _path(config, state_dir)
     return real if os.path.isdir(real) else None
+
+
+def target(config, state_dir):
+    """The same folder, for the fetcher that fills it: it may not exist yet (it is made when the first style comes)."""
+    return _path(config, state_dir)
 
 
 def default_library(config):

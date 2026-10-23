@@ -19,6 +19,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import fetcher
 import handwrite
 import peers
 import registry
@@ -81,6 +82,8 @@ def config():
 
 _roots = {"at": 0.0, "list": [], "seen": set()}
 REG = None   # registry.Registry of the designs ever made (set in main)
+FETCH = fetcher.Fetcher(lambda: styles.target(config(), state_dir()))   # fills the style library from the links of the settings (fetcher.py)
+FETCH_BODY = 16 * 1024   # request body of /__canvas/fetch
 
 
 def roots():
@@ -591,14 +594,17 @@ class Handler(BaseHTTPRequestHandler):
                                           "Access-Control-Max-Age": "600"})
 
     def do_POST(self):
-        """/__canvas/write: hand edits into the file. Only from the hub page (Origin) and only a file the process shows anyway."""
+        """/__canvas/write: hand edits into the file. Only from the hub page (Origin) and only a file the process shows anyway.
+        /__canvas/fetch: start or stop the download of styles (fetcher.py)."""
         bad = self.guard()
         url = urlparse(self.path)
-        if bad or url.path != "/__canvas/write":
+        if bad or url.path not in ("/__canvas/write", "/__canvas/fetch"):
             return self.say(403 if bad else 404, {"error": bad or "no page"})
         extra = self.cors()
         if not extra:
             return self.say(403, {"error": "origin"})
+        if url.path == "/__canvas/fetch":
+            return self.fetch(extra)
         try:
             size = int(self.headers.get("Content-Length") or 0)
             if size <= 0 or size > WRITE_MAX:
@@ -708,6 +714,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.say(501, {"error": "no chrome"}, self.cors())
             self.head(200, "image/png", len(data), {**self.cors(), "Cache-Control": "private, max-age=3600"})
             return self.wfile.write(data) if self.command != "HEAD" else None
+        if url.path == "/__canvas/fetch":   # the progress of the download of styles: only for the hub page's origin
+            extra = self.cors()
+            if not extra:
+                return self.say(403, {"error": "origin"})
+            lib = library()
+            return self.say(200, {**FETCH.status(), "count": len(lib.entries) if lib else 0}, extra)
         if url.path.startswith("/__canvas/style"):
             return self.styles(url.path, q)
         if url.path == "/__canvas/stat":
@@ -729,6 +741,26 @@ class Handler(BaseHTTPRequestHandler):
                 return self.player(real)
             return self.file(real, raw=bool(q.get("raw")), download=bool(q.get("dl")), printing=bool(q.get("print")))
         self.say(404, {"error": "no page"})
+
+    def fetch(self, extra):
+        """POST /__canvas/fetch {"action": "start", "urls": [..]} | {"action": "stop"} -> the status of the run. A refused start is 409/400 with the word why."""
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+            if size <= 0 or size > FETCH_BODY:
+                return self.say(413, {"error": "body"}, extra)
+            body = json.loads(self.rfile.read(size).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self.say(400, {"error": "body"}, extra)
+        action = body.get("action") if isinstance(body, dict) else None
+        if action == "stop":
+            FETCH.stop()
+        elif action == "start":
+            ok, code, link = FETCH.start(body.get("urls"))
+            if not ok:
+                return self.say(409 if code == "busy" else 400, {"error": code, "link": link, **FETCH.status()}, extra)
+        else:
+            return self.say(400, {"error": "action"}, extra)
+        return self.say(200, FETCH.status(), extra)
 
     def styles(self, route, q):
         """The style reference library (styles.py): /__canvas/styles - search and categories, /style - one card, /style-preview - its picture,
