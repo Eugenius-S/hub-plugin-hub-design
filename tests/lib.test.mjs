@@ -955,3 +955,12 @@ test("a design with no direction folder goes to the direction that made it or as
   assert.equal(key({ path: "/d/a.html", session: "designer" }), "");
   assert.equal(key({ path: "/w/motion/a.html", session: "rewarded-ads" }), "/w/motion", "the path is the first rule");
 });
+
+import { inkOn } from "../lib.js";
+test("inkOn: dark ink on light colors, white on dark, white for what is not a hex", () => {
+  assert.equal(inkOn("#ffffff"), "#0b0b0b");
+  assert.equal(inkOn("#f5a524"), "#0b0b0b");
+  assert.equal(inkOn("#0b0b0b"), "#ffffff");
+  assert.equal(inkOn("#257de0"), "#ffffff");
+  assert.equal(inkOn("transparent"), "#ffffff");
+});

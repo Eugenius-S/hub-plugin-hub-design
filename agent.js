@@ -465,14 +465,16 @@
     else if (s.t0 != null) el.textContent = s.t0;
   }
   const snap = (el) => { const s = state.get(el); return s ? JSON.parse(JSON.stringify({ dx: s.dx, dy: s.dy, w: s.w, h: s.h, t: s.t, t0: s.t0, css: s.css })) : { dx: 0, dy: 0, w: null, h: null, t: null, t0: null, css: {} }; };
-  function commit(el, before) {
-    undo.push({ el, before, after: snap(el) });
+  // one step of the history is a list of elements: recoloring a text color across the design is one step, one Ctrl+Z
+  function commitMany(items) {
+    undo.push({ items });
     if (undo.length > 100) undo.shift();
     redo.length = 0;
     sendHistory("commit");
-    report(el);
+    for (const i of items) report(i.el);
     sendSelected();
   }
+  const commit = (el, before) => commitMany([{ el, before, after: snap(el) }]);
   function restore(el, to) {
     const s = track(el);
     Object.assign(s, JSON.parse(JSON.stringify(to)));
@@ -480,15 +482,15 @@
     report(el);
     if (el === selected) sendSelected();
   }
-  const sendHistory = (why = "") => send({ t: "history", undo: undo.length, redo: redo.length, why });
+  const sendHistory = (why = "") => { send({ t: "history", undo: undo.length, redo: redo.length, why }); sendColors(); };
   function stepUndo() {
     const h = undo.pop();
-    if (h) { restore(h.el, h.before); redo.push(h); }
+    if (h) { for (const i of h.items) restore(i.el, i.before); redo.push(h); }
     sendHistory("undo");
   }
   function stepRedo() {
     const h = redo.pop();
-    if (h) { restore(h.el, h.after); undo.push(h); }
+    if (h) { for (const i of h.items) restore(i.el, i.after); undo.push(h); }
     sendHistory("redo");
   }
   function revert(el) {
@@ -498,8 +500,83 @@
     if (s.t0 != null) el.textContent = s.t0;
     state.delete(el);
     touched.delete(el);
-    for (const list of [undo, redo]) for (let i = list.length - 1; i >= 0; i--) if (list[i].el === el) list.splice(i, 1);   // a removed edit leaves no steps behind
+    for (const list of [undo, redo]) {   // a removed edit leaves no steps behind
+      for (let i = list.length - 1; i >= 0; i--) { list[i].items = list[i].items.filter((x) => x.el !== el); if (!list[i].items.length) list.splice(i, 1); }
+    }
     sendHistory("revert");
+  }
+  // --- the text colors of the design: one entry per distinct color, the most used first; the panel recolors one of them across the whole design ---
+  const TEXT_MAX = 1500, COLORS_MAX = 12;
+  const carriesText = (el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.nodeValue.trim());
+  function eachText(fn) {
+    let n = 0;
+    for (const el of document.body ? document.body.querySelectorAll("*") : []) {
+      if (++n > TEXT_MAX) break;
+      if (ours(el) || SKIP_TAGS.test(el.tagName) || !carriesText(el)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden") continue;
+      fn(el, hex(cs.color));
+    }
+  }
+  // the custom properties of the root that hold a color: {hex: "--name"} — the first name for a color
+  function colorVars() {
+    const out = {};
+    const probe = document.createElement("i");
+    document.documentElement.append(probe);
+    const cs = getComputedStyle(document.documentElement);
+    const names = new Set();
+    for (const sheet of document.styleSheets) {
+      let rules = [];
+      try { rules = sheet.cssRules; } catch { continue; }
+      for (const r of rules) {
+        if (!r.style || !/^(:root|html)$/.test(r.selectorText || "")) continue;
+        for (const p of r.style) if (p.startsWith("--")) names.add(p);
+      }
+    }
+    for (const name of [...names].slice(0, 200)) {
+      const v = cs.getPropertyValue(name).trim();
+      if (!v) continue;
+      probe.style.color = "";
+      probe.style.color = v;
+      if (!probe.style.color) continue;
+      const c = hex(getComputedStyle(probe).color);
+      if (c !== "transparent" && !(c in out)) out[c] = name;
+    }
+    probe.remove();
+    return out;
+  }
+  let colorsSent = "";
+  function sendColors() {
+    if (!external) return;
+    const groups = new Map();
+    eachText((el, c) => {
+      if (c === "transparent") return;
+      let g = groups.get(c);
+      if (!g) groups.set(c, g = { color: c, n: 0, sample: "" });
+      g.n += 1;
+      if (!g.sample) g.sample = el.textContent.trim().replace(/\s+/g, " ").slice(0, 24);
+    });
+    const list = [...groups.values()].sort((a, b) => b.n - a.n).slice(0, COLORS_MAX);
+    if (list.length) { const vars = colorVars(); for (const g of list) if (vars[g.color]) g.via = vars[g.color]; }
+    const sig = JSON.stringify(list);
+    if (sig === colorsSent) return;
+    colorsSent = sig;
+    send({ t: "colors", list });
+  }
+  // every text of the color `from` gets the color `to`: each element is an ordinary edit of its own (it goes into the file as a style), all of them are one step of the history
+  function recolor(from, to) {
+    const hit = [];
+    eachText((el, c) => { if (c === from) hit.push(el); });
+    const items = hit.map((el) => {
+      const s = track(el);
+      const before = snap(el);
+      s.css.color = { from: s.css.color ? s.css.color.from : from, to };
+      paintState(el);
+      return { el, before, after: null };
+    });
+    if (!items.length) return;
+    for (const i of items) i.after = snap(i.el);
+    commitMany(items);
   }
   const textLeaf = (el) => el.childNodes.length > 0 && [...el.childNodes].every((n) => n.nodeType === 3 || (n.nodeType === 1 && n.tagName === "BR"));
 
@@ -1045,6 +1122,8 @@
       if (selected) sendSelected();
     } else if (m.t === "style") {
       if (m.set) setStyles(m.set); else setStyle(m.prop, m.value);
+    } else if (m.t === "recolor") {
+      recolor(m.from, m.to);
     } else if (m.t === "undo") {
       stepUndo();
     } else if (m.t === "redo") {

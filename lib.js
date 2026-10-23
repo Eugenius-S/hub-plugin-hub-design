@@ -1029,6 +1029,13 @@ export const TOOLS = { select: "edit", hand: "view", text: "text", note: "view",
 export const toolMode = (tool) => TOOLS[tool] || "view";
 
 // quick colors of the style panel
+// the ink that reads on a color: dark on light, white on dark (for the chip that shows a text color)
+export function inkOn(color) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(color || ""));
+  if (!m) return "#ffffff";
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? "#0b0b0b" : "#ffffff";
+}
 export const SWATCHES = ["#0b0b0b", "#52514e", "#ffffff", "#d97757", "#e5484d", "#f5a524", "#30a46c", "#257de0", "#6e56cf", "#e93d82", "#faf9f6", "#1f1e1d"];
 
 // "5 min ago" for the design cards

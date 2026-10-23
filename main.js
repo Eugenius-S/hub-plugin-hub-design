@@ -3,7 +3,7 @@
 // shapes — mark a place, a note — a sticker on the canvas. Manual edits go by themselves 8 s after the last one — to whoever is chosen at
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
-import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
+import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
   goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -52,6 +52,8 @@ const STR = {
     q_remove: "Remove",
     props_hint: "Select an element on the canvas to change its color and styles",
     colors: "Color",
+    font_colors: "Text colors",
+    recolor_title: "Recolor all the text of this color in the design",
     fill: "Fill",
     text: "Text",
     layout: "Layout",
@@ -109,6 +111,8 @@ const STR = {
     q_remove: "Убрать",
     props_hint: "Выберите элемент на холсте, чтобы поменять цвет и стили",
     colors: "Цвет",
+    font_colors: "Цвета шрифтов",
+    recolor_title: "Перекрасить весь текст этого цвета в макете",
     fill: "Заливка",
     text: "Текст",
     layout: "Раскладка",
@@ -153,7 +157,7 @@ const eps = new Map();   // frame → {id, path, iframe, ready}: every frame has
 const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
-  alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, lastEdit: "", shown: false, handoff: null,
+  alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, colors: {}, lastEdit: "", shown: false, handoff: null,
   authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], tasks: [], regAt: 0, peers: [], peersAt: 0, peersSig: "", regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
 };
 
@@ -835,6 +839,8 @@ function handle(file, m, ep = epOf(file)) {
   } else if (m.t === "history") {
     P.hist[file] = { undo: m.undo, redo: m.redo };
     if (m.why === "commit") steps.push({ k: "e", file });
+  } else if (m.t === "colors") {
+    P.colors[file] = Array.isArray(m.list) ? m.list : [];
   } else if (m.t === "changed") {
     const w = writers.get(file);
     if (w && m.mtime <= w.maxStamp) return;   // our own write of manual edits
@@ -1470,18 +1476,23 @@ function paintProps() {
   ui.right.classList.toggle("props", open);
   ui.exitB.title = tr("exit_title", { name: P.session });
   paintTweaks(open);
-  const sig = JSON.stringify([open, P.sel]);
+  const inkFile = P.sel ? P.sel.file : P.focus || (P.frames[0] && P.frames[0].path) || "";
+  const sig = JSON.stringify([open, P.sel, P.colors[inkFile]]);
   if (!open || ui.last.props === sig || ui.pbody.contains(document.activeElement) && ui.last.propsSel === (P.sel && P.sel.sel)) return;
   ui.last.props = sig;
   ui.last.propsSel = P.sel && P.sel.sel;
   const el = hub.el;
   const kids = [];
-  if (!P.sel) kids.push(el("div", "hd-phint", tr("props_hint")));
-  else {
+  const inks = fontColors(inkFile);
+  if (!P.sel) {
+    kids.push(el("div", "hd-phint", tr("props_hint")));
+    if (inks) kids.push(inks);
+  } else {
     kids.push(el("div", "hd-pel", `${P.sel.tag}  ${P.sel.label ? "«" + P.sel.label.slice(0, 40) + "»" : ""}`));
     const colors = el("div", "hd-psec");
     colors.append(el("h4", null, tr("colors")), colorRow(tr("fill"), "background-color"), colorRow(tr("text"), "color"));
     kids.push(colors);
+    if (inks) kids.push(inks);
     for (const g of PROPS) {
       if (g.flexOnly && !P.sel.flex) continue;
       if (g.gridOnly && !P.sel.grid) continue;
@@ -1706,6 +1717,39 @@ function tweakRow(file, t, cur) {
 const setStyle = (prop, value) => { if (P.sel) tellFile(P.sel.file, { t: "style", prop, value }); };
 // "Wrap in flex / grid": makes the selected block a container (display), its children are laid out; for grid — two columns at once
 const wrapIn = (kind) => { if (P.sel) tellFile(P.sel.file, { t: "style", set: kind === "grid" ? { display: "grid", "grid-template-columns": gridForm(2) } : { display: "flex" } }); };
+// the text colors of the design: a row for every color (as the design uses them), a click on a swatch recolors all the text of that color
+function fontColors(file) {
+  const list = P.colors[file] || [];
+  if (!list.length) return null;
+  const el = hub.el;
+  const cur = String((P.sel && P.sel.css || {}).color ?? "").toLowerCase();
+  const sec = el("div", "hd-psec hd-inks");
+  sec.append(el("h4", null, tr("font_colors")));
+  for (const c of list) {
+    const set = (to) => tellFile(file, { t: "recolor", from: c.color, to });
+    const row = el("div", "hd-crow hd-ink" + (c.color === cur ? " on" : ""));
+    const chip = el("span", "hd-chip", "Aa");
+    chip.style.color = c.color;
+    chip.style.background = inkOn(c.color);   // the ink that reads on the color is the one the color reads on
+    chip.title = c.sample || "";
+    const name = el("span", "hd-flabel hd-iname", c.via || c.color);
+    name.title = c.via ? `${c.via}: ${c.color}` : c.color;
+    row.append(chip, name, el("span", "hd-count", "×" + c.n));
+    const sw = el("div", "hd-swatches");
+    for (const s of SWATCHES) {
+      const b = button("hd-swatch", "", tr("recolor_title"), () => set(s));
+      b.style.background = s;
+      sw.append(b);
+    }
+    const pick = el("input", "hd-sw"); pick.type = "color";
+    pick.title = tr("own_color");
+    pick.value = /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : "#000000";
+    pick.addEventListener("change", () => set(pick.value));
+    row.append(sw, pick);
+    sec.append(row);
+  }
+  return sec;
+}
 function colorRow(label, prop) {
   const el = hub.el;
   const cur = String((P.sel.css || {})[prop] ?? "").toLowerCase();
