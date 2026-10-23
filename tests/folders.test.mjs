@@ -191,3 +191,25 @@ test("label: the dashboard list carries the title of the registry, and the searc
   assert.deepEqual(shown(files, { q: "post-1", labels }).map((x) => x.path), ["/p/b.html"]);
   assert.deepEqual(shown(files, { sort: "name", labels }).map((x) => labels.get(x.path)), ["Email-1: Kyoto", "Post-1: Sale"]);
 });
+
+test("a design saved to design/<project>/ goes to the direction of that name; the words decide, never a guess", async () => {
+  const { homeOf, projectOf, nearestDir } = await import("../lib.js");
+  const ds = directionDirs([
+    { name: "ads", role: "worker", cwd: "/p/Ads" },
+    { name: "rewarded-ads", role: "worker", cwd: "/p/Rewarded-ads" },
+    { name: "icons8-smm", role: "worker", cwd: "/p/smm" },
+  ]);
+  assert.equal(projectOf("/h/design/ads-ouch-templates/a.html"), "ads-ouch-templates");
+  assert.equal(projectOf("/h/design/a.html"), "");                                   // right in design: no project
+  assert.equal(homeOf({ path: "/h/design/ads-ouch-templates/a.html" }, ds), "/p/Ads");   // the nearer direction: fewer foreign words
+  assert.equal(homeOf({ path: "/h/design/Rewarded_ads/b.html" }, ds), "/p/Rewarded-ads");
+  assert.equal(homeOf({ path: "/h/design/!Ads/c.html" }, ds), "/p/Ads");            // case, "!", "_" and "-" do not matter
+  assert.equal(homeOf({ path: "/h/design/icons8-smm/d.html" }, ds), "/p/smm");
+  assert.equal(homeOf({ path: "/h/design/threads-weekly/e.html" }, ds), "");         // no common word: stays without a direction
+  assert.equal(homeOf({ path: "/h/design/misc/f.html", title: "Rewarded ads: new offer" }, ds), "/p/Rewarded-ads");   // the title
+  assert.equal(homeOf({ path: "/h/design/misc/ads-banner.html" }, ds), "/p/Ads");    // the file name
+  assert.equal(nearestDir("ads", directionDirs([{ name: "ads-a", role: "worker", cwd: "/p/A" }, { name: "ads-b", role: "worker", cwd: "/p/B" }])), "");   // two equal: no guess
+  // what the file's own folder, its author or its task already say is not touched
+  assert.equal(homeOf({ path: "/p/Rewarded-ads/design/ads-x/a.html" }, ds), "/p/Rewarded-ads");
+  assert.equal(homeOf({ path: "/h/design/ads-x/a.html", session: "icons8-smm" }, ds), "/p/smm");
+});

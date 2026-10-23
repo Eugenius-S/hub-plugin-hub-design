@@ -21,6 +21,7 @@ import re
 import socket
 import sys
 import time
+import unicodedata
 
 FILE = "registry.json"
 SHOTS = "shots"
@@ -92,6 +93,15 @@ def direction_dirs(sessions, directions):
     return out
 
 
+def direction_names(sessions, directions):
+    """{folder key: [session names]} of the direction folders (for project_label)."""
+    by = {}
+    for s in sessions or []:
+        if isinstance(s, dict) and s.get("cwd") and s.get("kind") != "hub" and (s.get("name") in (directions or ()) or s.get("role") == "worker"):
+            by.setdefault(_key(s["cwd"]), []).append(s.get("name") or "")
+    return by
+
+
 def direction_homes(sessions, directions):
     """{session name: label of its direction folder}: a design made by a direction (or asked for by it) lies in its folder wherever the file is."""
     labels = dict(direction_dirs(sessions, directions))
@@ -112,6 +122,54 @@ def folder_label(path, dirs):
         if norm(p).startswith(norm(key) + "/") and len(key) > len(best):
             best, label = key, name
     return str(label)[:80]
+
+
+COMMON = {"design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub"}
+
+
+def words_of(s):
+    """The words of a name (the same rule as wordsOf of lib.js): lower case, letters and digits, three signs and more, without the words every design folder has."""
+    return [w for w in re.findall(r"[^\W_]+", unicodedata.normalize("NFC", str(s or "")).lower()) if len(w) > 2 and w not in COMMON]
+
+
+def project_of(path):
+    """The folder right under "design" in <...>/design/<project>/<file> ("" - the file lies right in "design" or outside it)."""
+    parts = [x for x in _key(path).split("/") if x]
+    i = max((n for n, x in enumerate(parts) if x == "design"), default=-1)
+    return parts[i + 1] if 0 <= i < len(parts) - 2 else ""
+
+
+def nearest_dir(name, dirs, names=None):
+    """The label of the direction a name belongs to (the same rule as nearestDir of lib.js): the words of the name against the words of the direction
+    (its label, its folder, its sessions); more shared words win; two directions equally near - "" (no guessing). dirs: [(key, label)], names: {key: [sessions]}."""
+    w = set(words_of(name))
+    if not w:
+        return ""
+    best, tie = None, False
+    for key, label in dirs:
+        own = set()
+        for x in list((names or {}).get(key, [])) + [label, key.rsplit("/", 1)[-1]]:
+            own.update(words_of(x))
+        hit = len(w & own)
+        if not hit:
+            continue
+        score = hit * 100 - (len(own) - hit) - (len(w) - hit)
+        if best is None or score > best[0]:
+            best, tie = (score, key, label), False
+        elif score == best[0] and best[1] != key:
+            tie = True
+    return str(best[2])[:80] if best and not tie else ""
+
+
+def project_label(path, title, dirs, names=None):
+    """The direction of a design that lies in no direction folder and was made by none: the project folder it was saved in (design/<project>/), else its
+    title, else its file name."""
+    project = project_of(path)
+    label = nearest_dir(project, dirs, names) if project else ""
+    if label:
+        return label
+    base = os.path.splitext(os.path.basename(_key(path)))[0]
+    return nearest_dir(title, dirs, names) or nearest_dir(base, dirs, names)
 
 
 def item_id(path):

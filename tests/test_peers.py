@@ -289,6 +289,30 @@ class Routes(unittest.TestCase):
             self.assertEqual(f.read(), JPEG)
 
 
+class Projects(unittest.TestCase):
+    SESSIONS = [{"name": "rewarded-ads", "cwd": "/w/Rewarded-ads", "role": "worker"}, {"name": "ads-passport", "cwd": "/w/ads-passport", "role": "worker"},
+                {"name": "black-friday-2026", "cwd": "/w/Black Friday", "role": "worker"}, {"name": "hub-core", "cwd": "/w/hub", "kind": "hub"}]
+
+    def setUp(self):
+        self.dirs = peers.direction_dirs(self.SESSIONS, set())
+        self.names = peers.direction_names(self.SESSIONS, set())
+
+    def test_a_design_saved_in_a_project_folder_goes_to_the_direction_of_that_name(self):
+        self.assertEqual(peers.project_label("/home/o/design/rewarded-ads/a.html", "", self.dirs, self.names), "rewarded-ads")
+        self.assertEqual(peers.project_label("C:\\home\\design\\Black_Friday\\a.html", "", self.dirs, self.names), "black-friday-2026")
+        self.assertEqual(peers.project_label("/home/o/design/ads_passport/a.html", "", self.dirs, self.names), "ads-passport")
+
+    def test_a_shared_word_of_two_directions_decides_nothing_and_a_lone_hub_none(self):
+        self.assertEqual(peers.project_label("/home/o/design/ads/a.html", "", self.dirs, self.names), "")   # "ads" is in two directions: no guessing
+        self.assertEqual(peers.project_label("/home/o/design/hub-digest/a.html", "", self.dirs, self.names), "")   # "hub" is no word
+        self.assertEqual(peers.project_label("/home/o/design/ouch-templates/a.html", "", self.dirs, self.names), "")
+
+    def test_the_title_and_the_file_name_are_the_last_resort(self):
+        self.assertEqual(peers.project_label("/home/o/x/a.html", "Black Friday, banner 2", self.dirs, self.names), "black-friday-2026")
+        self.assertEqual(peers.project_label("/home/o/x/passport-card.html", "", self.dirs, self.names), "ads-passport")
+        self.assertEqual(peers.project_of("/a/design/x.html"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
 
