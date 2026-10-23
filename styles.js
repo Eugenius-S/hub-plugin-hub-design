@@ -11,6 +11,8 @@ export const STR = {
     btn: "Style", btn_title: "Pick a style reference for the designer",
     title: "Style reference", count: "{n} styles", found: "Found: {n}",
     search_ph: "Search: \"dark fintech\", \"like Apple\", a name", all: "All",
+    kinds: "What the style is for",
+    kind_web: "Sites", kind_apps: "Apps", kind_slides: "Slides", kind_email: "Emails", kind_banner: "Banners", kind_systems: "Design systems", kind_other: "Other",
     ax_theme: "Theme", ax_style: "Style", ax_mood: "Mood", ax_industry: "Industry", ax_medium: "Medium", ax_density: "Density", labels: "Labels",
     prev: "Previous", next: "Next", page: "{a} / {b}",
     nothing: "Nothing found", loading: "Loading…", failed: "No answer from Hub Design",
@@ -26,6 +28,8 @@ export const STR = {
     btn: "Стиль", btn_title: "Выбрать стиль-референс для дизайнера",
     title: "Стили-референсы", count: "Стилей: {n}", found: "Найдено: {n}",
     search_ph: "Поиск: «тёмный финтех», «как эпл», название", all: "Все",
+    kinds: "Для чего стиль",
+    kind_web: "Сайты", kind_apps: "Приложения", kind_slides: "Слайды", kind_email: "Письма", kind_banner: "Баннеры", kind_systems: "Дизайн-системы", kind_other: "Другое",
     ax_theme: "Тема", ax_style: "Стиль", ax_mood: "Настроение", ax_industry: "Сфера", ax_medium: "Носитель", ax_density: "Плотность", labels: "Метки",
     prev: "Назад", next: "Дальше", page: "{a} / {b}",
     nothing: "Ничего не нашлось", loading: "Загрузка…", failed: "Нет ответа от Hub Design",
@@ -122,13 +126,26 @@ export function defaultStyle(raw) {
 }
 export const AXES = ["medium", "theme", "style", "mood", "industry", "density"];   // the order of the chip rows: what it is made for goes first
 const axisName = (a) => ({ medium: t("ax_medium"), theme: t("ax_theme"), style: t("ax_style"), mood: t("ax_mood"), industry: t("ax_industry"), density: t("ax_density") })[a] || a;
-// the request to the plugin process: the text, the category, the chosen label of each axis {theme: "dark"}, the language of the label names
-export function listQuery({ q = "", cat = "", offset = 0, limit = PAGE, f = {}, lang = "" } = {}) {
+// the request to the plugin process: the text, the category, the chosen label of each axis {theme: "dark"}, the language of the label names, the kind (the segment)
+export function listQuery({ q = "", cat = "", offset = 0, limit = PAGE, f = {}, lang = "", kind = "" } = {}) {
   const p = new URLSearchParams({ q: String(q).trim(), cat, offset: String(offset), limit: String(limit) });
+  if (kind) p.set("kind", kind);
   for (const a of AXES) if (f && typeof f[a] === "string" && f[a]) p.set(a, f[a]);
   if (lang) p.set("lang", lang);
   return p.toString();
 }
+// the segments over the filters (styles.py KINDS): [{k, n}] from the plugin process; the name of a kind the page does not know is its key
+export const kindsShown = (kinds) => (Array.isArray(kinds) ? kinds.filter((x) => x && typeof x.k === "string" && x.n > 0) : []).slice(0, 12);
+export const kindName = (k) => {
+  const key = `kind_${k}`;
+  return STR.en[key] ? t(key) : String(k);
+};
+// the chosen kind is kept between visits (the process answers with the kind it used, so a kept one the library no longer has is simply replaced)
+const KIND_KEY = "hub-design:style-kind";
+const recallKind = () => { try { return localStorage.getItem(KIND_KEY) || ""; } catch { return ""; } };
+const rememberKind = (k) => { try { localStorage.setItem(KIND_KEY, k); } catch { /* no storage - the next visit starts from the first segment */ } };
+// the label rows of the panel: the axes with something to show; "medium" is the segments' business now
+export const filterRows = (facets) => AXES.filter((a) => a !== "medium" && ((facets && facets[a]) || []).length);
 // the filter chosen by a click on a chip: the same chip again takes it off
 export const toggled = (f, axis, key) => ({ ...f, [axis]: f[axis] === key ? "" : key });
 export const filtered = (f) => AXES.some((a) => f && f[a]);
@@ -162,7 +179,7 @@ export function btnShown(avail, mem) {
 // base: () => the address of the plugin process; get/set: the style attached now (the page keeps it); hub.el builds the nodes
 export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   const el = hub.el;
-  const S = { avail: null, def: null, q: "", cat: "", f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0, stops: [] };
+  const S = { avail: null, def: null, q: "", cat: "", kind: recallKind(), kinds: [], f: {}, facets: {}, offset: 0, total: 0, items: [], cats: [], count: 0, detail: null, state: "idle", seq: 0, timer: 0, stops: [] };
   const node = el("div", "hds");
   node.hidden = true;
   node.setAttribute("role", "dialog");
@@ -179,10 +196,12 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   search.type = "search";
   search.addEventListener("input", () => { clearTimeout(S.timer); S.timer = setTimeout(() => { S.q = search.value; S.offset = 0; load(); }, 250); });
   bar.append(search);
+  const kinds = el("div", "hds-kinds");
+  kinds.setAttribute("role", "tablist");
   const cats = el("div", "hds-cats");
   const body = el("div", "hds-body");
   const foot = el("div", "hds-foot");
-  node.append(head, bar, cats, body, foot);
+  node.append(head, bar, kinds, cats, body, foot);
   node.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); S.detail ? back() : close(); } });
 
   const url = (route, params) => `${base()}/__canvas/${route}?${params}`;
@@ -227,11 +246,11 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     S.state = "loading";
     paintBody();
     try {
-      const r = await ask("styles", listQuery({ q: S.q, cat: S.cat, f: S.f, offset: S.offset, lang: currentLang() }));
+      const r = await ask("styles", listQuery({ q: S.q, cat: S.cat, f: S.f, offset: S.offset, lang: currentLang(), kind: S.kind }));
       if (my !== S.seq) return;
       if (!r.ok) { S.avail = false; S.def = null; remember(false); onChange(); return close(); }
       S.def = defaultStyle(r.default);
-      Object.assign(S, { items: r.items, total: r.total, cats: r.cats || [], facets: r.facets || {}, count: r.count, state: "ok" });
+      Object.assign(S, { items: r.items, total: r.total, cats: r.cats || [], facets: r.facets || {}, count: r.count, kinds: kindsShown(r.kinds), kind: typeof r.kind === "string" ? r.kind : "", state: "ok" });
     } catch {
       if (my !== S.seq) return;
       S.state = "failed";
@@ -264,7 +283,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
   }
   // the default style counts as the attached one while no other is chosen
   const attached = (id) => { const s = get(); return id === DEFAULT_ID ? !!S.def && !s : !!s && s.id === id; };
-  const listed = () => (S.def && !S.q.trim() && !S.cat && !filtered(S.f) && S.offset === 0 ? [{ ...S.def, category: "", labels: [], isDefault: true }, ...S.items] : S.items);
+  const listed = () => (S.def && (!S.kinds.length || S.kind === "web") && !S.q.trim() && !S.cat && !filtered(S.f) && S.offset === 0 ? [{ ...S.def, category: "", labels: [], isDefault: true }, ...S.items] : S.items);
   function attach(d) {
     if (d.id === DEFAULT_ID) set(null);   // back to the default: nothing chosen
     else set(attached(d.id) ? null : chosen({ id: d.id, name: d.name, path: d.path }));
@@ -273,11 +292,39 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
 
   const btn = (cls, text, fn) => { const b = el("button", cls, text); b.type = "button"; b.addEventListener("click", fn); return b; };
 
-  // the filter chips: a row per axis when the library has labels (the most frequent ones), otherwise the row of categories
+  // the segments: what the style is made for, with the number of styles in each; one of them (or none) - nothing to switch, the row is not there.
+  // Another segment starts clean: its labels and categories are not those of the one left (the text of the search stays)
+  function paintKinds() {
+    kinds.hidden = !!S.detail || S.kinds.length < 2;
+    if (kinds.hidden) return;
+    kinds.setAttribute("aria-label", t("kinds"));
+    kinds.replaceChildren(...S.kinds.map((x) => {
+      const on = x.k === S.kind;
+      const b = btn("hds-kind" + (on ? " on" : ""), kindName(x.k), () => {
+        if (on) return;
+        S.kind = x.k;
+        S.cat = "";
+        S.f = {};
+        S.offset = 0;
+        rememberKind(x.k);
+        load();
+      });
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", on ? "true" : "false");
+      b.append(el("span", "hds-kn", String(x.n)));
+      return b;
+    }));
+  }
+
+  // the filter chips: a row per axis when the library has labels (the most frequent ones), otherwise the row of categories (when there are two or more)
   function paintCats() {
-    const rows = AXES.filter((a) => (S.facets[a] || []).length);
-    cats.hidden = !!S.detail || (!rows.length && !S.cats.length);
-    if (cats.hidden) return;
+    const rows = filterRows(S.facets);
+    const catRow = S.cats.length > 1;
+    cats.hidden = !!S.detail || (!rows.length && !catRow);
+    if (cats.hidden) {
+      if (!S.detail) cats.replaceChildren();   // a kind without labels or categories: no stale rows of the previous kind behind the hidden bar
+      return;
+    }
     const chip = (on, label, title, fn) => { const b = btn("hds-cat" + (on ? " on" : ""), label, fn); if (title) b.title = title; return b; };
     cats.classList.toggle("rows", rows.length > 0);
     if (!rows.length) {
@@ -377,6 +424,7 @@ export function createStyles({ hub, base, get, set, onChange = () => {} }) {
     x.title = t("close");
     search.placeholder = t("search_ph");
     bar.hidden = !!S.detail;
+    paintKinds();
     paintCats();
     paintBody();
   }

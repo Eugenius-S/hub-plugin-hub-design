@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { AXES, DEFAULT_ID, btnShown, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, filtered, listQuery, pager, t, textOn, toggled } from "../styles.js";
+import { AXES, DEFAULT_ID, btnShown, HOVER_MS, PAGE, STR, chosen, coverInView, coverOnHover, defaultStyle, filterRows, filtered, kindName, kindsShown, listQuery, pager, t, textOn, toggled } from "../styles.js";
 import { setLangSource } from "../i18n.js";
 
 const cyr = /[Ѐ-ӿ]/;
@@ -248,4 +248,22 @@ test("btnShown: the Style button is visible until the library is proven absent -
   assert.equal(btnShown(null, "0"), false);    // the last visit found no library: no flash of a button that goes away
   assert.equal(btnShown(true, "0"), true);     // the answer beats the memory
   assert.equal(btnShown(false, "1"), false);
+});
+
+test("the kind of the picker: sent only when chosen, the known ones named, the unknown shown by its key", () => {
+  assert.equal(listQuery({ kind: "slides" }), `q=&cat=&offset=0&limit=${PAGE}&kind=slides`);
+  assert.equal(listQuery({ kind: "" }), `q=&cat=&offset=0&limit=${PAGE}`);
+  assert.equal(kindName("web"), "Sites");
+  assert.equal(kindName("zine"), "zine");
+  setLangSource(() => "ru");
+  assert.equal(kindName("banner"), "Баннеры");
+  assert.deepEqual(kindsShown([{ k: "web", n: 3 }, { k: "apps", n: 0 }, { n: 2 }, null, { k: "email", n: 1 }]), [{ k: "web", n: 3 }, { k: "email", n: 1 }]);
+  assert.deepEqual(kindsShown(undefined), []);
+});
+
+test("the label rows: the axes with chips only, and never the medium (the segments took its place)", () => {
+  const row = [{ k: "a", t: "A", n: 1 }];
+  assert.deepEqual(filterRows({ medium: row, theme: row, style: [], industry: row }), ["theme", "industry"]);
+  assert.deepEqual(filterRows({}), []);
+  assert.deepEqual(filterRows(null), []);
 });

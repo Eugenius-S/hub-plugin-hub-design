@@ -822,6 +822,26 @@ class StyleLibrary(unittest.TestCase):
             r, d = self.ask("/__canvas/styles?" + q)
             self.assertEqual((r.status, d["ok"]), (200, True), q)
 
+    def test_the_kind_rides_the_same_route(self):
+        r, d = self.ask("/__canvas/styles")   # a library of one kind: nothing to switch, the answer is as it was
+        self.assertEqual((d["kind"], d["kinds"], d["count"]), ("", [], 3))
+        index = os.path.join(self.root, "index.json")
+        with open(index, encoding="utf-8") as f:
+            raw = f.read()
+        self.addCleanup(lambda: open(index, "w", encoding="utf-8").write(raw))
+        data = json.loads(raw)
+        data["c3"].update({"set": "decks", "category": "Слайды"})
+        with open(index, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.utime(index, (time.time() + 5, time.time() + 5))   # the file is read again on a new stamp
+        _, d = self.ask("/__canvas/styles")
+        self.assertEqual((d["kind"], [k["k"] for k in d["kinds"]], d["count"], [i["id"] for i in d["items"]]), ("web", ["web", "slides"], 2, ["a1", "b2"]))
+        self.assertEqual([c["name"] for c in d["cats"]], ["Dark", "Editorial"])
+        _, d = self.ask("/__canvas/styles?kind=slides")
+        self.assertEqual((d["kind"], d["count"], d["total"], [i["id"] for i in d["items"]], [c["name"] for c in d["cats"]]), ("slides", 1, 1, ["c3"], ["Слайды"]))
+        _, d = self.ask("/__canvas/styles?kind=nonsense")   # an unknown kind falls back to web
+        self.assertEqual((d["kind"], d["total"]), ("web", 2))
+
     def test_labels_filters_and_chips_ride_the_same_route(self):
         tags = os.path.join(self.root, "tags.json")
         with open(tags, "w", encoding="utf-8") as f:

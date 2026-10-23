@@ -11,6 +11,14 @@
 .hds-bar{padding:var(--space-4) 24px 0}
 .hds-search{display:block;width:100%;max-width:460px;border:1px solid var(--input);border-radius:var(--radius);background:var(--background);color:var(--foreground);padding:7px 10px;outline:none;min-width:0}
 .hds-search:focus{border-color:var(--ring)}
+/* the segments over the filters: one pill track, the chosen one lifts like a card; in a narrow window they wrap to a second row (nothing hides behind a scroll) */
+.hds-kinds{display:flex;gap:var(--hd-sp-tight,var(--space-1));margin:var(--hd-sp-head,var(--space-3)) 24px 0;padding:var(--hd-sp-tight,var(--space-1));background:var(--muted);flex-wrap:wrap;border-radius:calc(var(--space-4) + var(--space-1));align-self:flex-start;max-width:calc(100% - 48px);flex:none}
+.hds-kinds[hidden]{display:none}
+.hds-kind{flex:none;display:flex;align-items:center;gap:var(--hd-sp-inner,var(--space-2));border:0;background:none;color:var(--muted-foreground);border-radius:var(--radius-pill);padding:5px var(--space-4);font-size:var(--text-sm);white-space:nowrap}
+.hds-kind:hover{color:var(--foreground)}
+.hds-kind.on{background:var(--background);color:var(--foreground);box-shadow:var(--shadow-plate)}
+.hds-kind:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+.hds-kn{font-size:var(--text-xs);font-variant-numeric:tabular-nums;opacity:.7}
 .hds-cats{display:flex;flex-wrap:nowrap;gap:6px;padding:var(--space-4) 24px 0;overflow-x:auto;scrollbar-width:none;flex:none}   /* a long row of categories scrolls without a bar */
 .hds-cats::-webkit-scrollbar{display:none}
 .hds-cats.rows{flex-direction:column;gap:var(--space-2);overflow:visible}   /* with labels: a row per axis, each scrolls on its own */
