@@ -21,6 +21,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import fetcher
 import handwrite
+import linkctl
+import links as linkmem
 import peers
 import registry
 import styles
@@ -84,6 +86,30 @@ _roots = {"at": 0.0, "list": [], "seen": set()}
 REG = None   # registry.Registry of the designs ever made (set in main)
 FETCH = fetcher.Fetcher(lambda: styles.target(config(), state_dir()))   # fills the style library from the links of the settings (fetcher.py)
 FETCH_BODY = 16 * 1024   # request body of /__canvas/fetch
+_ctl = {}
+
+
+def notify_owner(type, data):
+    """A fact from this process into the hub (the spool folder): the page of the plugin has no way to the owner but this."""
+    from core import spool
+    spool.put(os.path.join(state_dir(), "spool"), type, None, data, src=f"ext:{tgpost.EXT}")
+
+
+def setting(name, default=None):
+    """An option of this plugin in hub.json (extensions.<account>:hub-design.<name>)."""
+    for key, val in (config().get("extensions") or {}).items():
+        if isinstance(val, dict) and str(key).rsplit(":", 1)[-1] == "hub-design" and name in val:
+            return val[name]
+    return default
+
+
+def ctl():
+    """The links of the settings tab (linkctl.py): the memory lies in the state folder, one object for the process."""
+    state = state_dir()
+    if _ctl.get("key") != (state, id(FETCH)):
+        _ctl.update(key=(state, id(FETCH)), ctl=linkctl.Ctl(linkmem.Links(os.path.join(state, linkmem.NAME)), FETCH, lambda: styles.target(config(), state_dir()), state,
+                                                 notify_owner if os.environ.get("HUB_STATE_DIR") else None))
+    return _ctl["ctl"]
 
 
 def roots():
@@ -734,7 +760,7 @@ class Handler(BaseHTTPRequestHandler):
             if not extra:
                 return self.say(403, {"error": "origin"})
             lib = library()
-            return self.say(200, {**FETCH.status(), "count": len(lib.entries) if lib else 0}, extra)
+            return self.say(200, {**FETCH.status(), **ctl().status(), "count": len(lib.entries) if lib else 0}, extra)
         if url.path.startswith("/__canvas/style"):
             return self.styles(url.path, q)
         if url.path == "/__canvas/stat":
@@ -767,6 +793,9 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeDecodeError):
             return self.say(400, {"error": "body"}, extra)
         action = body.get("action") if isinstance(body, dict) else None
+        if action in ("add", "remove", "delete_preview", "delete", "auto", "decline", "nopreview"):   # the links and what hangs on them (linkctl.py)
+            code, answer = ctl().act(body)
+            return self.say(code, {**answer, **FETCH.status()} if code == 200 else answer, extra)
         if action == "stop":
             FETCH.stop()
         elif action == "start":
@@ -1006,6 +1035,8 @@ def main():
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
         # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
         threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready), daemon=True).start()
+    if os.environ.get("HUB_STATE_DIR"):   # under a hub: the links by default are put once, the first time they are downloaded (linkctl.py)
+        threading.Thread(target=lambda: ctl().startup(auto=setting("auto_download_defaults")), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
         threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p))), daemon=True).start()
     try:

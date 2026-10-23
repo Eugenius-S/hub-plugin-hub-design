@@ -471,6 +471,45 @@ class Endpoints(Base):
         r, st = self.call("POST", {"action": "stop"})
         self.assertEqual((r.status, st["state"]), (200, "idle"))
 
+    def test_the_links_of_the_tab_are_remembered_by_the_plugin_and_come_with_the_status(self):
+        os.environ["HUB_DESIGN_STYLES"] = self.lib
+        mem = os.path.join(os.environ["HUB_STATE_DIR"], "hub-design-links.json")
+        try:
+            os.makedirs(self.lib)
+            a, b = "https://github.com/acme/set-a", "https://github.com/acme/set-b"
+            with open(os.path.join(self.lib, "index.json"), "w", encoding="utf-8") as fh:
+                json.dump({"s1": {"uuid": "s1", "file": "s1.md", "source_urls": [a]}, "s2": {"uuid": "s2", "file": "s2.md", "source_urls": [a, b]}}, fh)
+            for n in ("s1", "s2"):
+                with open(os.path.join(self.lib, n + ".md"), "w") as fh:
+                    fh.write("# x")
+            for link in (a, b):
+                r, st = self.call("POST", {"action": "add", "url": link})
+                self.assertEqual((r.status, st["link"]), (200, link))
+            r, st = self.call("GET")
+            self.assertEqual([(x["url"], x["n"]) for x in st["links"]], [(a, 2), (b, 1)])
+            self.assertTrue(st["auto"])
+            self.assertEqual(st["nopreview"]["n"], 2)
+            r, st = self.call("POST", {"action": "auto", "on": False})
+            self.assertEqual((r.status, st["auto"]), (200, False))
+            with open(mem, encoding="utf-8") as fh:   # kept in the state folder of the plugin, not in the browser
+                self.assertEqual([x["url"] for x in json.load(fh)["links"]], [a, b])
+            r, st = self.call("POST", {"action": "delete_preview", "url": a})
+            self.assertEqual((r.status, st["n"], st["kept"]), (200, 1, 1))
+            self.assertTrue(os.path.exists(os.path.join(self.lib, "s1.md")))
+            r, st = self.call("POST", {"action": "delete", "url": a})
+            self.assertEqual((r.status, st["n"], st["kept"]), (200, 1, 1))
+            self.assertEqual((os.path.exists(os.path.join(self.lib, "s1.md")), os.path.exists(os.path.join(self.lib, "s2.md"))), (False, True))
+            r, st = self.call("GET")
+            self.assertEqual([(x["url"], x["n"]) for x in st["links"]], [(b, 1)])
+            r, st = self.call("POST", {"action": "delete", "url": a})
+            self.assertEqual((r.status, st["error"]), (404, "no_link"))
+            r, st = self.call("POST", {"action": "add", "url": "nope"})
+            self.assertEqual((r.status, st["error"]), (400, "bad_link"))
+        finally:
+            del os.environ["HUB_DESIGN_STYLES"]
+            if os.path.exists(mem):
+                os.remove(mem)
+
     def test_the_target_is_the_library_folder_of_the_plugin(self):
         os.environ["HUB_DESIGN_STYLES"] = self.lib
         try:

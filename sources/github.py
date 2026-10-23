@@ -484,6 +484,8 @@ class GitHub:
 
     def _clone(self, key):
         repo, _fn, sparse, _lic = SETS[key]
+        if not self.root:   # bind() was not called: a clone has no folder to go to (never into the current folder)
+            raise SourceError("clone_failed", repo=repo, text="no library folder")
         dest = os.path.join(self.root, "sets", clone_name(key))
         flags = ["--no-cone"] if sparse and any(x.startswith("/") for x in sparse) else []
         if os.path.isdir(os.path.join(dest, ".git")):   # there already (an earlier run or the owner's own import): used as it is
