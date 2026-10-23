@@ -4,6 +4,7 @@
   --hd-m:1;
   --hd-ease-out:cubic-bezier(0.23,1,0.32,1);
   --hd-ease-drawer:cubic-bezier(0.32,0.72,0,1);
+  --hd-in:180ms; --hd-out:320ms; /* hover: quick to light up, slow to fade away */
 }
 @media (prefers-reduced-motion:reduce){.hd,.hdd{--hd-m:0}}
 
@@ -11,10 +12,37 @@
 .hd-tab,.hd-plus,.hd-segb,.hd-who,.hd-cx,.hd-exit,
 .hdc-tool,.hdc-pages,.hdc-zoom,.hdc-more,.hdc-mi,.hdc-lb,.hdc-gx,.hdc-eb,
 .hdd-tab,.hdd-tool,.hdd-back,.hdd-need-b,
-.hds-cat,.hds-x,.hds-backb,.hds-pg,.hdcard-btn{
-  transition:background-color 150ms ease,color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,opacity 150ms ease,transform 160ms var(--hd-ease-out);
+.hds-cat,.hds-x,.hds-backb,.hds-pg,.hds-link,.hd-home,.hdcard-btn,.hdcard,.hdcard-file,.hdc-err,.hd-style-x{
+  transition:background-color var(--hd-out) ease,color var(--hd-out) ease,border-color var(--hd-out) ease,box-shadow var(--hd-out) ease,opacity var(--hd-out) ease,filter var(--hd-out) ease,transform 160ms var(--hd-ease-out);
 }
-.hdd-card,.hdd-folder{transition:box-shadow 150ms ease,background-color 150ms ease,border-color 150ms ease,transform 160ms var(--hd-ease-out)}
+.hd-tab:hover,.hd-plus:hover,.hd-segb:hover,.hd-who:hover,.hd-cx:hover,.hd-exit:hover,
+.hdc-tool:hover,.hdc-pages:hover,.hdc-zoom:hover,.hdc-more:hover,.hdc-mi:hover,.hdc-lb:hover,.hdc-gx:hover,.hdc-eb:hover,
+.hdd-tab:hover,.hdd-tool:hover,.hdd-back:hover,.hdd-need-b:hover,
+.hds-cat:hover,.hds-x:hover,.hds-backb:hover,.hds-pg:hover,.hds-link:hover,.hd-home:hover,.hdcard-btn:hover,.hdcard:hover,.hdcard-file:hover,.hdc-err:hover,.hd-style-x:hover{
+  transition-duration:var(--hd-in),var(--hd-in),var(--hd-in),var(--hd-in),var(--hd-in),var(--hd-in),160ms;
+}
+/* icon buttons: the icon itself answers the pointer with a small swell */
+:is(.hd-plus,.hd-exit,.hdc-tool,.hdc-more,.hdc-lb,.hdc-gx,.hdd-tool,.hdd-back,.hds-x,.hds-backb) :is(svg,.hdc-i){
+  transition:transform var(--hd-out) var(--hd-ease-out);
+}
+@media (hover:hover) and (pointer:fine){
+  :is(.hd-plus,.hd-exit,.hdc-tool,.hdc-more,.hdc-lb,.hdc-gx,.hdd-tool,.hdd-back,.hds-x,.hds-backb):hover :is(svg,.hdc-i){
+    transform:scale(calc(1 + var(--hd-m) * .1));transition-duration:var(--hd-in);
+  }
+  .hdd-card:hover,.hdd-folder:hover{transform:translateY(calc(var(--hd-m) * -2px))}
+  .hdd-files.list .hdd-card:hover,.hdd-folders.list .hdd-folder:hover{transform:none}
+}
+/* fields: the focus ring color fades in */
+.hdd-search,.hdd-path,.hds-search,.hdf-links,.hd-card,.hd-field,.hdc-ed textarea{transition:border-color 200ms ease,box-shadow 200ms ease}
+/* project title: the hover underline fades in instead of snapping */
+.hd-home .hd-title{text-decoration:underline;text-decoration-color:transparent;text-underline-offset:3px;transition:text-decoration-color var(--hd-out) ease}
+.hd-home:hover .hd-title{text-decoration-color:currentColor;transition-duration:var(--hd-in)}
+.hdd-card,.hdd-folder{transition:box-shadow var(--hd-out) ease,background-color var(--hd-out) ease,border-color var(--hd-out) ease,transform var(--hd-out) var(--hd-ease-out)}
+.hdd-card:hover,.hdd-folder:hover{transition-duration:var(--hd-in),var(--hd-in),var(--hd-in),220ms}
+.hdd-card:active,.hdd-folder:active{transition-duration:var(--hd-in),var(--hd-in),var(--hd-in),120ms}
+/* preset and style pictures lift with the same slow settle */
+.hdd-art,.hds-img{transition:box-shadow var(--hd-out) ease,transform var(--hd-out) var(--hd-ease-out)}
+.hdd-preset:hover .hdd-art,.hds-card:hover .hds-img{transition-duration:var(--hd-in),220ms}
 
 /* press: a small give under the pointer */
 .hd-tab:active,.hd-plus:active,.hd-segb:active,.hd-exit:active,
@@ -23,7 +51,12 @@
 .hds-cat:active,.hds-backb:active,.hds-pg:active,.hdcard-btn:active{
   transform:scale(calc(1 - var(--hd-m) * .03));
 }
-.hdd-card:active,.hdd-folder:active{transform:scale(calc(1 - var(--hd-m) * .02))}
+.hdd-card:active,.hdd-folder:active,.hdcard:active{transform:scale(calc(1 - var(--hd-m) * .02))}
+.hd-home:active,.hdd-need-b:active,.hdc-err:active{transform:scale(calc(1 - var(--hd-m) * .03))}
+.hd .hd-style-w .hd-style-x{transition:background-color var(--hd-out) ease,color var(--hd-out) ease,scale 160ms var(--hd-ease-out)}
+.hd .hd-style-w .hd-style-x:active{scale:calc(1 - var(--hd-m) * .03)}
+/* preset and style cards give way under the pointer through their picture */
+.hdd-preset:active .hdd-art,.hds-card:active .hds-img{transform:scale(calc(1 - var(--hd-m) * .03));transition-duration:100ms}
 
 /* canvas menus grow from their button */
 .hdc-pop{transform-origin:top left;transition:opacity 160ms var(--hd-ease-out),transform 160ms var(--hd-ease-out)}
@@ -59,3 +92,38 @@
 @starting-style{.hdd-lb{opacity:0}}
 .hdd-lb-box{transition:opacity 240ms var(--hd-ease-out),transform 240ms var(--hd-ease-out)}
 @starting-style{.hdd-lb-box{opacity:0;transform:scale(calc(1 - var(--hd-m) * .04))}}
+
+/* style button: on hover a gradient spreads from the palette over the whole button, the label and palette turn white
+   and the palette fills (Icons8 pair, icon-filled.svg). The circle is a layer under the label, clipped by the button. */
+.hd .hd-style{
+  --hd-pink:#d6307f;
+  position:relative;isolation:isolate;overflow:hidden;
+  transition:color 200ms ease,border-color 200ms ease,transform 160ms var(--hd-ease-out);
+}
+.hd-style .hd-ic{position:relative;display:inline-flex}
+.hd-style .hd-ic::before{
+  content:"";position:absolute;left:50%;top:50%;z-index:-1;width:1200px;height:1200px;margin:-600px 0 0 -600px;
+  border-radius:50%;pointer-events:none;
+  background:linear-gradient(90deg,var(--hd-acc),var(--hd-pink),color-mix(in oklab,var(--hd-acc) 50%,var(--hd-pink)),var(--hd-acc)) 0 0/420px 100% repeat-x;
+  opacity:0;transform:scale(calc(1 - var(--hd-m) * .985));
+  transition:transform 200ms var(--hd-ease-out),opacity 200ms ease;
+}
+.hd-style .hd-ic::after{
+  content:"";position:absolute;inset:0;background:#fff;opacity:0;
+  -webkit-mask:url("icon-filled.svg") center/20px 20px no-repeat;mask:url("icon-filled.svg") center/20px 20px no-repeat;
+  transition:opacity 200ms ease;
+}
+.hd-style .hd-ic .icon{transition:opacity 200ms ease}
+@media (hover:hover) and (pointer:fine){
+  .hd .hd-style-w:hover .hd-style{color:#fff;border-color:transparent}
+  .hd-style-w:hover .hd-style .hd-ic::before{
+    opacity:1;transform:none;animation:hd-sweep 3s linear infinite;
+    transition:transform 420ms var(--hd-ease-out),opacity 120ms ease;
+  }
+  .hd-style-w:hover .hd-style .hd-ic::after{opacity:1}
+  .hd-style-w:hover .hd-style .hd-ic .icon{opacity:0}
+  .hd .hd-style-w:hover .hd-style-x{color:#fff}
+  .hd .hd-style-w:hover .hd-style-x:hover{background:rgb(255 255 255 / .2)}
+}
+@keyframes hd-sweep{to{background-position:420px 0}}
+@media (prefers-reduced-motion:reduce){.hd-style-w:hover .hd-style .hd-ic::before{animation:none}}
