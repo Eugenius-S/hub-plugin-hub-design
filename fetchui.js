@@ -300,7 +300,7 @@ export function createFetchUi({ hub, base, local = () => true, onAdded = () => {
     cnt.textContent = S.count == null ? "" : t("count", { n: S.count });
     const show = !!st && (run || st.total > 0);
     bar.hidden = prog.hidden = !show;
-    fill.style.width = percent(st) + "%";
+    fill.style.transform = `scaleX(${percent(st) / 100})`;   // transform, not width: no layout on every tick
     bar.setAttribute("aria-valuenow", String(percent(st)));
     prog.textContent = show ? `${t("prog", { done: st.done, total: st.total })} · ${t("counts", { added: st.added, skipped: st.skipped, failed: st.failed })}${st.covers > 0 ? " · " + t("covers", { n: st.covers }) : ""}` : "";
     now.textContent = run && st.name ? t("now", { name: st.name }) : "";

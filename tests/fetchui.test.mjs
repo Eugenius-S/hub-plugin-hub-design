@@ -176,6 +176,8 @@ test("fetchui: Download saves the filled field, sends all the saved links, shows
   assert.deepEqual(sent(S, "add").map((b) => b.url), [B]);
   assert.deepEqual(sent(S, "start")[0].urls, [A, B]);
   assert.equal(find(root, "hdf-prog").textContent, "1 of 4 · added 1, skipped 0, failed 0");
+  assert.equal(find(root, "hdf-fill").style.transform, "scaleX(0.25)");   // the bar grows by transform, not by width
+  assert.equal(find(root, "hdf-fill").style.width, undefined);
   assert.equal(find(root, "hdf-now").textContent, "Now: Marlin");
   assert.ok(find(root, "hdf-go").disabled && !find(root, "hdf-stop").hidden && findAll(root, "hdf-field").every((x) => x.disabled));
   assert.ok(findAll(root, "hdf-del").every((x) => x.disabled));   // nothing is deleted during a run

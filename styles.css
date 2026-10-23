@@ -102,7 +102,8 @@
 .hdf .hdf-go:disabled{opacity:.5}
 .hdf-bar{height:8px;border-radius:4px;background:var(--muted);overflow:hidden}
 .hdf-bar[hidden],.hdf-prog[hidden]{display:none}
-.hdf-fill{height:100%;background:var(--hd-acc,var(--primary));border-radius:4px;transition:width .4s}
+.hdf-fill{height:100%;background:var(--hd-acc,var(--primary));border-radius:4px;transform:scaleX(0);transform-origin:left;transition:transform 200ms var(--hd-ease-out,cubic-bezier(0.23,1,0.32,1))}
+@media (prefers-reduced-motion:reduce){.hdf-fill{transition:none}}
 .hdf-prog{font-size:var(--text-sm)}
 .hdf-msg{font-size:var(--text-sm)}
 .hdf-msg.bad{color:var(--destructive,#d14343)}
