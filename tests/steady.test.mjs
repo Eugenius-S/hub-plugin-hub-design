@@ -82,18 +82,16 @@ test("a repaint with the same designs writes nothing into the page", () => {
   }
 });
 
-test("previews are shots asked a few at a time, the ones in view first", () => {
+test("previews are shots asked a few at a time, all of them at once - in view or not (hd-sort)", () => {
   setLangSource(() => "en");
   forgetShots();
   const { log } = build(designs(9));
-  assert.equal(asked(log).length, 0, "nothing in view yet - nothing asked");
+  assert.equal(asked(log).length, SHOTS_AT_ONCE, "nothing in view yet - and all the same the shots are asked, a few at a time");
   assert.ok(!log.made.some((e) => e.tag === "iframe" && e._src), "no live document is loaded for a preview");
-  showAll();
   let now = asked(log);
-  assert.equal(now.length, SHOTS_AT_ONCE, "no more than SHOTS_AT_ONCE at a time");
   const seenSrc = new Set(now.map((i) => i._src));
   while (now.length) { settle(now[0]); now = asked(log); now.forEach((i) => seenSrc.add(i._src)); assert.ok(now.length <= SHOTS_AT_ONCE); }
-  assert.equal(seenSrc.size, 9, "every design in view got its shot");
+  assert.equal(seenSrc.size, 9, "every design got its shot, scrolled to or not");
 });
 
 test("a failed shot is asked again later; a known shot is shown at once on the next start", () => {

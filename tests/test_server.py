@@ -1172,3 +1172,40 @@ class DesignRegistry(unittest.TestCase):
         with unittest.mock.patch.object(server, "REG", None):
             _, body = self.get("/__canvas/registry", self.ORIGIN)
         self.assertEqual(json.loads(body), {"ready": False, "items": [], "tasks": []})
+
+
+class Prewarm(unittest.TestCase):
+    def setUp(self):
+        patch = unittest.mock.patch.object(server, "allowed", lambda real: os.path.exists(real))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_only_the_cards_without_a_shot_are_shot_newest_first(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        paths = []
+        for n in ("a", "b", "c"):
+            p = os.path.join(d, n + ".html")
+            open(p, "w").write("<p>" + n)
+            paths.append(os.path.realpath(p))
+        rows = [{"path": p} for p in paths] + [{"path": os.path.join(d, "gone.html")}, {"path": os.path.join(d, "x.txt")}]
+        shot = []
+        made = server.prewarm(rows, have=lambda real: real == paths[1], shoot=lambda real: shot.append(real) or b"png")
+        self.assertEqual(shot, [paths[0], paths[2]])   # the order of the listing; the one with a shot, the missing file and a non-design are skipped
+        self.assertEqual(made, 2)
+
+    def test_no_chrome_stops_the_pass_and_a_failure_goes_on(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        paths = []
+        for n in ("a", "b"):
+            p = os.path.join(d, n + ".html")
+            open(p, "w").write("x")
+            paths.append(os.path.realpath(p))
+        calls = []
+        def shoot(real):
+            calls.append(real)
+            if len(calls) == 1:
+                raise server.PdfError("boom")
+        self.assertEqual(server.prewarm([{"path": p} for p in paths], have=lambda r: False, shoot=shoot), 0)
+        self.assertEqual(calls, paths)

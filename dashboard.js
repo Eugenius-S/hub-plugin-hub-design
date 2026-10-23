@@ -212,10 +212,10 @@ const setHidden = (node, v) => { if (node.hidden !== v) node.hidden = v; };
 
 // previews: a shot of the design (PNG of the plugin process: its headless Chrome, cached on disk by path and edit time), not the live document -
 // a dozen live designs at once froze the page and the rest stayed grey. A shot this browser already had is put at once; a new one waits
-// in a queue: only what is in view, SHOTS_AT_ONCE at a time (each new one is a Chrome run of 1-3 s), a failed one again after RETRY
-export const SHOTS_AT_ONCE = 2;
+// in a queue: what is in view first, then all the rest, SHOTS_AT_ONCE at a time (each new one is a Chrome run of 1-3 s), a failed one again after RETRY
+export const SHOTS_AT_ONCE = 3;
 const RETRY = [3000, 10000, 30000];
-const KNOWN_KEY = "hub-design:shots", KNOWN_MAX = 400;
+const KNOWN_KEY = "hub-design:shots", KNOWN_MAX = 2000;
 let known = null;   // shot addresses that loaded in this browser (localStorage)
 const knownSet = () => {
   if (!known) { try { known = new Set(JSON.parse(globalThis.localStorage?.getItem(KNOWN_KEY) || "[]")); } catch { known = new Set(); } }
@@ -261,6 +261,7 @@ function shotQueue(el, later, max = SHOTS_AT_ONCE) {
     while (busy < max) {
       let next = null;
       for (const c of waiting) if (c.visible) { next = c; break; }
+      if (!next) next = waiting.values().next().value;   // nothing in view waits: the rest are loaded too, so scrolling finds them ready
       if (!next) return;
       waiting.delete(next);
       if (next.want && next.want !== next.shown && next.want !== next.loading) start(next);

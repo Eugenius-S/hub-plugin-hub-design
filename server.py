@@ -58,7 +58,7 @@ THUMB_SIZE = (1440, 900)   # the window a design is shot in for a card in the fe
 DOC_SIZE = (900, 634)       # the window a document is shot in: the same ratio as the card tile
 THUMB_SCALE = 0.34         # Chrome shrinks the shot at once: ~490 px wide
 THUMB_TIMEOUT = 30
-THUMB_KEEP = 300           # shots in the cache: older ones are erased
+THUMB_KEEP = 1500          # shots in the cache: older ones are erased
 TG_WIDTH = 1080            # px: the shot of a design for a Telegram post (tgpost.py) - sharp on a phone
 TITLE_READ = 64 * 1024     # how far into the file we look for <title>
 
@@ -483,6 +483,38 @@ def chrome_shot(real, win, scale, fmt="png"):
                 kill_tree(proc)
             shutil.rmtree(tmp, ignore_errors=True)
     return data
+
+
+def prewarm(rows, have=None, shoot=None, limit=40):
+    """Shoot the cards that have no shot yet, the newest design first, so the start screen finds every preview ready (cold ones too).
+    rows - the registry listing; returns the number shot. have(real) - is there a shot; shoot(real) - make it."""
+    have = have or (lambda real: os.path.exists(thumb_path(real, newest(real))))
+    shoot = shoot or thumb
+    made = 0
+    for r in rows:
+        real = os.path.realpath(os.path.expanduser(r.get("path", "")))
+        if not real.lower().endswith(PAGES) or file_state(real) != "ok" or have(real):
+            continue
+        try:
+            if shoot(real) is None:   # Chrome is not set up: nothing to warm
+                return made
+        except PdfError:
+            continue
+        made += 1
+        if made >= limit:
+            break
+    return made
+
+
+def prewarm_loop(every=300):
+    while True:
+        time.sleep(20)
+        try:
+            if REG and REG.ready:
+                prewarm(REG.listing())
+        except Exception as e:   # a warm-up never takes the server down
+            print(f"hub-design: prewarm: {e}", file=sys.stderr, flush=True)
+        time.sleep(every)
 
 
 def keep_thumb(out, data):
@@ -1092,6 +1124,7 @@ def main():
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the registry of designs (the journal is read in the background)
         REG = registry.Registry(state_dir())
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
+        threading.Thread(target=prewarm_loop, daemon=True).start()   # every card gets its shot before the owner opens the start screen
         # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
         threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready, peers.EVERY, peer_hub), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the library is read before the page asks (the Style button waits for the first answer)
