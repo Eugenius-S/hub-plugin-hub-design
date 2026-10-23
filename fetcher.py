@@ -84,6 +84,7 @@ def fetch(url, allowed, limit, binary=False):
                     raise Gone("size")
                 return data, r.headers.get("Content-Type", "")
         except urllib.error.HTTPError as e:
+            e.close()
             if e.code in (404, 410):
                 raise Gone(str(e.code))
             if e.code in (401, 403):
