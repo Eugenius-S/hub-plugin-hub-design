@@ -222,6 +222,8 @@ test("a design saved to design/<project>/ goes to the direction of that name; th
   assert.equal(homeOf({ path: "/h/design/!Ads/c.html" }, ds), "/p/Ads");            // case, "!", "_" and "-" do not matter
   assert.equal(homeOf({ path: "/h/design/icons8-smm/d.html" }, ds), "/p/smm");
   assert.equal(homeOf({ path: "/h/design/threads-weekly/e.html" }, ds), "");         // no common word: stays without a direction
+  const raised = [{ id: "d5", title: "Pack", by: "hub-core", dir: "icons8-smm", who: "designer" }];
+  assert.equal(homeOf({ path: "/h/design/pack2/g.html", session: "designer", task: "d5" }, ds, raised), "/p/smm");   // the hub named the direction of the task
   assert.equal(homeOf({ path: "/h/design/misc/f.html", title: "Rewarded ads: new offer" }, ds), "/p/Rewarded-ads");   // the title
   assert.equal(homeOf({ path: "/h/design/misc/ads-banner.html" }, ds), "/p/Ads");    // the file name
   assert.equal(nearestDir("ads", directionDirs([{ name: "ads-a", role: "worker", cwd: "/p/A" }, { name: "ads-b", role: "worker", cwd: "/p/B" }])), "");   // two equal: no guess

@@ -40,10 +40,13 @@ _KIND_LINE = re.compile(rb'\.(?:html?|pdf|svg)"', re.I)
 _LINE_KIND = re.compile(rb'"(?:delegation\.created|turn\.started)"|"task\.noted".*"title"')
 TICK = 3   # s between journal reads
 CUR_EVERY = 30   # s: the tasks the sessions work on are saved no oftener (they change with every turn)
-VERSION = 2   # 2: the task of a design; a registry of version 1 is read from the journal again
+VERSION = 3   # 2: the task of a design; 3: a word in the middle of a turn keeps its task. An older registry is read from the journal again
 KEEP_TASKS = 1500   # tasks kept besides the roots of the designs
 # the task a turn works on, named in the head of its prompt: a reply to a task, an addition, the task itself
 TASK_IN_HEAD = re.compile(r"(?:ответ на задачу|к задаче|задач[аеуи]|task)\s+(d\d+)", re.I)
+ANY_TASK = re.compile(r"\b(d\d+)\b")   # a bare task id in a message ("to d10 (...)", "pack (d10)"): it names that task if one is known
+MID_TURN = re.compile(r"пришл[оа] посреди твоего хода|came in the middle of your turn", re.I)   # the core's note: the same turn goes on
+DIR_IN_TEXT = re.compile(r"(?:направлени[еяюи]|direction)\s+[«\"']?([a-z0-9](?:[\w.-]*\w)?)", re.I)   # "Direction <name>. ..." in the words of a task
 HEAD = re.compile(r"^\[hub:m\d+(?:x\d+)?\s+от\s")
 # a path of a design in the head of a message (no spaces: the head is cut short and a path with spaces is not told from the text)
 PATH_IN_HEAD = re.compile(r"(?:[A-Za-z]:[\\/]|/)[^\s\"'<>()]+\.(?:html?|pdf|svg)\b", re.I)
@@ -193,8 +196,9 @@ def fold_task(state, ev):
         did = f"d{ev.get('seq')}"
         by, who = data.get("for_session") or "", data.get("session") or ""
         parent = cur.get(by) if by else None
+        about = DIR_IN_TEXT.search(str(data.get("context") or ""))   # raised by the hub for a direction: the direction is in its words
         tasks[did] = {"title": clean_title(data.get("title")) or clean_title(data.get("context"), words=True), "by": by, "who": who, "ts": ts,
-                      "root": root_of(state, parent) if parent else did}
+                      "root": root_of(state, parent) if parent else did, **({"dir": about[1]} if about else {})}
         return True
     if kind == "task.noted":
         title = clean_title(data.get("title"))
@@ -210,8 +214,12 @@ def fold_task(state, ev):
         if did not in tasks:
             m = TASK_IN_HEAD.search(head)
             did = m[1].lower() if m else ""
+        if did not in tasks:
+            did = next((x.lower() for x in ANY_TASK.findall(head) if x.lower() in tasks), "")
         if did in tasks:
             new = did
+        elif MID_TURN.search(head):   # a word that came in the middle of a turn: the turn and its task go on
+            return False
         elif HEAD.match(head):   # some other message (the owner, the schedule, the core): not a task of this session
             new = None
         else:   # the session woke by itself (a background job ended): the same task goes on
@@ -439,10 +447,11 @@ class Registry:
             return sorted((dict(v) for v in self.items.values()), key=lambda v: v["last"], reverse=True)
 
     def task_rows(self):
-        """The tasks the designs belong to: {id, title, by, who, ts} - the roots of the chains."""
+        """The tasks the designs belong to: {id, title, by, who, ts, dir?} - the roots of the chains (dir: the direction the hub named)."""
         with self.lock:
             ids = {v.get("task") for v in self.items.values()}
-            return [{"id": k, "title": t.get("title") or "", "by": t.get("by") or "", "who": t.get("who") or "", "ts": t.get("ts") or 0}
+            return [{"id": k, "title": t.get("title") or "", "by": t.get("by") or "", "who": t.get("who") or "", "ts": t.get("ts") or 0,
+                     **({"dir": t["dir"]} if t.get("dir") else {})}
                     for k, t in self.state["tasks"].items() if k in ids]
 
     def folders(self):

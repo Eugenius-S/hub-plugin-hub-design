@@ -114,6 +114,18 @@ class Layout(unittest.TestCase):
         p = layout.plan([{"path": a, "session": "designer", "task": "d1"}, {"path": b, "session": "designer"}], self.ctx)
         self.assertEqual(self.moves(p), {a: self.ads + "/design/bf/post-1/index.html", b: self.ads + "/design/bf/post-2/index.html"})
 
+    def test_a_task_the_hub_raised_for_a_direction_goes_to_the_direction_and_its_next_version_too(self):
+        self.ctx.tasks["d3"] = {"title": "Canva pack", "by": "hub-core", "who": "designer", "dir": "ads-bruno"}
+        a = self.put(self.at("design", "canva-pack2", "post-ai-1a", "index.html"))
+        row = {"path": a, "session": "designer", "task": "d3"}
+        p = layout.plan([row], self.ctx)
+        self.assertEqual(self.moves(p), {a: self.ads + "/design/canva-pack2/post-ai-1a/index.html"})
+        self.assertEqual(layout.task_folder(a, row, self.ctx), self.ads + "/design/canva-pack2")
+        moved = self.ads + "/design/canva-pack2/post-ai-1a/index.html"
+        self.assertIsNone(layout.task_folder(moved, {**row, "path": moved}, self.ctx))   # already in its direction
+        free = self.at("design", "kyoto", "story-1a", "index.html")
+        self.assertIsNone(layout.task_folder(free, {"path": free, "session": "designer", "task": "d2"}, self.ctx))   # no direction
+
     def test_a_guess_by_the_name_moves_no_file_to_a_direction(self):
         a = self.put(self.at("design", "bruno-promo", "card.html"))
         p = layout.plan([{"path": a, "session": "designer"}], self.ctx)

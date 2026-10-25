@@ -102,13 +102,13 @@ def folders(path):
     return {own, os.path.dirname(own)} - {"", "/"}
 
 
-def pack_line(s, pack):
+def pack_line(s, pack, folder=None):
     """What a message to the author of a batch adds to the owner's feedback on one of its designs. The designer's rule
     recognizes it by "applies to the whole batch of N designs"; the same line closes a "Why?" and a reply."""
     names = "; ".join(f"\"{m['title']}\" ({m['path']})" for m in pack)
     return (f"This applies to the whole batch of {len(pack)} designs you sent together: {names}; do not send the old variants, "
             "redo the batch: stop finishing the old ones, send new variants of all of them as one batch (hub send-file each). "
-            f"{task_line(s['path'])}")
+            f"{task_line(s['path'], folder)}")
 
 
 def tailnet_page(state_dir):
@@ -121,11 +121,12 @@ def tailnet_page(state_dir):
         return None
 
 
-def task_line(path):
-    """Where the next version of a design goes: a folder of its own in the folder of its task, next to this one."""
+def task_line(path, folder=None):
+    """Where the next version of a design goes: a folder of its own in the folder of its task - next to this one, or `folder` when
+    the design lies outside the direction of its task (layout.task_folder: <direction>/design/<task>)."""
     k = str(path or "").replace("\\", "/")
     own = os.path.dirname(k)
-    folder = os.path.dirname(own) if os.path.basename(k).lower() == "index.html" else own
+    folder = folder or (os.path.dirname(own) if os.path.basename(k).lower() == "index.html" else own)
     return (f"Save it in the task folder {folder}/ as a folder of its own (<design-name>-<round>/index.html, its assets inside), "
             "not next to the files and not in your working folder.")
 
@@ -366,7 +367,7 @@ class Poster:
         edit lane is for a single design; `batch` is the core's mark to hand it to the busy author at once."""
         s = self.st["sent"][ref]
         members = [self.followed(self.st["sent"][r]) for r in pack]
-        self.say(s["session"], f"{text} {pack_line(s, members)} {tail}".strip(), {"batch": True})
+        self.say(s["session"], f"{text} {pack_line(s, members, self.task_folder(s['path']))} {tail}".strip(), {"batch": True})
 
     def settle_pack(self, ref, pack):
         """After the owner's feedback on one design of a batch the others stop waiting: their buttons (and an open "Why?") go,
@@ -441,6 +442,20 @@ class Poster:
             self.save()
         return s
 
+    def task_folder(self, path):
+        """The folder of the design's task in its direction when the design lies outside it (a task the hub raised for a direction,
+        a design made in the designer's folder); None - next to the design."""
+        try:
+            import layout
+            sessions = [{**v, "name": v.get("name") or k} for k, v in ((self.state() or {}).get("sessions") or {}).items() if isinstance(v, dict)]
+            rows, ctx = layout.context(self.dir, sessions)
+            k = layout.key(path)
+            row = next((r for r in rows if isinstance(r, dict) and layout.key(r.get("path") or "") == k), None) or {"path": path}
+            return layout.task_folder(path, row, ctx)
+        except Exception as e:   # the line then names the folder the design lies in
+            print(f"hub-design: no task folder for {path}: {e!r}", file=sys.stderr, flush=True)
+            return None
+
     def answer_why(self, why, button=None, text=None, ev=None, chosen=None):
         """The owner's reasons come to the author in one message: the ticked ones (Done: `chosen`), his own words, or both. Every
         reason ticked - the design does not work as a whole: a new variant, not a patch. The last line is a record the designer
@@ -471,7 +486,7 @@ class Poster:
             todo = ("Redo only " + ("these aspects" if len(names) > 1 else "this") + " in this design, leave the rest as it is, and send "
                     "the fixed version again (hub send-file) - it comes to the owner as a new post.")
         record = ",".join(WHY if whole else keys) or "words"
-        todo += f" {task_line(s['path'])}"
+        todo += f" {task_line(s['path'], self.task_folder(s['path']))}"
         head = f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {'; '.join(said)}."
         tail = (f"Feedback record: design={s['path']}; verdict=dislike; reasons={record}; "
                 f"words={json.dumps(text or '', ensure_ascii=False)}")

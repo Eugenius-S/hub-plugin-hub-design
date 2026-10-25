@@ -282,6 +282,20 @@ class Posts(unittest.TestCase):
         self.assertIn("Save it in the task folder /w/design/landing-promo/ as a folder of its own", msg["text"])
         self.assertTrue(msg["text"].endswith('design=/w/design/landing-promo/landing/index.html; verdict=dislike; reasons=colors; words=""'))
 
+    def test_the_reason_names_the_direction_folder_of_a_task_the_hub_raised_for_a_direction(self):
+        self.sessions["canva"] = {"cwd": "/p/canva", "role": "worker"}
+        reg = os.path.join(self.dir, "hub-design")
+        os.makedirs(reg, exist_ok=True)
+        with open(os.path.join(reg, "registry.json"), "w", encoding="utf-8") as f:
+            json.dump({"v": 3, "items": [{"path": "/w/pack2/post-ai-1a/index.html", "session": "designer", "task": "d5"}],
+                       "tasks": {"d5": {"title": "Canva pack", "by": "hub-core", "who": "designer", "dir": "canva"}}}, f)
+        self.file(path="/w/pack2/post-ai-1a/index.html")
+        self.press(self.posts()[0]["ref"], "👎")
+        self.done(self.posts()[1]["ref"], "Colors")
+        text = self.said()[-1]["text"]
+        self.assertIn("Save it in the task folder /p/canva/design/pack2/ as a folder of its own", text)
+        self.assertNotIn("task folder /w/", text)
+
     def test_the_why_post_is_a_multi_select_with_done_and_nothing_goes_before_done(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")

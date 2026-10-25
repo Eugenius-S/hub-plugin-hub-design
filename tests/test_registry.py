@@ -236,6 +236,22 @@ class Tasks(Registry):
                           turn(17, "designer", "m17", "[hub:m17 от владельца] нарисуй лого"), wrote(18, "designer", p("d", "d.html"))])
         self.assertEqual(got, {"a.html": "d10", "b.html": "d10", "c.html": "d10", "d.html": None})
 
+    def test_a_message_in_the_middle_of_a_turn_keeps_its_task_and_a_bare_task_id_names_one(self):
+        _, got = self.of([raised(10, "designer", "hub-core", title="T"), turn(11, "designer", "m10"),
+                          turn(12, "designer", "m12", "[hub:m12 от canva] (пришло посреди твоего хода — учти сейчас) ещё правка"),
+                          wrote(13, "designer", p("d", "a.html")),
+                          raised(14, "designer", "hub-core", title="U"), turn(15, "designer", "m14"),
+                          turn(16, "designer", "m16", "[hub:m16 от canva] К d10 (10 макетов): поправь цвета"), wrote(17, "designer", p("d", "b.html")),
+                          turn(18, "designer", "m18", "[hub:m18 от canva] (пришло посреди твоего хода — учти сейчас) Пак (d14) — правка"),
+                          wrote(19, "designer", p("d", "c.html"))])
+        self.assertEqual(got, {"a.html": "d10", "b.html": "d10", "c.html": "d14"})
+
+    def test_a_task_the_hub_raised_for_a_direction_names_the_direction(self):
+        r, _ = self.of([raised(10, "designer", "hub-core", title="Canva: pack", context="Направление canva-templates. Ещё 10 макетов"),
+                        raised(11, "designer", "hub-core", title="Other", context="Сверстай баннер")])
+        got = {k: t.get("dir") for k, t in r.state["tasks"].items()}
+        self.assertEqual(got, {"d10": "canva-templates", "d11": None})
+
     def test_a_design_without_a_task_is_just_a_design(self):
         _, got = self.of([wrote(1, "designer", p("d", "free.html"))])
         self.assertEqual(got, {"free.html": None})

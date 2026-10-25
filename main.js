@@ -384,7 +384,7 @@ function taskSaveLine() {
   const f = ui ? ui.dash.state.folder : null;
   if (!isTaskKey(f)) return "";
   const id = taskOfKey(f), snap = hub.snapshot() || {}, task = P.tasks.find((x) => x.id === id) || {};
-  const cwd = saveDirOf(task.by, snap.sessions, snap.directions) || saveDirOf(P.origin, snap.sessions, snap.directions);
+  const cwd = saveDirOf(task.by, snap.sessions, snap.directions) || saveDirOf(task.dir, snap.sessions, snap.directions) || saveDirOf(P.origin, snap.sessions, snap.directions);
   return taskLine(taskDir(cwd, taskTitle(id, P.tasks), designerHome()));
 }
 // the working folder of the designer: a design without a direction goes into <it>/<task>/

@@ -1056,7 +1056,7 @@ def peer_rows():
     folders = [(t, titles[t]) for t in sorted(many) if titles.get(t)]
     homes = peer_homes()
     names = peer_names()
-    asked = {t["id"]: (t["by"], t["who"]) for t in REG.task_rows()} if REG else {}
+    asked = {t["id"]: (t["by"], t.get("dir") or "", t["who"]) for t in REG.task_rows()} if REG else {}   # dir: the direction the hub named for the task
 
     def folder(r):   # the file is in a direction's folder; else the direction made it; else the direction asked for the task
         label = peers.folder_label(os.path.expanduser(r["path"]), dirs) or homes.get(r.get("session"), "")

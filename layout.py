@@ -134,7 +134,7 @@ def direction_of(row, ctx):
     if d:
         return d
     t = ctx.tasks.get(row.get("task") or "") or {}
-    for name in (t.get("by"), t.get("who")):
+    for name in (t.get("by"), t.get("dir"), t.get("who")):   # dir: the direction the hub named when it raised the task for it
         d = ctx.by_name(name)
         if d:
             return d
@@ -175,6 +175,40 @@ def task_name(row, rel, ctx):
         return parts[0]
     title = (ctx.tasks.get(row.get("task") or "") or {}).get("title") or ""
     return slug(title)
+
+
+def task_folder(path, row, ctx):
+    """The task folder the next version of a design goes to when its direction is known and the design lies outside it:
+    <direction>/design/<task>; None - the folder it lies in is the right one (or nothing is known)."""
+    d = direction_of({**(row or {}), "path": path}, ctx)
+    place = design_place(path, ctx)
+    if not d or not place:
+        return None
+    root = peers._key(d["cwd"]) + "/design"
+    if under(path, root) is not None:
+        return None
+    name = task_name(row or {}, place[2], ctx)
+    return root + "/" + name if name else None
+
+
+def context(state_dir, sessions=None):
+    """(rows, ctx) from the registry file and the hub state: the designs with their tasks, the directions and the designer's folder."""
+    from core import journal
+    try:
+        with open(os.path.join(state_dir, "hub-design", "registry.json"), encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        saved = {}
+    tasks = {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)}
+    if sessions is None:
+        sessions = list(journal.load_state(state_dir).get("sessions", {}).values())
+    try:
+        from modules.directions import direction
+        from modules.directions.boards import Boards
+        names = set(Boards(direction.root(), state_dir=state_dir).slugs())
+    except Exception:
+        names = set()
+    return saved.get("items") or [], Ctx.from_sessions(sessions, names, tasks)
 
 
 def plan(rows, ctx, extra=()):
@@ -535,23 +569,9 @@ def scan(folders, depth=SCAN_DEPTH):
 
 def gather(state_dir):
     """(rows, ctx, extra) from the registry file and the hub state."""
-    from core import journal
-    try:
-        with open(os.path.join(state_dir, "hub-design", "registry.json"), encoding="utf-8") as f:
-            saved = json.load(f)
-    except (OSError, ValueError):
-        saved = {}
-    tasks = {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)}
-    sessions = list(journal.load_state(state_dir).get("sessions", {}).values())
-    try:
-        from modules.directions import direction
-        from modules.directions.boards import Boards
-        names = set(Boards(direction.root(), state_dir=state_dir).slugs())
-    except Exception:
-        names = set()
-    ctx = Ctx.from_sessions(sessions, names, tasks)
+    rows, ctx = context(state_dir)
     folders = [d["cwd"] + "/design" for d in ctx.dirs] + list(set(ctx.designers.values()))
-    return saved.get("items") or [], ctx, shallow(scan(folders), ctx)
+    return rows, ctx, shallow(scan(folders), ctx)
 
 
 def shallow(paths, ctx):

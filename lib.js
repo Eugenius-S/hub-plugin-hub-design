@@ -973,7 +973,7 @@ export function taskFolders(files = [], min = TASK_MIN) {
 }
 // the folder a design is shown in: the folder of its task, else the direction folder of its file ("" - none)
 // A design lies in the folder of the direction by the first rule that fits: the file is inside the cwd of the direction; the direction itself made it (its session is the author);
-// the direction asked for the task the design was made for (taskRows: [{id, by, who}] of the registry). Nothing fits - "" (no direction).
+// the direction asked for the task the design was made for, or the hub named it raising the task (taskRows: [{id, by, dir, who}] of the registry). Nothing fits - "" (no direction).
 // Last rule: the design lies in a folder named for a project (<home>/design/<project>/file.html, how the designer saves) - the direction whose name says the same;
 // else the words of the title and of the file name. The list of directions is the one of the snapshot, nothing is hard-coded.
 export function homeOf(f, dirs = [], taskRows = [], tasks = new Set()) {
@@ -981,7 +981,7 @@ export function homeOf(f, dirs = [], taskRows = [], tasks = new Set()) {
   if (byPath) return byPath;
   const home = (name) => (name && (dirs.find((d) => d.names && d.names.includes(name)) || {}).key) || "";
   const task = f.task ? (taskRows || []).find((x) => x.id === f.task) : null;
-  return home(f.session) || (task ? home(task.by) || home(task.who) : "") || projectDirOf(f, dirs, taskRows, tasks);
+  return home(f.session) || (task ? home(task.by) || home(task.dir) || home(task.who) : "") || projectDirOf(f, dirs, taskRows, tasks);
 }
 // the words of a name: lower case, letters and digits, three signs and more (a lone "b" or "a" is a label, not a word), without the words every design folder has
 const COMMON = new Set(["design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub", "icons8"]);
