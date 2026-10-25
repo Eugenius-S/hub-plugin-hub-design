@@ -43,13 +43,13 @@ class Posts(unittest.TestCase):
         return tgpost.Poster(self.dir, shot, lambda: self.cfg, title=lambda p: "Landing", page=lambda: self.page,
                              state=lambda: {"sessions": self.sessions}, emit=lambda t, d: self.out.append((t, d)))
 
-    def add(self, type, data, src="session"):
+    def add(self, type, data, src="session", ts=None):
         self.seq += 1
         with open(self.journal, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"seq": self.seq, "type": type, "src": src, "data": data}) + "\n")
+            f.write(json.dumps({"seq": self.seq, "type": type, "src": src, "data": data, **({"ts": ts} if ts else {})}) + "\n")
 
-    def file(self, sender="designer", path="/w/landing.html"):
-        self.add("owner.file", {"path": path, "sender": sender, "channel": "session", "owner": False})
+    def file(self, sender="designer", path="/w/landing.html", ts=None):
+        self.add("owner.file", {"path": path, "sender": sender, "channel": "session", "owner": False}, ts=ts)
         self.p.poll()
 
     def posts(self):
@@ -118,12 +118,123 @@ class Posts(unittest.TestCase):
                          ("/w/landing.html", True, self.seq, why["ref"]))
         self.assertIn("colors", reason["text"])
 
-    def test_posts_ask_the_bot_to_bump_them_down_the_chat(self):
+    def test_design_posts_do_not_ask_the_bot_to_bump_them_down_the_chat(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")
         design, why = self.posts()
-        self.assertIs(design.get("bump"), True)
-        self.assertIs(why.get("bump"), True)
+        self.assertNotIn("bump", design)
+        self.assertNotIn("bump", why)
+
+    def batch(self, n=3, task="/w/ads-sale", sender="designer", ts=1000):
+        """n designs of one task folder sent one after another; the refs of their posts."""
+        for i in range(n):
+            self.file(sender, f"{task}/v{i + 1}/index.html", ts=ts + i * 60)
+        return [p["ref"] for p in self.posts()[-n:]]
+
+    def batch_said(self):
+        return [d for d in self.said() if d.get("batch")]
+
+    def test_a_dislike_on_a_batch_goes_to_the_author_at_once_as_feedback_on_the_whole_batch(self):
+        refs = self.batch()
+        self.press(refs[1], "👎")
+        (msg,) = self.said()
+        self.assertEqual(msg["to"], "designer")
+        self.assertIs(msg["batch"], True)
+        for key in ("lane", "reject", "react", "ref"):   # not the edit lane: a lane is for one design
+            self.assertNotIn(key, msg)
+        self.assertIn("applies to the whole batch of 3 designs", msg["text"])
+        self.assertIn("do not send the old variants", msg["text"])
+        for i in (1, 2, 3):
+            self.assertIn(f"/w/ads-sale/v{i}/index.html", msg["text"])
+
+    def test_the_other_posts_of_a_batch_lose_their_buttons_and_keep_their_pictures(self):
+        refs = self.batch()
+        with mock.patch.object(tgpost.rules(), "BUTTONS_ONLY", True, create=True):
+            self.press(refs[1], "👎")
+        gone = [d for t, d in self.out if t == "telegram.unpost"]
+        self.assertEqual(sorted(d["ref"] for d in gone), sorted([refs[0], refs[2]]))
+        self.assertTrue(all(d == {"ref": d["ref"], "buttons_only": True} for d in gone))   # never a whole-post unpost
+        self.press(refs[1], "👎")   # settled: a repeat touches nothing
+        self.assertEqual(len([1 for t, d in self.out if t == "telegram.unpost"]), 2)
+
+    def test_a_bot_without_buttons_only_is_not_asked_to_unpost_anything(self):
+        refs = self.batch()
+        with mock.patch.object(tgpost.rules(), "BUTTONS_ONLY", False, create=True):
+            self.press(refs[0], "👎")
+        self.assertEqual([t for t, d in self.out if t == "telegram.unpost"], [])
+        self.assertEqual(len(self.batch_said()), 1)   # the feedback still goes
+
+    def test_the_reasons_after_a_dislike_on_a_batch_are_about_the_whole_batch(self):
+        refs = self.batch()
+        self.press(refs[0], "👎")
+        why = self.posts()[-1]
+        self.assertEqual(why["lane"], "/w/ads-sale/v1/index.html")
+        self.done(why["ref"], "Colors", "Balance")
+        reason = self.said()[-1]
+        self.assertIs(reason["batch"], True)
+        for key in ("lane", "reject", "react", "ref"):
+            self.assertNotIn(key, reason)
+        self.assertIn("colors", reason["text"])
+        self.assertIn("applies to the whole batch of 3 designs", reason["text"])
+        self.assertIn("Feedback record: design=/w/ads-sale/v1/index.html; verdict=dislike; reasons=colors,balance", reason["text"])
+
+    def test_words_in_reply_to_a_post_of_a_batch_go_to_the_author_as_about_the_whole_batch(self):
+        refs = self.batch()
+        mark = "\u0432 \u043e\u0442\u0432\u0435\u0442 \u043d\u0430 \u043f\u043e\u0441\u0442"   # the bot's mark, protocol text
+        with mock.patch.object(tgpost.rules(), "BUTTONS_ONLY", True, create=True):
+            self.add("message.received", {"to": "designer", "channel": "telegram", "owner": True,
+                                          "text": f"new brief, redo it\n\n({mark} {refs[2]})"}, src="telegram")
+            self.p.poll()
+        (msg,) = self.batch_said()
+        self.assertEqual(msg["to"], "designer")
+        self.assertIn("new brief, redo it", msg["text"])
+        self.assertIn("applies to the whole batch of 3 designs", msg["text"])
+        self.assertEqual(len([1 for t, d in self.out if t == "telegram.unpost"]), 2)
+
+    def test_words_on_a_single_design_are_not_touched_by_the_plugin(self):
+        self.file(ts=1000)
+        mark = "\u0432 \u043e\u0442\u0432\u0435\u0442 \u043d\u0430 \u043f\u043e\u0441\u0442"
+        self.add("message.received", {"to": "designer", "channel": "telegram", "owner": True,
+                                      "text": f"smaller logo\n\n({mark} {self.posts()[0]['ref']})"}, src="telegram")
+        self.p.poll()
+        self.assertEqual(self.said(), [])
+
+    def test_a_like_is_for_this_design_only_and_a_liked_design_is_not_in_the_batch(self):
+        refs = self.batch(4)
+        self.press(refs[0], "❤️")
+        (like,) = self.said()
+        self.assertNotIn("batch", like)
+        self.assertNotIn("whole batch", like["text"])
+        self.assertEqual([t for t, d in self.out if t == "telegram.unpost"], [])   # the others still wait
+        self.press(refs[3], "👎")
+        self.assertIn("whole batch of 3 designs", self.batch_said()[0]["text"])
+        self.assertNotIn("/w/ads-sale/v1/index.html", self.batch_said()[0]["text"])
+
+    def test_the_last_design_left_in_a_batch_is_a_single_one(self):
+        refs = self.batch(2)
+        self.press(refs[0], "❤️")
+        self.press(refs[1], "👎")
+        nope = self.said()[-1]
+        self.assertNotIn("batch", nope)
+        self.assertEqual(nope["lane"], "/w/ads-sale/v2/index.html")   # as before: the edit lane
+
+    def test_not_a_batch_other_author_other_folder_or_far_apart(self):
+        self.cfg = {"telegram": {"design_posts": {"sessions": "*"}}}
+        self.file("designer", "/w/ads-sale/v1/index.html", ts=1000)
+        self.file("maps", "/w/ads-sale/v2/index.html", ts=1010)       # another author
+        self.file("designer", "/w/poster/v1/index.html", ts=1020)      # another task folder
+        self.file("designer", "/w/ads-sale/v3/index.html", ts=1000 + 3 * 3600)   # hours later
+        for post in self.posts():
+            self.press(post["ref"], "👎")
+        self.assertEqual(self.batch_said(), [])
+        self.assertEqual(len(self.said()), 4)
+        self.assertTrue(all(d.get("reject") for d in self.said()))
+
+    def test_a_batch_survives_a_restart_of_the_plugin(self):
+        refs = self.batch()
+        self.p = self.poster()
+        self.press(refs[2], "👎")
+        self.assertIn("whole batch of 3 designs", self.batch_said()[0]["text"])
 
     def test_why_buttons_in_order_and_keys_in_both_languages(self):
         self.file()

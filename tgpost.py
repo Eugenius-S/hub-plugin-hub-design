@@ -14,6 +14,7 @@ Telegram (telegram.unpost). It reads the journal with its own offset and does no
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -28,6 +29,8 @@ ASPECT = {   # what the author is told for a reason key (English: messages to se
     "composition": "composition (positions, layout)", "type": "typography", "illustration": "graphics and illustration",
     "colors": "colors", "angles": "angles (corner radii)", "balance": "balance"}
 KEEP_SENT, KEEP_WHY, KEEP_SHOTS = 300, 200, 50
+BATCH_GAP = 30 * 60   # s: designs of one author in one task folder sent no more than this apart are one batch
+REPLY_TO_POST = re.compile(r"\(\u0432 \u043e\u0442\u0432\u0435\u0442 \u043d\u0430 \u043f\u043e\u0441\u0442 ([^\s,)]+)")   # the bot's mark "(in reply to post <ref>" in Russian, under the owner's words on a post - protocol, not text
 TICK = 2   # s between journal reads
 DECKS = (".pptx",)   # no shot to make: the post carries the file itself (the bot sends it as a document with the buttons)
 
@@ -92,6 +95,22 @@ def why_key(button):
     return None
 
 
+def folders(path):
+    """The folders that tie designs into one task: the design's own folder and the one above it (<task>/<design>/index.html,
+    <task>/<design>.html) - two designs of one task share one of them."""
+    own = os.path.dirname(str(path or "").replace("\\", "/"))
+    return {own, os.path.dirname(own)} - {"", "/"}
+
+
+def pack_line(s, pack):
+    """What a message to the author of a batch adds to the owner's feedback on one of its designs. The designer's rule
+    recognizes it by "applies to the whole batch of N designs"; the same line closes a "Why?" and a reply."""
+    names = "; ".join(f"\"{m['title']}\" ({m['path']})" for m in pack)
+    return (f"This applies to the whole batch of {len(pack)} designs you sent together: {names}; do not send the old variants, "
+            "redo the batch: stop finishing the old ones, send new variants of all of them as one batch (hub send-file each). "
+            f"{task_line(s['path'])}")
+
+
 def tailnet_page(state_dir):
     """The address of the hub page in the tailnet (the hub's tailnet module writes it; the bot builds its links from the same file); none - None."""
     try:
@@ -123,6 +142,13 @@ def rules():
         return design_posts
     except Exception:
         return None
+
+
+def strips_buttons():
+    """Does the bot take `telegram.unpost {ref, buttons_only: true}` (the buttons go, the picture stays)? A bot without it
+    would erase the post, so nothing is sent then."""
+    dp = rules()
+    return bool(dp and getattr(dp, "BUTTONS_ONLY", False))
 
 
 class Poster:
@@ -208,7 +234,7 @@ class Poster:
         if kind == "owner.file":
             return self.offer(ev, data)
         if kind == "message.received":
-            return self.answered_on_page(ev, data)
+            return self.replied_in_telegram(ev, data) if ev.get("src") == "telegram" else self.answered_on_page(ev, data)
         if kind not in ("telegram.pressed", "telegram.replied") or data.get("ext") != EXT or ev.get("src") != "telegram":
             return
         ref = str(data.get("ref") or "")
@@ -255,10 +281,11 @@ class Poster:
         if not png:  # no shot (no Chrome, an error): the post goes as text with the path - a link to the file on the page
             text += f"\n\n`{design}`"
         ref = f"hd:{ev['seq']}"
-        self.st["sent"][ref] = {"session": sender, "path": design, "title": title}
+        at = ev.get("ts") if isinstance(ev.get("ts"), (int, float)) else time.time()
+        self.st["sent"][ref] = {"session": sender, "path": design, "title": title, "at": at}
         while len(self.st["sent"]) > KEEP_SENT:
             del self.st["sent"][next(iter(self.st["sent"]))]
-        self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender, "bump": True,
+        self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender,
                                     "lane": design, **({"path": png} if png else {})})
 
     def first_pressed(self, button):
@@ -311,11 +338,82 @@ class Poster:
         except OSError:
             return None
 
+    def pack_of(self, ref):
+        """The refs of the batch a posted design belongs to, oldest first; [] - it is alone. A batch: posts of one author whose
+        designs share a task folder (folders()) and follow each other within BATCH_GAP, none of them answered yet (a ❤️ or an
+        earlier 👎 takes a post out). A post settled by a batch keeps its batch (`pack`)."""
+        sent = self.st["sent"]
+        s = sent.get(ref)
+        if not s:
+            return []
+        kept = [r for r in s.get("pack") or [] if r in sent]
+        if len(kept) >= 2:
+            return kept
+        at = lambda c: c.get("at")   # noqa: E731 - a post from before 0.38 has no time: it joins nothing
+        members, grew = [ref], at(s) is not None
+        while grew:
+            grew = False
+            for r, c in sent.items():
+                if r in members or c.get("session") != s["session"] or c.get("rated") or c.get("pack") or at(c) is None:
+                    continue
+                if any(folders(c["path"]) & folders(sent[m]["path"]) and abs(at(c) - at(sent[m])) <= BATCH_GAP for m in members):
+                    members.append(r)
+                    grew = True
+        return sorted(members, key=lambda r: sent[r]["at"]) if len(members) > 1 else []
+
+    def say_pack(self, ref, pack, text, tail=""):
+        """The owner's feedback on one design of a batch: to the author mid-turn, in words about the whole batch. No lane, no reject: the
+        edit lane is for a single design; `batch` is the core's mark to hand it to the busy author at once."""
+        s = self.st["sent"][ref]
+        members = [self.followed(self.st["sent"][r]) for r in pack]
+        self.say(s["session"], f"{text} {pack_line(s, members)} {tail}".strip(), {"batch": True})
+
+    def settle_pack(self, ref, pack):
+        """After the owner's feedback on one design of a batch the others stop waiting: their buttons (and an open "Why?") go,
+        the pictures stay. A bot without the buttons-only unpost cannot do that - nothing is sent to it."""
+        sent = self.st["sent"]
+        for r in pack:
+            m = sent.get(r)
+            if not m:
+                continue
+            fresh = not m.get("pack")
+            m["pack"], m["rated"] = pack, True
+            if r == ref or not fresh or not strips_buttons():
+                continue
+            self.emit("telegram.unpost", {"ref": r, "buttons_only": True})
+            for why in [w for w, d in self.st["why"].items() if d == r]:
+                del self.st["why"][why]
+                self.emit("telegram.unpost", {"ref": why, "buttons_only": True})
+
+    def replied_in_telegram(self, ev, data):
+        """The owner's words as a reply to a design post (the bot hands them to the author, the post's session, with the mark
+        "(in reply to post <ref>)", in Russian): on a post of a batch the author is told at once that it is about the whole batch."""
+        if data.get("channel") != "telegram" or data.get("owner") is not True:
+            return
+        text = str(data.get("text") or "")
+        m = REPLY_TO_POST.search(text)
+        s = self.followed(self.st["sent"].get(m.group(1))) if m else None
+        if not s or s["session"] != data.get("to"):
+            return
+        ref = m.group(1)
+        pack = self.pack_of(ref)
+        words = text[:m.start()].strip()
+        if not pack or not words:
+            return
+        self.say_pack(ref, pack, f"hub-design: the owner replied in Telegram to your design \"{s['title']}\" ({s['path']}): {words}.")
+        self.settle_pack(ref, pack)
+
     def rated(self, ref, s, button, ev=None):
         what = ("liked it - keep this direction" if button == LIKE
                 else "disliked it - the reason follows if the owner gives one")
-        self.say(s["session"], f"hub-design: the owner gave your design \"{s['title']}\" ({s['path']}) a {button} in "
-                               f"Telegram: {what}.", self.reject(ev, s["path"]) if ev and button == NOPE else None)
+        text = f"hub-design: the owner gave your design \"{s['title']}\" ({s['path']}) a {button} in Telegram: {what}."
+        pack = self.pack_of(ref) if button == NOPE else []
+        if pack:   # one design of a batch: all of it
+            self.say_pack(ref, pack, text)
+            self.settle_pack(ref, pack)
+        else:
+            self.say(s["session"], text, self.reject(ev, s["path"]) if ev and button == NOPE else None)
+            s["rated"] = True   # answered: it is not part of any later batch
         if button == NOPE and not s.get("asked"):
             s["asked"] = True
             n = self.st["n"] = self.st["n"] + 1
@@ -325,7 +423,7 @@ class Poster:
                 del self.st["why"][next(iter(self.st["why"]))]
             lang = _lang()
             self.emit("telegram.post", {"text": tr(lang, "why_ask"), "ref": why, "settle": tr(lang, "why_settle"),
-                                        "buttons": [tr(lang, f"why_{k}") for k in WHY], "bump": True, "lane": s["path"],
+                                        "buttons": [tr(lang, f"why_{k}") for k in WHY], "lane": s["path"],
                                         "multi": {"done": tr(lang, "why_done"), "all": tr(lang, "why_pick_all"),
                                                   "none": tr(lang, "why_pick_none")}})
 
@@ -351,9 +449,11 @@ class Poster:
         keys = [k for k in dict.fromkeys(why_key(b) for b in labels) if k]
         if not (text or keys):
             return
-        s = self.followed(self.st["sent"].get(self.st["why"].pop(why)))
+        ref = self.st["why"].pop(why)
+        s = self.followed(self.st["sent"].get(ref))
         if not s:
             return
+        pack = self.pack_of(ref)
         whole = "all" in keys or set(WHY) <= set(keys)
         names = [ASPECT[k] for k in keys if k in ASPECT]
         said = []
@@ -372,10 +472,14 @@ class Poster:
                     "the fixed version again (hub send-file) - it comes to the owner as a new post.")
         record = ",".join(WHY if whole else keys) or "words"
         todo += f" {task_line(s['path'])}"
-        self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {'; '.join(said)}. {todo} "
-                               f"Feedback record: design={s['path']}; verdict=dislike; reasons={record}; "
-                               f"words={json.dumps(text or '', ensure_ascii=False)}",
-                 self.reject(ev, s["path"]) if ev else None)
+        head = f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {'; '.join(said)}."
+        tail = (f"Feedback record: design={s['path']}; verdict=dislike; reasons={record}; "
+                f"words={json.dumps(text or '', ensure_ascii=False)}")
+        if pack:   # a design of a batch: the reasons are about all of it
+            self.say_pack(ref, pack, head, tail)
+            self.settle_pack(ref, pack)
+            return
+        self.say(s["session"], f"{head} {todo} {tail}", self.reject(ev, s["path"]) if ev else None)
 
     def poll(self):
         ino = self.journal.identity(self.path)
