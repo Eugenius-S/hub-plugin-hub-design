@@ -9,6 +9,9 @@ no longer on the disk.
 
 What counts as a design: a file of a type the canvas opens (.html .htm .pdf .svg) that a session sent to the owner (owner.file, by
 its source path) or created with the Write tool. An Edit only refreshes the time of a design that is already there.
+A design a script made (a build.py the author ran with Bash, a fork it sent there) never shows in the journal as a file: the folder does. A Bash
+command or a fork's brief in the turn of a task that names a path under design/<project>/ makes that folder a work folder of the task; the
+files of a design (html, pdf, svg right in it or <name>/index.html) that appeared there after it belong to that task (`adopt`).
 Each design also carries the task it was made for (`task`: the id of the root of the chain, d123): the journal says which task a session works
 on (the turn of a delegation starts with its number, a reply says "ответ на задачу d123"), and a task raised by a session that works on a
 task is its subtask. The dashboard puts all designs of one root task into one folder.
@@ -37,10 +40,17 @@ COPY = re.compile(r"(?:^|/)attachments/[0-9a-f]{12}/[^/]+$", re.I)
 WIN_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
 _EDIT_LINE = re.compile(rb'"name"\s*:\s*"(?:Write|Edit|MultiEdit)"')
 _KIND_LINE = re.compile(rb'\.(?:html?|pdf|svg)"', re.I)
+_WORK_LINE = re.compile(rb'"name"\s*:\s*"(?:Bash|Agent)"')
+_DESIGN_LINE = re.compile(rb'(?:/|\\\\)design(?:/|\\\\)')
 _LINE_KIND = re.compile(rb'"(?:delegation\.created|turn\.started)"|"task\.noted".*"title"')
 TICK = 3   # s between journal reads
 CUR_EVERY = 30   # s: the tasks the sessions work on are saved no oftener (they change with every turn)
-VERSION = 3   # 2: the task of a design; 3: a word in the middle of a turn keeps its task. An older registry is read from the journal again
+VERSION = 4   # 2: the task of a design; 3: a word in the middle of a turn keeps its task; 4: the work folders. An older registry is read again
+WORKS = ("Bash", "Agent")   # a command or a fork's brief names the folder a script writes the designs to
+KEEP_WORK = 400   # work folders kept: the freshest
+SLACK = 120   # s: a file written a little before the command that named its folder was logged
+QUOTED = re.compile(r"([\"'])((?:/|~/|[A-Za-z]:[\\/])[^\"'\n]*?)\1")
+BARE = re.compile(r"(?:^|[\s=:(])((?:/|~/|[A-Za-z]:[\\/])[^\s\"'`;|&<>(),]+)")
 KEEP_TASKS = 1500   # tasks kept besides the roots of the designs
 # the task a turn works on, named in the head of its prompt: a reply to a task, an addition, the task itself
 TASK_IN_HEAD = re.compile(r"(?:ответ на задачу|к задаче|задач[аеуи]|task)\s+(d\d+)", re.I)
@@ -178,9 +188,106 @@ def edit_task(items, state, session):
 
 
 def new_state():
-    """What the fold keeps besides the designs: the tasks {id: {title, by, who, ts, root}}, the task each session works on now and the design
-    (key) each session fixes now - the one its last message named."""
-    return {"tasks": {}, "cur": {}, "edit": {}}
+    """What the fold keeps besides the designs: the tasks {id: {title, by, who, ts, root}}, the task each session works on now, the design
+    (key) each session fixes now - the one its last message named - and the work folders {folder: [[task, session, ts], ...]}."""
+    return {"tasks": {}, "cur": {}, "edit": {}, "work": {}}
+
+
+def project_folder(path):
+    """<...>/design/<project> of a path under it (the deepest "design"), else "": the folder a design of a script lies in."""
+    p = str(path or "").strip().replace("\\", "/")
+    if not p or not native(path.strip()):
+        return ""
+    parts = p.split("/")
+    i = max((n for n, x in enumerate(parts) if x == "design"), default=-1)
+    if i < 0 or i + 1 >= len(parts) or not parts[i + 1] or parts[i + 1].startswith("."):
+        return ""
+    if i + 2 == len(parts) and os.path.splitext(parts[i + 1])[1]:   # a file right in design/, not a folder of a project
+        return ""
+    folder = "/".join(parts[:i + 2])
+    k = key_of(folder)
+    if TEMP.search(k) or SKIP_PARTS & set(k.split("/")):
+        return ""
+    return folder
+
+
+def paths_in(text):
+    """The absolute paths a command or a brief names: quoted ones whole (a path may hold spaces), others up to a space."""
+    t = str(text or "")
+    out = [m[2] for m in QUOTED.finditer(t)]
+    out += [m[1] for m in BARE.finditer(QUOTED.sub(" ", t))]
+    return out
+
+
+def note_work(state, ev):
+    """A Bash command or a fork's brief in the turn of a task: the design/<project> folders it names are work folders of the task."""
+    session = ev.get("entity") or ""
+    if session not in state["cur"] or (state["tasks"].get(state["cur"][session]) or {}).get("who") != session:
+        return False   # only the one who does the task makes its designs: the one who raised it or checks on it only looks in
+    task, ts = root_of(state, state["cur"][session]), float(ev.get("ts") or 0)
+    inp = (ev.get("data") or {}).get("input") or {}
+    folders = dict.fromkeys(f for f in map(project_folder, paths_in(inp.get("command") or inp.get("prompt"))) if f)
+    work, changed = state.setdefault("work", {}), False
+    for f in folders:
+        rows = work.setdefault(key_of(f), [])
+        if rows and rows[-1][0] == task:   # the same task goes on there
+            continue
+        rows.append([task, session, ts])
+        del rows[:-5]
+        changed = True
+    return changed
+
+
+def work_task(rows, mtime):
+    """[task, session] of the last task that named the folder before the file appeared, else None."""
+    best = None
+    for task, session, ts in rows:
+        if ts - SLACK <= mtime:
+            best = [task, session]
+    return best
+
+
+def designs_in(folder):
+    """The files of designs in a work folder: html, pdf, svg right in it and <name>/index.html. (path, mtime)."""
+    base = os.path.expanduser(folder)
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return []
+    out = []
+    for n in names:
+        if n.startswith("."):
+            continue
+        full = os.path.join(base, n)
+        for f in ((full,) if n.lower().endswith(KINDS) else (os.path.join(full, "index.html"),) if os.path.isdir(full) else ()):
+            try:
+                out.append((f, os.path.getmtime(f)))
+            except OSError:
+                pass
+    return out
+
+
+def adopt(items, state):
+    """The designs a script made in the work folders of tasks: a new entry with the task, or the task for a known one that has none. True if changed."""
+    changed = False
+    for folder, rows in list((state.get("work") or {}).items()):
+        for path, mtime in designs_in(folder):
+            got = work_task(rows, mtime)
+            if not got:
+                continue
+            path = design_path(path)
+            if not path:
+                continue
+            k = key_of(path)
+            cur = items.get(k)
+            if cur:
+                if not cur.get("task"):
+                    cur["task"] = got[0]
+                    changed = True
+                continue
+            items[k] = {"path": path, "session": got[1], "ts": mtime, "last": mtime, "rank": 2, "task": got[0]}
+            changed = True
+    return changed
 
 
 def root_of(state, did):
@@ -243,6 +350,9 @@ def fold(items, ev, state=None):
         if kind == "turn.started":
             note_edit(items, state, ev)
         return fold_task(state, ev)
+    if kind == "turn.tool" and data.get("name") in WORKS:
+        note_work(state, ev)
+        return False
     if kind == "owner.file":
         path, session, rank = design_path(data.get("source") or data.get("path")), data.get("sender"), 1
     elif kind == "turn.tool" and data.get("name") in WRITES + EDITS:
@@ -280,7 +390,7 @@ def candidates(chunk):
     for line in chunk:
         if b"owner.file" in line or _LINE_KIND.search(line):
             yield line
-        elif b"turn.tool" in line and _EDIT_LINE.search(line) and _KIND_LINE.search(line):
+        elif b"turn.tool" in line and (_EDIT_LINE.search(line) and _KIND_LINE.search(line) or _WORK_LINE.search(line) and _DESIGN_LINE.search(line)):
             yield line
 
 
@@ -321,6 +431,7 @@ class Registry:
         self.items, self.seq, self.ino, self.offset = {}, 0, None, 0
         self.state, self.saved_cur, self.saved_at = new_state(), {}, 0.0
         self.moves = None
+        self.adopted_at = 0.0
         try:
             with open(self.path, encoding="utf-8") as f:
                 saved = json.load(f)
@@ -330,7 +441,8 @@ class Registry:
                 self.seq = int(saved.get("seq") or 0)
                 self.state = {"tasks": {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)},
                               "cur": {k: v for k, v in (saved.get("cur") or {}).items() if isinstance(v, str)},
-                              "edit": {k: v for k, v in (saved.get("edit") or {}).items() if isinstance(v, str)}}
+                              "edit": {k: v for k, v in (saved.get("edit") or {}).items() if isinstance(v, str)},
+                              "work": {k: v for k, v in (saved.get("work") or {}).items() if isinstance(v, list)}}
             # an older registry knew no tasks: the journal is read once more from the very start, the designs stay
             inherit_rounds(self.items)
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
@@ -350,10 +462,13 @@ class Registry:
         with self.lock:
             self.state["tasks"] = tasks
             cur, edit = dict(self.state["cur"]), dict(self.state.get("edit") or {})
+            work = self.state.get("work") or {}
+            work = dict(sorted(work.items(), key=lambda kv: kv[1][-1][2] if kv[1] else 0)[-KEEP_WORK:])
+            self.state["work"] = work
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"v": VERSION, "seq": self.seq, "items": keep, "tasks": tasks, "cur": cur, "edit": edit}, f, ensure_ascii=False)
+            json.dump({"v": VERSION, "seq": self.seq, "items": keep, "tasks": tasks, "cur": cur, "edit": edit, "work": work}, f, ensure_ascii=False)
         os.replace(tmp, self.path)
         self.saved_cur, self.saved_at = cur, time.time()
 
@@ -405,6 +520,10 @@ class Registry:
         lines, self.offset = read_lines(self.journal, self.offset)
         c, top = self.take(lines)
         changed |= c
+        if first_look or c or time.time() - self.adopted_at > CUR_EVERY:   # a script writes without a word in the journal: look now and then
+            with self.lock:
+                changed |= adopt(self.items, self.state)
+            self.adopted_at = time.time()
         changed |= self.relocate()
         if first_look or top > self.seq:
             self.seq = max(self.seq, top)

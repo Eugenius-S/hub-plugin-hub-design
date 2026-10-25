@@ -252,6 +252,31 @@ class Tasks(Registry):
         got = {k: t.get("dir") for k, t in r.state["tasks"].items()}
         self.assertEqual(got, {"d10": "canva-templates", "d11": None})
 
+    def test_a_design_a_script_made_in_the_folder_the_task_named_belongs_to_that_task(self):
+        # build.py writes the html: the journal shows only the command; the files that appeared there after it belong to the task
+        root = os.path.join(self.tmp, "home", "design", "canva-A")
+        os.makedirs(os.path.join(root, "post-b"))
+        files = {"post-a.html": 2000, os.path.join("post-b", "index.html"): 2000, "old.html": 100, "notes.md": 2000}
+        for name, mtime in files.items():
+            with open(os.path.join(root, name), "w", encoding="utf-8") as f:
+                f.write("<html></html>")
+            os.utime(os.path.join(root, name), (mtime, mtime))
+        cmd = {"command": f'cd "{root}" && python3 build.py'}
+        look = {"command": f"ls {root}/"}
+        with unittest.mock.patch.object(registry, "TEMP", registry.re.compile(r"(?!)")):
+            r, got = self.of([raised(10, "designer", "canva-templates", title="Pack A"), turn(11, "designer", "m10"),
+                              ev(12, "turn.tool", {"id": "t12", "name": "Bash", "input": cmd}, "designer", ts=1500),
+                              turn(13, "designer", "m13", "[hub:m13 от владельца] другое"),
+                              ev(14, "turn.tool", {"id": "t14", "name": "Bash", "input": cmd}, "designer", ts=1600),
+                              # the one who raised the task looks in: no work folder of its own
+                              turn(15, "canva-templates", "m15", "[hub:m15 от designer, ответ на задачу d10] готово"),
+                              ev(16, "turn.tool", {"id": "t16", "name": "Bash", "input": look}, "canva-templates", ts=1700)])
+        self.assertEqual(got, {"post-a.html": "d10", "index.html": "d10"})   # old.html was there before the task, notes.md is no design
+        self.assertEqual(self.paths(r)["post-a.html"]["session"], "designer")
+        with open(os.path.join(self.tmp, "hub-design", "registry.json"), encoding="utf-8") as f:
+            saved = json.load(f)
+        self.assertEqual(list(saved["work"].values()), [[["d10", "designer", 1500]]])   # a command outside a task names no work folder
+
     def test_a_design_without_a_task_is_just_a_design(self):
         _, got = self.of([wrote(1, "designer", p("d", "free.html"))])
         self.assertEqual(got, {"free.html": None})
