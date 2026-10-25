@@ -102,6 +102,15 @@ def tailnet_page(state_dir):
         return None
 
 
+def task_line(path):
+    """Where the next version of a design goes: a folder of its own in the folder of its task, next to this one."""
+    k = str(path or "").replace("\\", "/")
+    own = os.path.dirname(k)
+    folder = os.path.dirname(own) if os.path.basename(k).lower() == "index.html" else own
+    return (f"Save it in the task folder {folder}/ as a folder of its own (<design-name>-<round>/index.html, its assets inside), "
+            "not next to the files and not in your working folder.")
+
+
 def open_link(page, path):
     """The address that opens a design on the canvas of Hub Design - the form of designLink (lib.js): <page>/#/x/hub-design?open=<path>."""
     return f"{page.rstrip('/')}/#/x/{EXT}?open={urllib.parse.quote(path, safe='')}"
@@ -211,7 +220,7 @@ class Poster:
                 return
             return self.answer_why(ref, data.get("button") if chosen is None else None,
                                    (data.get("text") or "").strip() if kind == "telegram.replied" else None, ev, chosen)
-        s = self.st["sent"].get(ref)
+        s = self.followed(self.st["sent"].get(ref))
         if not s:
             return
         if kind == "telegram.pressed" and data.get("button") in (LIKE, NOPE):
@@ -320,6 +329,20 @@ class Poster:
                                         "multi": {"done": tr(lang, "why_done"), "all": tr(lang, "why_pick_all"),
                                                   "none": tr(lang, "why_pick_none")}})
 
+    def followed(self, s):
+        """A posted design that layout.py moved to its task folder: the post now names the new place."""
+        if not s or not s.get("path"):
+            return s
+        if getattr(self, "moves", None) is None:
+            import layout
+            self.moves = layout.Moves(self.dir)
+        self.moves.fresh()
+        new = self.moves.remap(s["path"])
+        if new != s["path"]:
+            s["path"] = new
+            self.save()
+        return s
+
     def answer_why(self, why, button=None, text=None, ev=None, chosen=None):
         """The owner's reasons come to the author in one message: the ticked ones (Done: `chosen`), his own words, or both. Every
         reason ticked - the design does not work as a whole: a new variant, not a patch. The last line is a record the designer
@@ -328,7 +351,7 @@ class Poster:
         keys = [k for k in dict.fromkeys(why_key(b) for b in labels) if k]
         if not (text or keys):
             return
-        s = self.st["sent"].get(self.st["why"].pop(why))
+        s = self.followed(self.st["sent"].get(self.st["why"].pop(why)))
         if not s:
             return
         whole = "all" in keys or set(WHY) <= set(keys)
@@ -348,6 +371,7 @@ class Poster:
             todo = ("Redo only " + ("these aspects" if len(names) > 1 else "this") + " in this design, leave the rest as it is, and send "
                     "the fixed version again (hub send-file) - it comes to the owner as a new post.")
         record = ",".join(WHY if whole else keys) or "words"
+        todo += f" {task_line(s['path'])}"
         self.say(s["session"], f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {'; '.join(said)}. {todo} "
                                f"Feedback record: design={s['path']}; verdict=dislike; reasons={record}; "
                                f"words={json.dumps(text or '', ensure_ascii=False)}",

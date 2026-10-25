@@ -312,6 +312,7 @@ class Registry:
         self.ready = False
         self.items, self.seq, self.ino, self.offset = {}, 0, None, 0
         self.state, self.saved_cur, self.saved_at = new_state(), {}, 0.0
+        self.moves = None
         try:
             with open(self.path, encoding="utf-8") as f:
                 saved = json.load(f)
@@ -396,11 +397,41 @@ class Registry:
         lines, self.offset = read_lines(self.journal, self.offset)
         c, top = self.take(lines)
         changed |= c
+        changed |= self.relocate()
         if first_look or top > self.seq:
             self.seq = max(self.seq, top)
         if changed or first_look or (self.state["cur"] != self.saved_cur and time.time() - self.saved_at > CUR_EVERY):
             self.save()
         self.ready = True
+        return changed
+
+    def relocate(self):
+        """The designs layout.py moved to their task folders: an entry follows its file (the journal still names the old place). True if one moved."""
+        if self.moves is None:
+            import layout
+            self.moves = layout.Moves(self.dir)
+        self.moves.fresh()
+        if not self.moves.files and not self.moves.dirs:
+            return False
+        changed = False
+        with self.lock:
+            for k in list(self.items):
+                v = self.items[k]
+                new = self.moves.remap(v["path"])
+                if new == v["path"]:
+                    continue
+                nk = key_of(new)
+                if nk == k:
+                    continue
+                del self.items[k]
+                had = self.items.get(nk)
+                if had:   # the journal knows the new place too: one entry, the freshest marks
+                    had["last"] = max(had["last"], v["last"])
+                    if v.get("task") and not had.get("task"):
+                        had["task"] = v["task"]
+                else:
+                    self.items[nk] = {**v, "path": new}
+                changed = True
         return changed
 
     def listing(self):

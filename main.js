@@ -7,7 +7,7 @@ import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPo
   goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
-import { designLink, designPathOf, spread, styleLine, waitFresh } from "./lib.js";
+import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, keyed, stubText } from "./dashboard.js";
@@ -342,7 +342,7 @@ const views = () => Object.fromEntries(P.frames.map((f) => [f.path, { w: f.w, h:
 // the selected element goes into the chat message and together with the batch; a lone selection without edits does not start auto-send
 const selText = () => (P.sel && !home() ? selectedLine(P.sel) : "");
 const batchText = (extra = {}) => withSel(message({ path: (P.frames[0] || {}).path || "", round: P.round, views: views(), comments: draftPins().filter((p) => p.text.trim()),
-  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), style: "", ...extra }));
+  changes: draftChanges(), drawings: draftDrawings(), notes: draftNotes(), tweaks: draftTweaks(), errors: draftErrs(), place: true, copies: Object.fromEntries(Object.entries(P.writers).filter(([, v]) => v && v.copy).map(([f, v]) => [f, v.copy])), style: "", ...extra }));
 const withSel = (b) => (b && selText() ? b + "\n\n" + selText() : b);
 // the style reference chosen in the picker goes with the next message to the designer (once): the line "Style reference: <path>", see message() in lib.js
 // no style chosen - the default one (hub.json default_style), if the hub has it
@@ -385,9 +385,14 @@ function taskSaveLine() {
   if (!isTaskKey(f)) return "";
   const id = taskOfKey(f), snap = hub.snapshot() || {}, task = P.tasks.find((x) => x.id === id) || {};
   const cwd = saveDirOf(task.by, snap.sessions, snap.directions) || saveDirOf(P.origin, snap.sessions, snap.directions);
-  return taskLine(taskDir(cwd, taskTitle(id, P.tasks)));
+  return taskLine(taskDir(cwd, taskTitle(id, P.tasks), designerHome()));
 }
-const withSave = (text) => { const l = taskSaveLine() || saveLine(saveFolder()); return l ? text + "\n\n" + l : text; };
+// the working folder of the designer: a design without a direction goes into <it>/<task>/
+function designerHome() {
+  const s = ((hub.snapshot() || {}).sessions || []).find((x) => x && x.name === "designer");
+  return (s && s.cwd) || "";
+}
+const withSave = (text) => { const l = taskSaveLine() || saveLine(saveFolder(), designerHome()); return l ? text + "\n\n" + l : text; };
 
 // a file in the hub's Files (the same address a path link in a reply leads to)
 const filesUrl = (path) => {
@@ -472,6 +477,24 @@ async function loadTimes(paths) {
   }
   if (changed) paint();
 }
+// designs moved to their task folders (layout.py of the plugin process): the frames, pins, edits and the known list follow them to the new paths
+const MOVED = ["frames", "pins", "changes", "drawings", "notes", "tweaks", "errs", "writers", "picked", "found", "opened", "known", "focus"];
+async function followMoves() {
+  let mv = null;
+  try {
+    const res = await fetch(origin() + "/__canvas/moves", { cache: "no-store" });
+    mv = res.ok ? await res.json() : null;
+  } catch { /* the process does not answer - ping will show it */ }
+  if (!mv || (!Object.keys(mv.files || {}).length && !Object.keys(mv.dirs || {}).length)) return;
+  let any = false;
+  for (const k of MOVED) { const [v, ch] = moveAll(P[k], mv); if (ch) { P[k] = v; any = true; } }
+  if (!any) return;
+  save();
+  saveKnown();
+  recompute();
+  paint();
+  if (ui) ui.cv.paint();
+}
 // the registry of the plugin process: every design the journal ever held (sessions that are gone, the archive, other browsers). The state of
 // the files comes with it, so the start screen hides the missing ones without asking for each path
 let regTimer = 0;
@@ -479,6 +502,7 @@ async function loadRegistry(force = false) {
   if (P.alive !== true || !local()) return;
   if (!force && Date.now() - P.regAt < 30000) return;
   P.regAt = Date.now();
+  await followMoves();
   let r = null;
   try {
     const res = await fetch(origin() + "/__canvas/registry", { cache: "no-store" });
@@ -1007,7 +1031,7 @@ async function sendOne(pin) {
   if (P.busy) return;
   const to = authorOf(pin.file);
   if (!to) { P.note = tr("pick_to"); return paint(); }
-  const text = message({ path: pin.file, round: P.round, views: views(), comments: [pin], changes: [] });
+  const text = message({ path: pin.file, round: P.round, views: views(), comments: [pin], changes: [], place: true });
   if (!text) return;
   P.busy = true;
   paint();
@@ -1036,7 +1060,7 @@ async function autoSend() {
   await Promise.all(P.frames.map((f) => flushWrite(f.path)));   // first into the file: the items go with the mark "already in the file"
   if (auto.sig() !== sig || home()) return;   // while we were writing the owner moved on — the countdown starts again
   const a = autoItems();
-  const text = batchText({ comments: [], notes: [], errors: [], auto: true, ...a });
+  const text = batchText({ comments: [], notes: [], errors: [], auto: true, place: false, ...a });
   const file = laneFile([...a.changes, ...a.tweaks, ...a.drawings]);
   await ensureAuthor(file);
   const to = autoTo(file);   // the author of the design, not whoever the owner talked to in the chat (0.34.1: the edits of a design went to the chat's session)

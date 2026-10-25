@@ -157,6 +157,20 @@ class Posts(unittest.TestCase):
         self.assertIn("new variant", text)
         self.assertNotIn("only this", text)
 
+    def test_a_post_follows_its_design_moved_to_the_task_folder_and_the_reason_names_the_folder(self):
+        self.file()
+        ref = self.posts()[0]["ref"]
+        lay = os.path.join(self.dir, "hub-design", "layout")
+        os.makedirs(lay, exist_ok=True)
+        with open(os.path.join(lay, "moves.json"), "w", encoding="utf-8") as f:
+            json.dump({"files": {"/w/landing.html": "/w/design/landing-promo/landing/index.html"}, "dirs": {}}, f)
+        self.press(ref, "👎")
+        self.done(self.posts()[1]["ref"], "Colors")
+        msg = self.said()[-1]
+        self.assertIn("(/w/design/landing-promo/landing/index.html)", msg["text"])
+        self.assertIn("Save it in the task folder /w/design/landing-promo/ as a folder of its own", msg["text"])
+        self.assertTrue(msg["text"].endswith('design=/w/design/landing-promo/landing/index.html; verdict=dislike; reasons=colors; words=""'))
+
     def test_the_why_post_is_a_multi_select_with_done_and_nothing_goes_before_done(self):
         self.file()
         self.press(self.posts()[0]["ref"], "👎")

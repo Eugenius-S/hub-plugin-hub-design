@@ -72,13 +72,16 @@ test("where a new design goes: the cwd of a direction session, nowhere for the h
   assert.equal(dirKey("C:\\A\\B\\"), "C:/A/B");
 });
 
-test("the line for the designer: the folder design/ of the direction, in both languages, for / and \\ paths", () => {
+test("the line for the designer: a task folder in design/ of the direction, none - in the designer's folder, both languages, / and \\ paths", () => {
   assert.equal(saveLine(""), "");
-  assert.equal(saveLine("/p/Ads"), "Save it in the direction folder: /p/Ads/design/<design-name>/ (index.html, assets next to it), not in your own working folder.");
-  assert.match(saveLine("/p/Ads/"), /\/p\/Ads\/design\/</);
-  assert.match(saveLine("C:\\Work\\Ads"), /C:\\Work\\Ads\\design\//);
+  assert.equal(saveLine("/p/Ads"), "Save it in a task folder of the direction: /p/Ads/design/<task>/ (<task> - a short Latin kind-gist name, like poster-bf-sale), every variant and round in a folder of its own inside: <design-name>-1a/index.html, its assets inside; not in your own working folder.");
+  assert.match(saveLine("/p/Ads/"), /\/p\/Ads\/design\/<task>\//);
+  assert.match(saveLine("C:\\Work\\Ads"), /C:\\Work\\Ads\\design\/</);
+  assert.match(saveLine("", "/u/design"), /a task folder: \/u\/design\/<task>\/ .*<design-name>-1a\/index\.html/);
+  assert.doesNotMatch(saveLine("", "/u/design"), /design\/design/);
   lang("ru");
-  assert.equal(saveLine("/p/Ads"), "Сохрани в папку направления: /p/Ads/design/<имя-макета>/ (index.html, ресурсы рядом), не в свою рабочую папку.");
+  assert.match(saveLine("/p/Ads"), /^Сохрани в папку задачи направления: \/p\/Ads\/design\/<задача>\/ .*<имя-макета>-1a\/index\.html/);
+  assert.match(saveLine("", "/u/design"), /^Сохрани в папку задачи: \/u\/design\/<задача>\//);
 });
 
 test("folder title: the direction label, 'No direction' for the rest", () => {
@@ -89,7 +92,7 @@ test("folder title: the direction label, 'No direction' for the rest", () => {
 });
 
 // --- task folders: every design made for one task of the owner lies in one folder ---
-import { taskFolders, folderKeyOf, isTaskKey, taskOfKey, taskTitle, taskSlug, taskDir, taskLine, TASK_MIN } from "../lib.js";
+import { taskFolders, folderKeyOf, isTaskKey, taskOfKey, taskTitle, taskSlug, taskDir, taskLine, placeOf, message, TASK_MIN } from "../lib.js";
 
 const tasks = [{ id: "d10", title: "Rewarded video for Ouch", by: "ads-a" }];
 
@@ -129,18 +132,31 @@ test("task folders: a task without direction folders still makes tiles; no tasks
   assert.equal(view(files, [], {}).mode, "files");
 });
 
-test("the folder of a task on disk: <direction>/design/<title>/, and the line for the designer", () => {
-  assert.equal(taskSlug("Rewarded video for Ouch"), "Rewarded-video-for-Ouch");
-  assert.equal(taskSlug("Ролик «Rewarded» для Ouch!"), "Ролик-Rewarded-для-Ouch");
-  assert.ok(taskSlug("a".repeat(30) + " " + "b".repeat(30)).length <= 40);
-  assert.equal(taskDir("/p/Ads/", "Rewarded video"), "/p/Ads/design/Rewarded-video/");
-  assert.equal(taskDir("C:\\p\\Ads", "Rewarded video"), "C:\\p\\Ads\\design\\Rewarded-video\\");
+test("the folder of a task on disk: <direction>/design/<latin slug>/, none - <designer>/<slug>/, and the line for the designer", () => {
+  assert.equal(taskSlug("Rewarded video for Ouch"), "rewarded-video-ouch");
+  assert.equal(taskSlug("Постер к Чёрной пятнице"), "poster-chernoy-pyatnitse");   // the same as slug() of layout.py
+  assert.equal(taskSlug("Story for Kyoto: the sale!"), "story-kyoto-sale");
+  assert.ok(taskSlug("a very long title ".repeat(10)).length <= 32);
+  assert.equal(taskSlug(""), "");
+  assert.equal(taskDir("/p/Ads/", "Rewarded video"), "/p/Ads/design/rewarded-video/");
+  assert.equal(taskDir("C:\\p\\Ads", "Rewarded video"), "C:\\p\\Ads\\design\\rewarded-video\\");
   assert.equal(taskDir("", "x"), "");
+  assert.equal(taskDir("", "Story Kyoto", "/u/design"), "/u/design/story-kyoto/");
   assert.equal(taskDir("/p/Ads", ""), "/p/Ads/design/task/");
-  assert.match(taskLine("/p/Ads/design/Rewarded-video/"), /\/p\/Ads\/design\/Rewarded-video\//);
+  assert.match(taskLine("/p/Ads/design/rewarded-video/"), /\/p\/Ads\/design\/rewarded-video\/, .*<design-name>-1a\/index\.html/);
   assert.equal(taskLine(""), "");
   lang("ru");
-  assert.match(taskLine("/p/Ads/design/Rewarded-video/"), /задач/);
+  assert.match(taskLine("/p/Ads/design/rewarded-video/"), /задач/);
+});
+
+test("the task folder of a design: its own folder's parent for index.html, its own folder for a loose file", () => {
+  assert.equal(placeOf("/p/Ads/design/sale/banner-1a/index.html"), "/p/Ads/design/sale/");
+  assert.equal(placeOf("/p/Ads/design/sale/deck.pdf"), "/p/Ads/design/sale/");
+  assert.equal(placeOf("C:\\a\\t\\x.html"), "C:\\a\\t\\");
+  assert.equal(placeOf("x.html"), "");
+  const m = message({ path: "/p/Ads/design/sale/banner-1a/index.html", round: 1, view: { w: 1, h: 1 }, comments: [{ x: 1, y: 1, w: 1, h: 1, text: "bigger" }], changes: [], place: true });
+  assert.match(m, /The next round of this design goes into the same task folder \/p\/Ads\/design\/sale\/ as a folder of its own: <design-name>-<round>\/index\.html/);
+  assert.doesNotMatch(message({ path: "/p/x/index.html", round: 1, view: { w: 1, h: 1 }, comments: [{ x: 1, y: 1, w: 1, h: 1, text: "b" }], changes: [] }), /next round/);
 });
 
 // --- labels: "<kind>-<N>: <gist>" -----------------------------------------------------------------------------------------------------
@@ -266,4 +282,18 @@ test("a folder no direction owns goes to the task folder named for it (ouch-temp
   assert.equal(key("C:\\o\\design\\misc\\a.html"), "");
   assert.equal(taskNear("ouch pulse", rows, tasks), "");                                  // two task folders equally near - nothing
   assert.equal(key("C:\\o\\design\\ai-anim\\a.html"), "/p/AI animations");           // a direction speaks before a task folder
+});
+
+test("moved designs: a moved file and everything under a moved folder get the new path, in values and keys; the rest stays", async () => {
+  const { movedPath, moveAll } = await import("../lib.js");
+  const mv = { files: { "/a/x.html": "/a/design/t/x/index.html", "c:/w/y.html": "C:/w/t/y/index.html" }, dirs: { "/a/kolo": "/b/design/p/kolo" } };
+  assert.equal(movedPath("/a/x.html", mv), "/a/design/t/x/index.html");
+  assert.equal(movedPath("C:\\w\\y.html", mv), "C:/w/t/y/index.html");
+  assert.equal(movedPath("/a/kolo/index.html", mv), "/b/design/p/kolo/index.html");
+  assert.equal(movedPath("/a/kolo2/index.html", mv), "/a/kolo2/index.html");
+  assert.equal(movedPath("/z.html", null), "/z.html");
+  const [b, ch] = moveAll({ frames: [{ path: "/a/x.html", sel: "div" }], pins: [{ file: "/a/kolo/index.html", text: "/a/x.html is mine" }], writers: { "/a/x.html": { copy: "/a/x.r1.html" } } }, mv);
+  assert.ok(ch);
+  assert.deepEqual(b, { frames: [{ path: "/a/design/t/x/index.html", sel: "div" }], pins: [{ file: "/b/design/p/kolo/index.html", text: "/a/x.html is mine" }], writers: { "/a/design/t/x/index.html": { copy: "/a/x.r1.html" } } });
+  assert.deepEqual(moveAll({ a: ["/q.html"] }, mv), [{ a: ["/q.html"] }, false]);
 });

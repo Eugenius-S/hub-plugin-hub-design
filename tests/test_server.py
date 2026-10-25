@@ -1203,6 +1203,54 @@ class DesignRegistry(unittest.TestCase):
         self.assertEqual(json.loads(body), {"ready": False, "items": [], "tasks": []})
 
 
+class Moves(unittest.TestCase):
+    """/__canvas/moves: where layout.py moved the old designs - the page follows its pins and cards; the plan at the start once per version."""
+    ORIGIN = {"Origin": f"http://localhost:{server.WEB_PORT}"}
+
+    def setUp(self):
+        self.srv = server.serve(0)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.server_close)
+        self.addCleanup(self.srv.shutdown)
+        port = unittest.mock.patch.object(server, "PORT", self.port)
+        port.start()
+        self.addCleanup(port.stop)
+        self.state = tempfile.mkdtemp(dir=TMP)
+        patch = unittest.mock.patch.object(server, "state_dir", lambda: self.state)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def get(self, path, headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", path, headers={"Host": f"localhost:{self.port}", **(headers or {})})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r, body
+
+    def test_the_moves_are_given_to_the_page_and_none_is_an_empty_map(self):
+        _, body = self.get("/__canvas/moves", self.ORIGIN)
+        self.assertEqual(json.loads(body), {"files": {}, "dirs": {}})
+        lay = os.path.join(self.state, "hub-design", "layout")
+        os.makedirs(lay)
+        with open(os.path.join(lay, "moves.json"), "w", encoding="utf-8") as f:
+            json.dump({"files": {"/a/x.html": "/a/design/t/x/index.html"}, "dirs": {}}, f)
+        _, body = self.get("/__canvas/moves", self.ORIGIN)
+        self.assertEqual(json.loads(body)["files"], {"/a/x.html": "/a/design/t/x/index.html"})
+
+    def test_the_start_makes_the_plan_once_per_version_and_moves_nothing_without_auto_layout(self):
+        plan = {"moves": [{"from": "/a"}], "unclear": [], "left": [], "placed": 0}
+        with unittest.mock.patch.object(server.layout, "dry", return_value=plan) as dry, \
+                unittest.mock.patch.object(server.layout, "apply", return_value=1) as apply:
+            self.assertIs(server.layout.startup(self.state, "1.0"), plan)
+            self.assertIsNone(server.layout.startup(self.state, "1.0"))
+            apply.assert_not_called()
+            server.layout.startup(self.state, "1.1", auto=True)
+            self.assertEqual(dry.call_count, 2)
+            apply.assert_called_once()
+
+
 class Prewarm(unittest.TestCase):
     def setUp(self):
         patch = unittest.mock.patch.object(server, "allowed", lambda real: os.path.exists(real))

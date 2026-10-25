@@ -24,7 +24,20 @@ The start screen does not rely on what the page happened to see. The plugin proc
 
 ### Where a new design is saved
 
-A new design asked for from a direction (the view was opened from its chat, or its folder is open on the start screen) carries a line for the designer: save it in `<direction folder>/design/<design-name>/`, not in its own working folder. The folder comes from the hub snapshot (the cwd of the direction's session), never guessed. From the hub chat, a specialist's chat or outside any folder the line is not added.
+Every design has a task folder, and every variant and round is a folder of its own in it:
+
+- a direction asked: `<direction folder>/design/<task>/<design-name>-1a/index.html`;
+- no direction: `<designer folder>/<task>/<design-name>-1a/index.html`.
+
+`<task>` is a short Latin name "kind-gist" (`poster-bf-sale`, `story-kyoto`), made from the title of the task when it is known. The assets of a design lie inside its own folder. Every message to the designer carries this line: a new design from the start screen or a preset (the folder of the direction or task that is open, else the designer's folder), a comment or a batch of edits (the next round goes into the same task folder), a 👎 with reasons from Telegram. The folders come from the hub snapshot (the cwd of the direction's session, the cwd of `designer`), never guessed.
+
+**Old designs to their task folders.** `layout.py` puts the designs made before into this layout: the html and pdf of the registry and the ones lying in the design folders. A design goes to a direction only by firm signs (the file lies in the direction's folder, the direction made it or asked for its task; a project folder whose designs have exactly one direction goes there whole); a guess by name moves nothing. A design keeps its assets (copied into its folder; the originals stay for the other designs), its links are rewritten so they still lead to the same files, its hand-edit copies `.rN` go along. Nothing is deleted. What is not clear (no task, the place is taken, a folder of its own right in the root) and the working files (a template a script reads, a report of a plugin) stay and are listed.
+
+    python3 layout.py --dry     the plan: <state>/hub-design/layout/plan.txt, nothing is moved
+    python3 layout.py --apply   do it; every step goes to <state>/hub-design/layout/moves.jsonl
+    python3 layout.py --undo    put back what --apply moved
+
+At the start of each new version the plugin makes the plan by itself (`--dry`); it moves the files only with `"auto_layout": true` in the plugin's settings (off by default). After a move the registry, the posts in Telegram and the page (frames, pins, edits, the known designs; `/__canvas/moves`) follow the designs to their new paths.
 
 **Which direction a design belongs to.** By the first rule that fits: the file lies inside the direction's folder; the direction made it; the direction asked for its task; the design lies in a project folder, `<home>/design/<project>/file.html` (how the designer saves), and the direction's name says the same as the project's name (case, `!`, `-` and `_`, and the words every design folder has - design, template, page, hub - do not count; a word of the name also matches when it begins the same way as a word of the direction, four signs at least and no digits - `anim` and `animations`, but not `icon` and `icons8`; the more words match, the nearer; a name with `hd` or `hub` and one more word goes only to a direction that has `hub` in its name; two directions equally near decide nothing); a project folder no direction owns can still name a task folder (the same words against the title of a task that has a folder); last, the words of the `<title>` and of the file name. The list of directions is the one of the hub snapshot, nothing is written into the plugin; a design that matches none stays under "No direction", and a design you moved by hand is not touched. The designs of the other machines are laid out by the same rule. The export of a machine is never emptied by one empty pass: the registry of the other machine is rewritten with no designs only after three empty passes in a row, so a moment when the plugin sees no files does not hide its tile.
 
@@ -150,6 +163,6 @@ The plugin process (`server.py`) listens on `127.0.0.1` at the hub page's port +
 
 ## Tests
 
-`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests`: the server, writing to the file (`handwrite.py`), PDF, Telegram posts (`tgpost.py`), the manifest; the style downloader (`sources/`, `fetcher.py`: a made-up site on localhost, no real pages); the registry (`registry.py`); `node --test tests/*.test.mjs`: the logic, element landmarks, the en/ru tables. No browser needed.
+`PYTHONPATH=<hub code> python3 -W ignore -m unittest discover -s tests`: the server, writing to the file (`handwrite.py`), PDF, Telegram posts (`tgpost.py`), the manifest; the style downloader (`sources/`, `fetcher.py`: a made-up site on localhost, no real pages); the registry (`registry.py`); task folders (`layout.py`: invented folders); `node --test tests/*.test.mjs`: the logic, element landmarks, the en/ru tables. No browser needed.
 
 Icon: [3D Fluency](https://icons8.com/icons/3d-fluency) by Icons8.

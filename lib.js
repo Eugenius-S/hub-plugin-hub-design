@@ -60,8 +60,10 @@ export const STR = {
     ago_now: "just now", ago_min: "{n} min ago", ago_h: "{n} h ago", ago_d: "{n} d ago",
     new_design: "New design (Hub Design): ",
     based_on: "Make a design based on {f}",
-    save_to: "Save it in the direction folder: {dir}/<design-name>/ (index.html, assets next to it), not in your own working folder.",
-    save_task: "All the designs of this task go into one folder: {dir}<design-name>/ (index.html, assets next to it), every round too, not in your own working folder.",
+    save_to: "Save it in a task folder of the direction: {dir}/<task>/ (<task> - a short Latin kind-gist name, like poster-bf-sale), every variant and round in a folder of its own inside: <design-name>-1a/index.html, its assets inside; not in your own working folder.",
+    save_home: "Save it in a task folder: {dir}<task>/ (<task> - a short Latin kind-gist name, like poster-bf-sale), every variant and round in a folder of its own inside: <design-name>-1a/index.html, its assets inside; not loose files.",
+    save_task: "All the designs of this task go into one folder: {dir}, every variant and round in a folder of its own inside: <design-name>-1a/index.html, its assets inside; not next to the files and not in your own working folder.",
+    m_place: "The next round of this design goes into the same task folder {dir} as a folder of its own: <design-name>-<round>/index.html, its assets inside.",
     gone_denied: "The file is outside the hub's project and session folders, so the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
     t_designer: "designer", t_writer: "writer", t_animator: "animator",
@@ -125,8 +127,10 @@ export const STR = {
     ago_now: "только что", ago_min: "{n} мин назад", ago_h: "{n} ч назад", ago_d: "{n} дн назад",
     new_design: "Новый макет (Hub Design): ",
     based_on: "Сделай макет на основе {f}",
-    save_to: "Сохрани в папку направления: {dir}/<имя-макета>/ (index.html, ресурсы рядом), не в свою рабочую папку.",
-    save_task: "Все макеты этой задачи — в одну папку: {dir}<имя-макета>/ (index.html, ресурсы рядом), и новые раунды тоже, не в свою рабочую папку.",
+    save_to: "Сохрани в папку задачи направления: {dir}/<задача>/ (<задача> — короткое латинское имя «вид-суть», вроде poster-bf-sale), каждый вариант и раунд — своей папкой внутри: <имя-макета>-1a/index.html, ресурсы в ней; не в свою рабочую папку.",
+    save_home: "Сохрани в папку задачи: {dir}<задача>/ (<задача> — короткое латинское имя «вид-суть», вроде poster-bf-sale), каждый вариант и раунд — своей папкой внутри: <имя-макета>-1a/index.html, ресурсы в ней; не файлами россыпью.",
+    save_task: "Все макеты этой задачи — в одну папку: {dir}, каждый вариант и раунд — своей папкой внутри: <имя-макета>-1a/index.html, ресурсы в ней; не рядом с файлами и не в свою рабочую папку.",
+    m_place: "Следующий раунд этого макета — в ту же папку задачи {dir} своей папкой: <имя-макета>-<раунд>/index.html, ресурсы в ней.",
     gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
     gone_missing: "Файл не найден: {path}",
     t_designer: "дизайнер", t_writer: "райтер", t_animator: "аниматор",
@@ -661,7 +665,7 @@ export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/,
 
 // the style chosen in the picker, one line for the designer: the full path of the style file (a DESIGN.md of the style reference library)
 export const styleLine = (path) => (path ? tr("m_style", { path: String(path) }) : "");
-export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {}, auto = false, style = "" }) {
+export function message({ path, round, view, views = {}, comments, changes, drawings = [], notes = [], tweaks = [], errors = [], copies = {}, auto = false, style = "", place = false }) {
   const files = [];
   const add = (f) => { if (!files.includes(f)) files.push(f); };
   const of = (x) => x.file || path;
@@ -718,6 +722,7 @@ export function message({ path, round, view, views = {}, comments, changes, draw
   if (said.length) {
     blocks.push((blocks.length ? "" : tr("m_notes", { round })) + said.map((x, i) => `${blocks.length ? tr("m_note") : i + 1 + "."} ${cut(x.text, 500)}`).join("\n"));
   }
+  if (place && blocks.length && placeOf(path)) blocks.push(tr("m_place", { dir: placeOf(path) }));
   if (style && blocks.length) blocks.push(styleLine(style));
   if (auto && blocks.length) blocks.push(tr("m_auto"));
   return blocks.join("\n\n");
@@ -1044,9 +1049,16 @@ export function projectDirOf(f, dirs = [], taskRows = [], tasks = new Set()) {
 export const folderKeyOf = (f, dirs = [], tasks = new Set(), taskRows = []) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : homeOf(f, dirs, taskRows, tasks));
 // the name of a task folder: the title of the task (tasks: [{id, title}]); the same name for the folder on disk
 export const taskTitle = (id, tasks = []) => String(((tasks || []).find((x) => x.id === id) || {}).title || "").trim() || id;
+// a short Latin name of a task folder: "Постер к Чёрной пятнице" -> "poster-chernoy-pyatnitse" (the same as slug() of layout.py)
+export const SLUG_MAX = 32, SLUG_WORDS = 4;
+const SLUG_STOP = new Set(["the", "a", "an", "of", "for", "to", "in", "on", "and", "with", "v", "i", "na", "po", "dlya", "s", "k", "iz", "ot", "do", "za", "kak", "eto"]);
+const SLUG_TR = { "\u0430": "a", "\u0431": "b", "\u0432": "v", "\u0433": "g", "\u0434": "d", "\u0435": "e", "\u0451": "e", "\u0437": "z", "\u0438": "i", "\u0439": "y", "\u043a": "k", "\u043b": "l", "\u043c": "m", "\u043d": "n", "\u043e": "o", "\u043f": "p", "\u0440": "r", "\u0441": "s", "\u0442": "t", "\u0443": "u", "\u0444": "f", "\u0445": "h", "\u044a": "", "\u044b": "y", "\u044c": "", "\u044d": "e", "\u0436": "zh", "\u0446": "ts", "\u0447": "ch", "\u0448": "sh", "\u0449": "sch", "\u044e": "yu", "\u044f": "ya" };
 export function taskSlug(title) {
-  const s = String(title || "").normalize("NFC").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
-  return s.length > 40 ? s.slice(0, 40).replace(/-[^-]*$/, "") || s.slice(0, 40) : s;
+  const low = [...String(title || "").toLowerCase()].map((c) => (c in SLUG_TR ? SLUG_TR[c] : c)).join("");
+  const parts = (low.match(/[a-z0-9]+/g) || []).filter((w) => !SLUG_STOP.has(w)).slice(0, SLUG_WORDS);
+  let out = "";
+  for (const w of parts) { const nxt = out ? out + "-" + w : w; if (nxt.length > SLUG_MAX) break; out = nxt; }
+  return out || (parts[0] || "").slice(0, SLUG_MAX);
 }
 // files by folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last.
 // tasks (a Set of ids, taskFolders(all the files)): the designs of those tasks go to the folder of the task, the rest by direction
@@ -1067,21 +1079,53 @@ export function saveDirOf(name, sessions = [], directions = []) {
   const d = directionDirs(sessions, directions).find((x) => x.names.includes(name));
   return d ? d.cwd : "";
 }
-// the folder of a task on disk: <the direction that asked>/design/<title>/
-export function taskDir(cwd, title) {
-  if (!cwd) return "";
-  const sep = /\\/.test(cwd) && !cwd.includes("/") ? "\\" : "/";
-  return String(cwd).replace(/[\\/]+$/, "") + sep + "design" + sep + (taskSlug(title) || "task") + sep;
+const sepOf = (p) => (/\\/.test(p) && !p.includes("/") ? "\\" : "/");
+// the folder of a task on disk: <the direction that asked>/design/<slug>/; no direction - <the designer's folder>/<slug>/
+export function taskDir(cwd, title, home = "") {
+  const root = cwd || home;
+  if (!root) return "";
+  const sep = sepOf(root);
+  return String(root).replace(/[\\/]+$/, "") + sep + (cwd ? "design" + sep : "") + (taskSlug(title) || "task") + sep;
+}
+// the task folder of a design: <task>/<design>/index.html -> <task>/; a loose <task>/x.html -> <task>/
+export function placeOf(path) {
+  const p = String(path || "");
+  const sep = sepOf(p), parts = p.split(/[\\/]/);
+  if (parts.length < 2) return "";
+  const up = /^index\.html?$/i.test(parts[parts.length - 1]) && parts.length > 2 ? 2 : 1;
+  return parts.slice(0, -up).join(sep) + sep;
 }
 // the line for the designer: where to put the new design (a task folder - the folder of the task)
 export function taskLine(dir) {
   return dir ? tr("save_task", { dir }) : "";
 }
-// the line for the designer: where to put the new design
-export function saveLine(cwd) {
-  if (!cwd) return "";
-  const sep = /\\/.test(cwd) && !cwd.includes("/") ? "\\" : "/";
-  return tr("save_to", { dir: String(cwd).replace(/[\\/]+$/, "") + sep + "design" });
+// a design moved to its task folder by layout.py (moves = /__canvas/moves: {files: {key: new}, dirs: {key: new}}): its new path, or the path itself
+const moveKey = (p) => { const k = String(p).trim().replace(/\\/g, "/").replace(/\/+$/, ""); return /^[A-Za-z]:\//.test(k) ? k.toLowerCase() : k; };
+export function movedPath(p, moves) {
+  if (typeof p !== "string" || !p || !moves) return p;
+  const k = moveKey(p), files = moves.files || {}, dirs = moves.dirs || {};
+  if (Object.hasOwn(files, k)) return files[k];
+  for (const [old, now] of Object.entries(dirs)) if (k.startsWith(old + "/")) return now + k.slice(old.length);
+  return p;
+}
+// the board, the known designs, any stored object: every string and key that is a moved path gets the new one. -> [the object, changed]
+export function moveAll(x, moves) {
+  let changed = false;
+  const walk = (v) => {
+    if (typeof v === "string") { const n = movedPath(v, moves); if (n !== v) changed = true; return n; }
+    if (Array.isArray(v)) return v.map(walk);
+    if (!v || typeof v !== "object") return v;
+    const out = {};
+    for (const [k, val] of Object.entries(v)) { const nk = movedPath(k, moves); if (nk !== k) changed = true; out[nk] = walk(val); }
+    return out;
+  };
+  const out = walk(x);
+  return [out, changed];
+}
+// the line for the designer: where to put the new design (a direction: <cwd>/design/<task>/; none - <the designer's folder>/<task>/)
+export function saveLine(cwd, home = "") {
+  if (cwd) return tr("save_to", { dir: String(cwd).replace(/[\\/]+$/, "") + sepOf(cwd) + "design" });
+  return home ? tr("save_home", { dir: String(home).replace(/[\\/]+$/, "") + sepOf(home) }) : "";
 }
 
 // who gets the edits of the open design: its author; no author (the path was only mentioned) - the designer if the hub has one, not the session we came from

@@ -23,6 +23,7 @@ import fetcher
 import handwrite
 import linkctl
 import links as linkmem
+import layout
 import peers
 import registry
 import styles
@@ -755,6 +756,11 @@ class Handler(BaseHTTPRequestHandler):
                 st = file_state(real)
                 out.append({**r, "state": st, **({"title": head_of(os.path.realpath(real))} if st == "ok" and real.lower().endswith(HTML) else {})})
             return self.say(200, {"ready": bool(REG and REG.ready), "items": out, "tasks": REG.task_rows() if REG else []}, self.cors())
+        if url.path == "/__canvas/moves":
+            # the designs layout.py moved to their task folders ({"files": {old: new}, "dirs": {old: new}}): the page follows its pins and cards
+            mv = layout.Moves(state_dir())
+            mv.fresh()
+            return self.say(200, {"files": mv.files, "dirs": mv.dirs}, self.cors())
         if url.path == "/__canvas/peers":
             # the designs of the other machines of the owner (peers.py): names and shots only, the files stay there. Off: {"on": false}
             root = peers_root()
@@ -1180,6 +1186,8 @@ def main():
         threading.Thread(target=lambda: styles.warm(styles.folder(config(), state_dir())), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the links by default are put once, the first time they are downloaded (linkctl.py)
         threading.Thread(target=lambda: ctl().startup(auto=setting("auto_download_defaults")), daemon=True).start()
+    if os.environ.get("HUB_STATE_DIR"):   # under a hub: the old designs to their task folders - the plan once per version, moves only with auto_layout
+        threading.Thread(target=lambda: layout.startup(state_dir(), version(), bool(setting("auto_layout"))), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
         threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p)), ctl), daemon=True).start()
     try:

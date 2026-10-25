@@ -67,6 +67,18 @@ class Registry(unittest.TestCase):
     def paths(self, r):
         return {os.path.basename(x["path"]): x for x in r.listing()}
 
+    def test_a_design_moved_to_its_task_folder_follows_its_file(self):
+        old, new = p("d", "poster.html"), p("ads", "design", "bf", "poster", "index.html")
+        self.live([wrote(1, "designer", old), wrote(2, "designer", p("d", "other.html"))])
+        os.makedirs(os.path.join(self.tmp, "hub-design", "layout"))
+        with open(os.path.join(self.tmp, "hub-design", "layout", "moves.json"), "w", encoding="utf-8") as f:
+            json.dump({"files": {registry.key_of(old): new}, "dirs": {}}, f)
+        got = self.paths(self.reg())
+        self.assertEqual(got["index.html"]["path"], new)
+        self.assertEqual(got["index.html"]["session"], "designer")
+        self.assertNotIn("poster.html", got)
+        self.assertIn("other.html", got)
+
     def test_a_design_of_a_session_that_is_gone_stays_and_so_do_old_ones_from_the_archive(self):
         # the archive holds the old designs, the live journal a new one; the sessions "old-designer" and "x1" exist nowhere
         self.archive([wrote(1, "old-designer", p("d", "a", "land.html")), sent(2, "old-designer", p("d", "a", "land.pdf")),
