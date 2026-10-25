@@ -261,7 +261,7 @@ class Tasks(Registry):
             with open(os.path.join(root, name), "w", encoding="utf-8") as f:
                 f.write("<html></html>")
             os.utime(os.path.join(root, name), (mtime, mtime))
-        cmd = {"command": f'cd "{root}" && python3 build.py'}
+        cmd = {"command": f'cd "{root}" && python3 build.py && open file://{root}/post-a.html'}
         look = {"command": f"ls {root}/"}
         with unittest.mock.patch.object(registry, "TEMP", registry.re.compile(r"(?!)")):
             r, got = self.of([raised(10, "designer", "canva-templates", title="Pack A"), turn(11, "designer", "m10"),

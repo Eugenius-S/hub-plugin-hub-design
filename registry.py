@@ -45,7 +45,7 @@ _DESIGN_LINE = re.compile(rb'(?:/|\\\\)design(?:/|\\\\)')
 _LINE_KIND = re.compile(rb'"(?:delegation\.created|turn\.started)"|"task\.noted".*"title"')
 TICK = 3   # s between journal reads
 CUR_EVERY = 30   # s: the tasks the sessions work on are saved no oftener (they change with every turn)
-VERSION = 4   # 2: the task of a design; 3: a word in the middle of a turn keeps its task; 4: the work folders. An older registry is read again
+VERSION = 5   # 2: the task of a design; 3: a word in the middle of a turn keeps its task; 4: the work folders; 5: no //path. An older one is read again
 WORKS = ("Bash", "Agent")   # a command or a fork's brief names the folder a script writes the designs to
 KEEP_WORK = 400   # work folders kept: the freshest
 SLACK = 120   # s: a file written a little before the command that named its folder was logged
@@ -196,7 +196,7 @@ def new_state():
 def project_folder(path):
     """<...>/design/<project> of a path under it (the deepest "design"), else "": the folder a design of a script lies in."""
     p = str(path or "").strip().replace("\\", "/")
-    if not p or not native(path.strip()):
+    if not p or not native(path.strip()) or p.startswith("//"):   # file:///Users/... names the file by its address, /Users/... names it already
         return ""
     parts = p.split("/")
     i = max((n for n, x in enumerate(parts) if x == "design"), default=-1)
@@ -436,7 +436,7 @@ class Registry:
             with open(self.path, encoding="utf-8") as f:
                 saved = json.load(f)
             self.items = {key_of(v["path"]): v for v in saved.get("items", [])
-                          if isinstance(v, dict) and v.get("path") and not COPY.search(key_of(v["path"]))}
+                          if isinstance(v, dict) and v.get("path") and not COPY.search(key_of(v["path"])) and not str(v["path"]).startswith("//")}
             if saved.get("v") == VERSION:
                 self.seq = int(saved.get("seq") or 0)
                 self.state = {"tasks": {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)},
