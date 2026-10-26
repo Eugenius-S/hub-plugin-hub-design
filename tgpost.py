@@ -153,9 +153,10 @@ def strips_buttons():
 
 
 class Poster:
-    """shot(path) -> PNG bytes or None; config() -> hub.json; state(path) -> the hub state (sessions); emit(type, data) - a fact."""
+    """shot(path) -> PNG bytes or None; config() -> hub.json; state(path) -> the hub state (sessions); emit(type, data) - a fact;
+    author(path) -> the session that wrote the design (the registry of designs knows it), None - unknown."""
 
-    def __init__(self, state_dir, shot, config, title=None, state=None, emit=None, ask=None, page=None):
+    def __init__(self, state_dir, shot, config, title=None, state=None, emit=None, ask=None, page=None, author=None):
         from core import journal
         self.journal = journal
         self.dir, self.path = state_dir, os.path.join(state_dir, "journal.jsonl")
@@ -163,6 +164,7 @@ class Poster:
         self.shots = os.path.join(state_dir, "hub-design", "telegram")
         self.shot, self.config = shot, config
         self.title = title or (lambda p: "")
+        self.author = author or (lambda p: None)
         self.state = state or (lambda: journal.load_state(state_dir))
         self.emit = emit or self.spool
         self.page = page or (lambda: tailnet_page(state_dir))   # -> the address of the hub page (none - no link in the post)
@@ -183,7 +185,7 @@ class Poster:
             self.handle(journal.read_tail(self.path))
 
     def shape(self):
-        self.st.setdefault("sent", {})   # ref -> {session, path, title, asked}: a press is recognized by it
+        self.st.setdefault("sent", {})   # ref -> {session, sender, path, title, asked}: a press is recognized by it; session - the author, sender - who sent the file
         self.st.setdefault("why", {})    # ref of a "Why?" question -> the design ref
         self.st.setdefault("n", 0)
 
@@ -207,6 +209,25 @@ class Poster:
     def say(self, session, text, extra=None):
         self.emit("message.received", {"to": session, "channel": "session", "owner": False, "sender": EXT, "text": text,
                                        **(extra or {})})
+
+    def author_of(self, path, sender):
+        """Who the owner's rating of a design goes to: the session that wrote the file - the sender is often only the one that
+        passed it on (a router, a direction). An unknown author, or one that is gone from the hub - the sender, as before."""
+        try:
+            name = self.author(path)
+        except Exception as e:   # the registry is a help: no author - the sender
+            print(f"hub-design: no author for {path}: {e!r}", file=sys.stderr, flush=True)
+            name = None
+        return name if isinstance(name, str) and name != sender and name in (self.state().get("sessions") or {}) else sender
+
+    def note(self, s, what):
+        """The session that sent a design the author wrote gets one line of what the owner answered (to the author); a note, no turn."""
+        sender = s.get("sender")
+        if not sender or sender == s["session"] or sender not in (self.state().get("sessions") or {}):
+            return
+        title = " ".join(str(s["title"]).split())
+        self.say(sender, f"hub-design: the owner {what} on the design \"{title}\" ({s['path']}); handed to its author {s['session']}.",
+                 {"fyi": True})
 
     @staticmethod
     def reject(ev, path):
@@ -255,6 +276,7 @@ class Poster:
         if kind == "telegram.replied" and (data.get("text") or "").strip():   # the author's session was gone when it was posted
             self.say(s["session"], f"hub-design: the owner replied in Telegram to your design \"{s['title']}\" ({s['path']}): "
                                    f"{data['text'].strip()}")
+            self.note(s, f"replied \"{self.brief(data['text'])}\"")
 
     def offer(self, ev, data):
         dp, cfg = rules(), self.config()
@@ -274,7 +296,8 @@ class Poster:
         deck = os.path.splitext(path)[1].lower() in DECKS
         title = (not deck and self.title(design)) or os.path.splitext(os.path.basename(design))[0]
         lang = _lang()
-        text = tr(lang, "caption", title=title.replace("*", ""), who=sender)
+        who = self.author_of(design, sender)   # the reply and the rating go to the author
+        text = tr(lang, "caption", title=title.replace("*", ""), who=who)
         png = path if deck else self.keep(self.shot(design))
         page = None if deck else self.page()   # a presentation does not open on the canvas
         if page:
@@ -283,10 +306,10 @@ class Poster:
             text += f"\n\n`{design}`"
         ref = f"hd:{ev['seq']}"
         at = ev.get("ts") if isinstance(ev.get("ts"), (int, float)) else time.time()
-        self.st["sent"][ref] = {"session": sender, "path": design, "title": title, "at": at}
+        self.st["sent"][ref] = {"session": who, "sender": sender, "path": design, "title": title, "at": at}
         while len(self.st["sent"]) > KEEP_SENT:
             del self.st["sent"][next(iter(self.st["sent"]))]
-        self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": sender,
+        self.emit("telegram.post", {"text": text, "ref": ref, "buttons": [LIKE, NOPE], "session": who,
                                     "lane": design, **({"path": png} if png else {})})
 
     def first_pressed(self, button):
@@ -399,7 +422,10 @@ class Poster:
         ref = m.group(1)
         pack = self.pack_of(ref)
         words = text[:m.start()].strip()
-        if not pack or not words:
+        if not words:
+            return
+        self.note(s, f"replied \"{self.brief(words)}\"")   # the bot handed the words to the author already
+        if not pack:
             return
         self.say_pack(ref, pack, f"hub-design: the owner replied in Telegram to your design \"{s['title']}\" ({s['path']}): {words}.")
         self.settle_pack(ref, pack)
@@ -415,6 +441,7 @@ class Poster:
         else:
             self.say(s["session"], text, self.reject(ev, s["path"]) if ev and button == NOPE else None)
             s["rated"] = True   # answered: it is not part of any later batch
+        self.note(s, "liked it" if button == LIKE else "disliked it")
         if button == NOPE and not s.get("asked"):
             s["asked"] = True
             n = self.st["n"] = self.st["n"] + 1
@@ -427,6 +454,12 @@ class Poster:
                                         "buttons": [tr(lang, f"why_{k}") for k in WHY], "lane": s["path"],
                                         "multi": {"done": tr(lang, "why_done"), "all": tr(lang, "why_pick_all"),
                                                   "none": tr(lang, "why_pick_none")}})
+
+    @staticmethod
+    def brief(words):
+        """The owner's words for a one-line note: one line, not long."""
+        line = " ".join(str(words).split())
+        return line if len(line) <= 160 else line[:157] + "..."
 
     def followed(self, s):
         """A posted design that layout.py moved to its task folder: the post now names the new place."""
@@ -490,6 +523,7 @@ class Poster:
         head = f"hub-design: why the owner disliked your design \"{s['title']}\" ({s['path']}): {'; '.join(said)}."
         tail = (f"Feedback record: design={s['path']}; verdict=dislike; reasons={record}; "
                 f"words={json.dumps(text or '', ensure_ascii=False)}")
+        self.note(s, "gave the reasons: " + self.brief("; ".join(said)))
         if pack:   # a design of a batch: the reasons are about all of it
             self.say_pack(ref, pack, head, tail)
             self.settle_pack(ref, pack)
@@ -519,10 +553,10 @@ class Poster:
         self.first_question()
 
 
-def run(state_dir, shot, config, title=None, ask=None):
+def run(state_dir, shot, config, title=None, ask=None, author=None):
     """The process loop (a thread of server.py). No core nearby (not under a hub) - returns at once."""
     try:
-        p = Poster(state_dir, shot, config, title, ask=ask)
+        p = Poster(state_dir, shot, config, title, ask=ask, author=author)
     except Exception as e:
         sys.stderr.write(f"hub-design: telegram posts are off ({e})\n")
         return

@@ -127,6 +127,13 @@ class Registry(unittest.TestCase):
         x = self.paths(self.reg())["x.html"]
         self.assertEqual((x["session"], x["rank"], x["last"]), ("c", 2, 1003))
 
+    def test_author_of_a_path_is_who_wrote_it_not_who_sent_it_and_unknown_is_none(self):
+        self.live([wrote(1, "designer", p("d", "x.html")), sent(2, "router", p("d", "x.html")), sent(3, "router", p("d", "y.html"))])
+        r = self.reg()
+        self.assertEqual(r.author(p("d", "x.html")), "designer")
+        self.assertEqual(r.author(p("d", "y.html")), "router")   # only sent: the sender is all there is
+        self.assertIsNone(r.author(p("d", "none.html")))
+
     def test_only_the_types_the_canvas_opens_and_no_scratch_files(self):
         self.live([wrote(1, "s", p("d", "a.png")), wrote(2, "s", p("d", "n.md")), wrote(3, "s", p("d", "deck.pptx")),
                    wrote(4, "s", p("node_modules", "x", "i.html")), wrote(5, "s", p(".git", "x.html")),

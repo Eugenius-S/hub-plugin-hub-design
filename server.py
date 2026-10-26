@@ -1198,7 +1198,7 @@ def main():
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the old designs to their task folders - the plan once per version, moves only with auto_layout
         threading.Thread(target=lambda: layout.startup(state_dir(), version(), bool(setting("auto_layout"))), daemon=True).start()
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: designs to Telegram as posts (off unless telegram.design_posts)
-        threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p)), ctl), daemon=True).start()
+        threading.Thread(target=tgpost.run, args=(state_dir(), tg_shot, config, lambda p: title_of(os.path.realpath(p)), ctl, lambda p: REG.author(p) if REG else None), daemon=True).start()
     try:
         t.join()
     except KeyboardInterrupt:

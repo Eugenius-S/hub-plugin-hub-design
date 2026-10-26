@@ -565,5 +565,135 @@ class FirstQuestion(unittest.TestCase):
         self.assertEqual(len(self.ctl.answers), 3)
 
 
+@unittest.skipUnless(tgpost.rules(), "no hub code with modules/telegram/design_posts on PYTHONPATH")
+class Author(unittest.TestCase):
+    """The owner's rating of a design goes to its author (who wrote the file), not to the session that only sent it to him."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(dir=TMP)
+        self.journal = os.path.join(self.dir, "journal.jsonl")
+        self.seq, self.out = 0, []
+        self.cfg = {"telegram": {"design_posts": {"sessions": "*"}}}
+        self.sessions = {"router": {"cwd": "/w"}, "designer": {"cwd": "/d"}}
+        self.authors = {"/w/landing.html": "designer"}
+        self.add("core.started", {})
+        self.p = tgpost.Poster(self.dir, lambda path: PNG, lambda: self.cfg, title=lambda p: "Landing", page=lambda: None,
+                               state=lambda: {"sessions": self.sessions}, emit=lambda t, d: self.out.append((t, d)),
+                               author=lambda path: self.authors.get(path))
+
+    def add(self, type, data, src="session"):
+        self.seq += 1
+        with open(self.journal, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"seq": self.seq, "type": type, "src": src, "data": data}) + "\n")
+
+    def file(self, sender="router", path="/w/landing.html"):
+        self.add("owner.file", {"path": path, "sender": sender, "channel": "session", "owner": False})
+        self.p.poll()
+
+    def posts(self):
+        return [d for t, d in self.out if t == "telegram.post"]
+
+    def said(self, to=None):
+        return [d for t, d in self.out if t == "message.received" and (to is None or d["to"] == to)]
+
+    def press(self, ref, button):
+        self.add("telegram.pressed", {"ext": "hub-design", "ref": ref, "button": button}, src="telegram")
+        self.p.poll()
+
+    def test_the_post_is_the_authors_not_the_senders(self):
+        self.file()
+        (post,) = self.posts()
+        self.assertEqual(post["session"], "designer")      # the bot hands a reply to the post's session
+        self.assertIn("designer", post["text"])
+        self.assertNotIn("router", post["text"])
+        self.assertEqual(self.said(), [])
+
+    def test_a_like_goes_to_the_author_and_the_sender_gets_one_line(self):
+        self.file()
+        self.press(self.posts()[0]["ref"], "❤️")
+        (to_author,) = self.said("designer")
+        self.assertIn("❤️", to_author["text"])
+        (copy,) = self.said("router")
+        self.assertNotIn("\n", copy["text"])
+        self.assertIn("designer", copy["text"])
+        self.assertIn("/w/landing.html", copy["text"])
+        self.assertIs(copy.get("fyi"), True)               # a note: it does not wake the sender
+        for key in ("lane", "reject", "react", "ref", "batch"):
+            self.assertNotIn(key, copy)
+
+    def test_a_dislike_and_its_reasons_go_to_the_author_with_the_record(self):
+        self.file()
+        ref = self.posts()[0]["ref"]
+        self.press(ref, "👎")
+        why = self.posts()[1]
+        self.assertEqual(len(self.said("designer")), 1)
+        self.assertTrue(self.said("designer")[0]["reject"])   # the reject belongs to the author's edit lane
+        self.add("telegram.pressed", {"ext": "hub-design", "ref": why["ref"], "button": "Colors", "chosen": ["Colors"], "done": True},
+                 src="telegram")
+        self.p.poll()
+        last = self.said("designer")[-1]
+        self.assertIn("Feedback record: design=/w/landing.html; verdict=dislike; reasons=colors", last["text"])
+        copies = self.said("router")
+        self.assertEqual(len(copies), 2)                    # the dislike and the reasons, a line each
+        self.assertTrue(all("designer" in c["text"] and "\n" not in c["text"] for c in copies))
+        self.assertNotIn("Feedback record", copies[-1]["text"])
+
+    def test_words_in_a_telegram_reply_go_to_the_author_when_the_session_was_gone(self):
+        self.file()
+        self.add("telegram.replied", {"ext": "hub-design", "ref": self.posts()[0]["ref"], "text": "bigger logo"}, src="telegram")
+        self.p.poll()
+        (msg,) = self.said("designer")
+        self.assertIn("bigger logo", msg["text"])
+        (copy,) = self.said("router")
+        self.assertIn("bigger logo", copy["text"])
+
+    def test_a_reply_the_bot_handed_to_the_author_is_copied_to_the_sender(self):
+        self.file()
+        mark = "в ответ на пост"   # the bot's mark, protocol text
+        self.add("message.received", {"to": "designer", "channel": "telegram", "owner": True,
+                                      "text": f"smaller logo\n\n({mark} {self.posts()[0]['ref']})"}, src="telegram")
+        self.p.poll()
+        (copy,) = self.said("router")
+        self.assertIn("smaller logo", copy["text"])
+        self.assertIn("designer", copy["text"])
+        self.assertEqual(self.said("designer"), [])         # the bot already did that one: no second copy to the author
+
+    def test_the_author_is_the_sender_no_copy(self):
+        self.file("designer")
+        self.press(self.posts()[0]["ref"], "❤️")
+        self.assertEqual([d["to"] for d in self.said()], ["designer"])
+
+    def test_no_author_known_or_the_author_is_gone_as_before_the_sender(self):
+        self.authors = {}
+        self.file()
+        self.assertEqual(self.posts()[0]["session"], "router")
+        self.press(self.posts()[0]["ref"], "❤️")
+        self.assertEqual([d["to"] for d in self.said()], ["router"])
+        self.authors = {"/w/second.html": "designer"}
+        del self.sessions["designer"]                       # removed since it wrote the file
+        self.file(path="/w/second.html")
+        self.assertEqual(self.posts()[1]["session"], "router")
+
+    def test_the_author_of_a_batch_gets_the_whole_batch_feedback_and_the_sender_a_line(self):
+        for i in range(3):
+            self.authors[f"/w/ads/v{i + 1}/index.html"] = "designer"
+            self.add("owner.file", {"path": f"/w/ads/v{i + 1}/index.html", "sender": "router", "channel": "session", "owner": False})
+            self.p.poll()
+        refs = [p["ref"] for p in self.posts()]
+        self.press(refs[1], "👎")
+        (batch,) = [d for d in self.said("designer") if d.get("batch")]
+        self.assertIn("whole batch of 3 designs", batch["text"])
+        (copy,) = self.said("router")
+        self.assertIn("designer", copy["text"])
+        self.assertNotIn("whole batch", copy["text"])
+
+    def test_an_answer_on_the_page_to_the_author_takes_his_posts_out(self):
+        self.file()
+        ref = self.posts()[0]["ref"]
+        self.add("message.received", {"to": "designer", "channel": "web", "owner": True, "text": "ok"}, src="web")
+        self.p.poll()
+        self.assertEqual([d for t, d in self.out if t == "telegram.unpost"], [{"ref": ref}])
+
+
 if __name__ == "__main__":
     unittest.main()

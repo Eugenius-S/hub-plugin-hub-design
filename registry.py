@@ -553,6 +553,11 @@ class Registry:
         with self.lock:
             return sorted((dict(v) for v in self.items.values()), key=lambda v: v["last"], reverse=True)
 
+    def author(self, path):
+        """The session that wrote a design (a Write beats a send-file); None - the registry does not know the file."""
+        with self.lock:
+            return (self.items.get(key_of(path)) or {}).get("session") or None
+
     def task_rows(self):
         """The tasks the designs belong to: {id, title, by, who, ts, dir?} - the roots of the chains (dir: the direction the hub named)."""
         with self.lock:
