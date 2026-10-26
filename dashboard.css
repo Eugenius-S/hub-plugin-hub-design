@@ -61,6 +61,7 @@
 .hdd-shot{position:relative;display:block;height:160px;overflow:hidden;background:var(--muted)}
 .hdd-img{position:absolute;left:0;top:0;width:100%;height:auto;opacity:0;transition:opacity .2s;pointer-events:none;box-shadow:0 0 0 1px color-mix(in oklab,var(--foreground) 8%,transparent)}
 .hdd-shot[data-live] .hdd-img{opacity:1}
+.hdd-shot[data-none]:not([data-live])::after{content:attr(data-ext);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:600 12px/1 var(--font-sans,inherit);letter-spacing:.08em;text-transform:uppercase;color:var(--muted-foreground)}
 .hdd-tile{position:absolute;left:12px;top:146px;width:28px;height:28px;border-radius:8px;background:var(--card);border:1px solid var(--border);color:var(--primary);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-plate)}
 .hdd-body{display:flex;flex-direction:column;gap:4px;padding:26px 14px 14px;min-width:0}
 .hdd-name{font-size:var(--text-base);font-weight:500;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

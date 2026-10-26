@@ -381,7 +381,7 @@ function saveFolder() {
 }
 // a task folder is open on the dashboard: the designs of the task go into its own folder next to the others of the direction that asked
 function taskSaveLine() {
-  const f = ui ? ui.dash.state.folder : null;
+  const f = ui ? ui.dash.state.sub : null;
   if (!isTaskKey(f)) return "";
   const id = taskOfKey(f), snap = hub.snapshot() || {}, task = P.tasks.find((x) => x.id === id) || {};
   const cwd = saveDirOf(task.by, snap.sessions, snap.directions) || saveDirOf(task.dir, snap.sessions, snap.directions) || saveDirOf(P.origin, snap.sessions, snap.directions);

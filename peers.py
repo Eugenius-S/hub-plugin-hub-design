@@ -199,25 +199,23 @@ def nearest_dir(name, dirs, names=None):
 
 
 def task_near(name, folders):
-    """A name that no direction owns but a task folder does (the same rule as taskNear of lib.js): the words of the name against the titles of the task folders;
-    one folder nearest - its title (its name on the other machine), a tie or nothing in common - "". folders: [(task id, title)]."""
+    """A name that no direction owns but a task does (the same rule as taskNear of lib.js): the words of the name against the titles of the tasks;
+    the direction that asked for the nearest tasks - its label, two directions equally near or nothing in common - "". folders: [(direction label, task title)]."""
     w = list(dict.fromkeys(words_of(name)))
-    best, tie = None, False
-    for tid, title in folders or ():
+    by = {}
+    for label, title in folders or ():
         own = list(dict.fromkeys(words_of(title)))
         points = sum(max([0] + [near(x, o) for o in own]) for x in w)
-        if not points:
-            continue
-        if best is None or points > best[0]:
-            best, tie = (points, tid, title), False
-        elif points == best[0]:
-            tie = True
-    return str(best[2]) if best and not tie else ""
+        if points > by.get(label, 0):
+            by[label] = points
+    top = max(by.values(), default=0)
+    best = [label for label, points in by.items() if points == top]
+    return str(best[0]) if top and len(best) == 1 else ""
 
 
 def project_label(path, title, dirs, names=None, folders=None):
     """The direction of a design that lies in no direction folder and was made by none: the project folder it was saved in (design/<project>/), else its
-    title, else its file name; no direction owns the name - the task folder that does (folders: [(task id, title)])."""
+    title, else its file name; no direction owns the name - the direction of the task that does (folders: [(direction label, task title)])."""
     project = project_of(path)
     label = (nearest_dir(project, dirs, names) or task_near(project, folders)) if project else ""
     if label:

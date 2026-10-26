@@ -112,3 +112,19 @@ test("a failed shot is asked again later; a known shot is shown at once on the n
   assert.equal(shown.length, 1, "the known shot is in the card before it even comes into view");
   assert.equal(asked(b.log).filter((i) => i.onload).length, 0, "and no load is queued for it");
 });
+
+test("a design that never gets a shot is marked with its file type, not left blank (hd-tiles)", () => {
+  setLangSource(() => "en");
+  forgetShots();
+  const doc = [{ path: "/w/a/paper.pdf", session: "designer", ts: 100, last: 200 }];
+  const a = build(doc);
+  showAll();
+  const shotOf = () => a.log.made.find((e) => e.className === "hdd-shot");
+  assert.equal(shotOf().dataset.ext, "pdf");
+  for (let i = 0; i < 4; i++) {   // the first ask and the three retries all fail
+    settle(asked(a.log)[0], false);
+    if (a.later.length) a.later.shift()[0]();
+  }
+  assert.equal(shotOf().dataset.none, "1", "after the last try the card says what the file is");
+  assert.equal(shotOf().dataset.live, undefined);
+});

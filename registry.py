@@ -119,18 +119,6 @@ def clean_title(text, words=False):
     return t
 
 
-TASK_MIN = 2   # designs a task needs to get a folder of its own: one design lies where it lay
-
-
-def task_folders(rows, minimum=TASK_MIN):
-    """The ids of the tasks that have a folder: those with at least `minimum` of the designs (rows have a `task`)."""
-    count = {}
-    for r in rows:
-        if r.get("task"):
-            count[r["task"]] = count.get(r["task"], 0) + 1
-    return {k for k, n in count.items() if n >= minimum}
-
-
 def round_parents(key):
     """The keys a file could be a round of: its name without the round endings, the nearest first (bf-01-2 -> bf-01 -> bf).
     A design in a folder (<dir>/index.html) is named by the folder: kolo-2/index.html is a round of kolo/index.html."""

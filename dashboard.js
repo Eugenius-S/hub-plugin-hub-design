@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, folderKeyOf, groupFiles, isGone, isTaskKey, labelsOf, nameOf, scrollsRight, taskFolders, taskOfKey, taskTitle } from "./lib.js";
+import { ago, bannerText, groupFiles, homeOf, isGone, isTaskKey, labelsOf, layoutOf, nameOf, scrollsRight, shortTitle, subGroups, taskOfKey, taskTitle } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 
@@ -134,14 +134,22 @@ export function createNeed(app, cls = "") {
 // the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
 // dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
 export const PREVIEWS = 4;
-export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? taskTitle(taskOfKey(key), tasks) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
-// what the dashboard shows: "folders" (tiles), "files" (the cards of one folder or all the designs). Tiles - only when there are direction folders and nothing is searched
-// tasks: the Set of the ids of the tasks that have a folder (taskFolders of all the designs): their designs lie in the folder of the task, not of the direction
-export function view(rows, dirs, { folder = null, q = "", tasks = new Set(), taskRows = [] } = {}) {
-  if (folder !== null) return { mode: "files", rows: rows.filter((f) => folderKeyOf(f, dirs, tasks, taskRows) === folder) };
-  const groups = groupFiles(rows, dirs, tasks, taskRows);
-  if (String(q || "").trim() || !groups.some((g) => g.key)) return { mode: "files", rows };
-  return { mode: "folders", groups };
+export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? shortTitle(taskTitle(taskOfKey(key), tasks)) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+// what the dashboard shows: "folders" (the tiles of the directions) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
+// The top level is the directions only. A task is a subfolder inside its direction (several designs of it there); no direction folders at all - the "no direction" place opens at once.
+// lay: layoutOf() of all the designs (a search or a tab does not dissolve a folder); folder: the open direction folder (null - the top), sub: the open task ("task:<id>")
+export function view(rows, dirs, { folder = null, sub = null, q = "", taskRows = [], lay = null } = {}) {
+  lay = lay || layoutOf(rows, dirs, taskRows);
+  const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : homeOf(f, dirs, taskRows));
+  const here = folder === null ? rows : rows.filter((f) => topOf(f) === folder);
+  if (sub !== null) return { mode: "files", rows: here.filter((f) => lay.sub.get(f.path) === sub), subs: [] };
+  if (String(q || "").trim()) return { mode: "files", rows: here, subs: [] };
+  if (folder === null) {
+    const groups = groupFiles(rows, dirs, taskRows, lay);
+    if (groups.some((g) => g.key)) return { mode: "folders", groups, subs: [], rows: [] };
+  }
+  const { subs, loose } = subGroups(here, lay);
+  return { mode: "files", rows: loose, subs };
 }
 // the designs of the other machines of the owner (/__canvas/peers of the plugin process): a picture and a name each, the files stay there.
 // where: the kind of the machine ("Mac", "Windows"); two machines of one kind - with the machine name
@@ -235,7 +243,7 @@ export const forgetShots = () => { known = new Set(); try { globalThis.localStor
 function shotQueue(el, later, max = SHOTS_AT_ONCE) {
   const waiting = new Set();
   let busy = 0;
-  const put = (c, src) => { c.shown = src; if (c.img.src !== src) c.img.src = src; if (c.shot.dataset.live !== "1") c.shot.dataset.live = "1"; };
+  const put = (c, src) => { c.shown = src; if (c.img.src !== src) c.img.src = src; if (c.shot.dataset.live !== "1") c.shot.dataset.live = "1"; delete c.shot.dataset.none; };
   function start(c) {
     const src = c.want, probe = el("img");
     busy++;
@@ -250,6 +258,7 @@ function shotQueue(el, later, max = SHOTS_AT_ONCE) {
       else if (c.want === src) {
         c.tries = (c.tries || 0) + 1;
         if (c.tries <= RETRY.length) later(() => { if (c.want === src && c.shown !== src) { waiting.add(c); pump(); } }, RETRY[c.tries - 1]);
+        else if (c.shown !== src) c.shot.dataset.none = "1";   // no shot of this one (a pdf without the system rasterizer): the file type instead of a blank
       }
       pump();
     };
@@ -283,8 +292,8 @@ function shotQueue(el, later, max = SHOTS_AT_ONCE) {
 //   peers() - [{machine, os, items}] of the other machines, peerShot(machine, shot) - the url of a picture }
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
-  // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd); peer: the machine whose folder is open (null - none), pdir: the direction inside it (null - all)
-  const S = { tab: "all", q: "", sort: "recent", list: false, path: false, folder: null, peer: null, pdir: null };
+  // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd); sub: the task ("task:<id>") open inside it; peer: the machine whose folder is open (null - none), pdir: the direction inside it (null - all)
+  const S = { tab: "all", q: "", sort: "recent", list: false, path: false, folder: null, sub: null, peer: null, pdir: null };
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
@@ -351,7 +360,7 @@ export function createDashboard(app) {
   crumb.hidden = true;
   const back = el("button", "hdd-back");
   back.type = "button";
-  back.addEventListener("click", () => { if (S.peer !== null && S.pdir !== null) S.pdir = null; else { S.peer = null; S.folder = null; } paint(); });
+  back.addEventListener("click", () => { if (S.peer !== null && S.pdir !== null) S.pdir = null; else if (S.peer === null && S.sub !== null) S.sub = null; else { S.peer = null; S.folder = null; S.sub = null; } paint(); });
   const cname = el("span", "hdd-cname");
   crumb.append(back, cname);
   const folders = el("div", "hdd-folders");
@@ -474,9 +483,10 @@ export function createDashboard(app) {
     node.append(h, grid);
     return { node, h, grid };
   });
+  let backLabel = "";   // where "back" leads from the open place: the folder above, or all the folders
   // returns how many cards and tiles of other machines are shown
   function paintPeers() {
-    const list = (S.folder === null && app.peers && app.peers()) || [];
+    const list = (S.folder === null && S.sub === null && app.peers && app.peers()) || [];
     const live = new Set();
     const liveTiles = new Set();
     let count = 0;
@@ -496,7 +506,7 @@ export function createDashboard(app) {
       setText(cname, S.pdir !== null ? (S.pdir || t("folder_none")) : hubName);
       setTitle(cname, hubName);
     } else {
-      setText(back, "\u2190 " + t("crumb_all"));   // set here only: paint() setting it too made it flip on every snapshot inside a machine
+      setText(back, "\u2190 " + backLabel);   // set here only: paint() setting it too made it flip on every snapshot inside a machine
     }
     // the folders of the machines: one tile each, as long as nothing is searched and no machine is open
     const tilesOnly = !open && !S.q.trim();
@@ -578,6 +588,8 @@ export function createDashboard(app) {
   }
   function shotOf(path, cls) {
     const shot = el("span", cls);
+    const ext = (/\.([A-Za-z0-9]{1,5})$/.exec(String(path)) || [])[1] || "";
+    shot.dataset.ext = ext.toLowerCase() === "htm" ? "html" : ext.toLowerCase();
     const img = el("img", "hdd-img");
     img.draggable = false;
     img.alt = "";
@@ -642,7 +654,7 @@ export function createDashboard(app) {
     const body = el("span", "hdd-fbody");
     body.append(icon, text);
     node.append(shots, body);
-    node.addEventListener("click", () => { S.folder = key; paint(); });
+    node.addEventListener("click", () => { if (isTaskKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
     tl = { node, cells, name, count };
     tiles.set(key, tl);
     return tl;
@@ -652,24 +664,28 @@ export function createDashboard(app) {
     const dirs = app.dirs ? app.dirs() : [];
     const taskList = app.tasks ? app.tasks() : [];
     const alive = all.filter((f) => !isGone(app.fileState(f.path)));
-    const tset = taskFolders(alive);   // counted over all the designs: a search or a tab does not dissolve a folder
+    const lay = layoutOf(alive, dirs, taskList);   // counted over all the designs: a search or a tab does not dissolve a folder
+    const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : homeOf(f, dirs, taskList));
     // the labels ("Email-1: Kyoto") are numbered over all the designs of the folder too: a search or a tab does not renumber them
-    const labels = labelsOf(alive.map((f) => ({ key: f.path, title: f.title, path: f.path, group: folderKeyOf(f, dirs, tset, taskList), ts: f.ts || f.last })));
+    const labels = labelsOf(alive.map((f) => ({ key: f.path, title: f.title, path: f.path, group: topOf(f) + "|" + (lay.sub.get(f.path) || ""), ts: f.ts || f.last })));
     // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
     const rows = shown(all, { tab: S.tab, q: S.q, sort: S.sort, mine: app.mine(), labels }).filter((f) => !isGone(app.fileState(f.path)));
-    // a folder that has nothing in it any more (and is not a known direction) is closed
-    if (S.folder && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => folderKeyOf(f, dirs, tset, taskList) === S.folder)) S.folder = null;
+    // a folder that has nothing in it any more (and is not a known direction) is closed; so is a task that has no design in the open folder
+    if (S.folder !== null && !dirs.some((d) => d.key === S.folder) && !rows.some((f) => topOf(f) === S.folder)) { S.folder = null; S.sub = null; }
+    if (S.sub !== null && !rows.some((f) => lay.sub.get(f.path) === S.sub && (S.folder === null || topOf(f) === S.folder))) S.sub = null;
     const inPeer = S.peer !== null;   // inside the folder of another machine its designs only: the own ones are hidden
-    const v = inPeer ? { mode: "files", rows: [] } : view(rows, dirs, { folder: S.folder, q: S.q, tasks: tset, taskRows: taskList });
-    const inFolder = S.folder !== null;
+    const v = inPeer ? { mode: "files", rows: [], subs: [] } : view(rows, dirs, { folder: S.folder, sub: S.sub, q: S.q, taskRows: taskList, lay });
+    const inFolder = S.folder !== null || S.sub !== null;
     setHidden(crumb, !inFolder && !inPeer);
-    if (inFolder) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, isTaskKey(S.folder) ? folderTitle(S.folder, dirs, taskList) : S.folder); }
+    backLabel = S.sub !== null && S.folder !== null ? folderTitle(S.folder, dirs, taskList) : t("crumb_all");
+    if (S.sub !== null) { const full = taskTitle(taskOfKey(S.sub), taskList); setText(cname, folderTitle(S.sub, dirs, taskList)); setTitle(cname, full); }
+    else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, S.folder); }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
-    const named = !inFolder && (dirs.length > 0 || tset.size > 0);   // a search across folders tells where each design lies
+    const named = !inFolder && dirs.length > 0;   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
-      const fk = folderKeyOf(f, dirs, tset, taskList);
+      const fk = topOf(f);
       const where = named ? folderTitle(fk, dirs, taskList) : "";
       setText(c.name, labels.get(f.path) || nameOf(f.path));
       setText(c.text, [f.session, named && fk ? where : "", editedText(f)].filter(Boolean).join(" · "));
@@ -677,12 +693,12 @@ export function createDashboard(app) {
     });
     place(files, nodes);   // move only the ones that shifted: a card put back replays its entrance animation
     // tiles
-    const groups = v.mode === "folders" ? v.groups : [];
+    const groups = v.mode === "folders" ? v.groups : (v.subs || []);
     const live = new Set();
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);
       setText(tl.name, folderTitle(g.key, dirs, taskList));
-      setTitle(tl.node, isTaskKey(g.key) ? folderTitle(g.key, dirs, taskList) : g.key || t("folder_none"));
+      setTitle(tl.node, isTaskKey(g.key) ? taskTitle(taskOfKey(g.key), taskList) : g.key || t("folder_none"));
       setText(tl.count, t("folder_count", { n: g.files.length }));
       newest(g.files).forEach((f, i) => {
         const c = thumb(f.path);
@@ -744,5 +760,5 @@ export function createDashboard(app) {
     fade();
   }
   paint();
-  return { node: root, paint, state: S, setFolder: (key) => { S.folder = key; S.peer = null; S.pdir = null; paint(); } };
+  return { node: root, paint, state: S, setFolder: (key) => { S.folder = key; S.sub = null; S.peer = null; S.pdir = null; paint(); } };
 }

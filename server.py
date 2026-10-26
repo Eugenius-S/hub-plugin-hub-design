@@ -160,6 +160,8 @@ def from_url(path):
 
 def newest(html):
     """The latest modification time in the design folder (the file itself, styles, images): the signal to reload the preview."""
+    if not html.lower().endswith(HTML):   # a document (pdf, svg) is shot as it is: its own time, not its folder's
+        return os.path.getmtime(html)
     top = os.path.dirname(html)
     best, seen = os.path.getmtime(html), 0
     for base, dirs, files in os.walk(top):
@@ -783,7 +785,7 @@ class Handler(BaseHTTPRequestHandler):
             for p in paths:
                 real = os.path.realpath(p)
                 try:
-                    if real.lower().endswith(HTML) and allowed(real):
+                    if real.lower().endswith(PAGES) and allowed(real):   # the address of a card's shot: pdf and svg too (/__canvas/thumb serves them)
                         out[p] = newest(real)
                 except OSError:
                     pass
@@ -1051,12 +1053,16 @@ def peer_rows():
     """The designs of this machine that may go to the others: only files we serve (gone and hidden ones are not exported)."""
     rows = [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok"]
     dirs = peer_dirs()
-    titles = {t["id"]: t["title"] for t in REG.task_rows()} if REG else {}
-    many = registry.task_folders(rows)   # the designs of one task go to one folder on the other machine too: its name is the title of the task
-    folders = [(t, titles[t]) for t in sorted(many) if titles.get(t)]
     homes = peer_homes()
     names = peer_names()
     asked = {t["id"]: (t["by"], t.get("dir") or "", t["who"]) for t in REG.task_rows()} if REG else {}   # dir: the direction the hub named for the task
+    titles = {t["id"]: t["title"] for t in REG.task_rows()} if REG else {}
+    # the tasks with the direction that asked for each (the same order as taskHome of lib.js): a name no direction owns is looked for in their titles
+    folders = []
+    for tid, who in sorted(asked.items()):
+        label = next((homes[n] for n in who if homes.get(n)), "")
+        if label and titles.get(tid):
+            folders.append((label, titles[tid]))
 
     def folder(r):   # the file is in a direction's folder; else the direction made it; else the direction asked for the task
         label = peers.folder_label(os.path.expanduser(r["path"]), dirs) or homes.get(r.get("session"), "")
@@ -1070,7 +1076,7 @@ def peer_rows():
                 title = ""
             label = peers.project_label(real, title, dirs, names, folders)
         return label
-    return [{**r, "dir": (titles.get(r.get("task")) if r.get("task") in many else "") or folder(r)} for r in rows]
+    return [{**r, "dir": folder(r)} for r in rows]
 
 
 def peer_homes():

@@ -965,23 +965,32 @@ export const TASK_MIN = 2;
 export const TASK_PREFIX = "task:";
 export const isTaskKey = (key) => String(key || "").startsWith(TASK_PREFIX);
 export const taskOfKey = (key) => (isTaskKey(key) ? String(key).slice(TASK_PREFIX.length) : "");
-// the ids of the tasks that have a folder
-export function taskFolders(files = [], min = TASK_MIN) {
-  const n = new Map();
-  for (const f of files) if (f && f.task) n.set(f.task, (n.get(f.task) || 0) + 1);
-  return new Set([...n].filter(([, c]) => c >= min).map(([id]) => id));
+// the layout of the dashboard over all the designs (a search or a tab does not change it): the top folder of each design is its direction ("" - none);
+// a task makes a subfolder inside it when the direction holds several designs of the task. Nothing else makes a folder of the top level.
+// returns {top: Map(path -> direction folder), sub: Map(path -> "task:<id>")}
+export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
+  const top = new Map(), n = new Map();
+  for (const f of files) {
+    if (!f) continue;
+    const k = homeOf(f, dirs, taskRows);
+    top.set(f.path, k);
+    if (f.task) n.set(k + "|" + f.task, (n.get(k + "|" + f.task) || 0) + 1);
+  }
+  const sub = new Map();
+  for (const f of files) if (f && f.task && n.get(top.get(f.path) + "|" + f.task) >= min) sub.set(f.path, TASK_PREFIX + f.task);
+  return { top, sub };
 }
-// the folder a design is shown in: the folder of its task, else the direction folder of its file ("" - none)
 // A design lies in the folder of the direction by the first rule that fits: the file is inside the cwd of the direction; the direction itself made it (its session is the author);
 // the direction asked for the task the design was made for, or the hub named it raising the task (taskRows: [{id, by, dir, who}] of the registry). Nothing fits - "" (no direction).
 // Last rule: the design lies in a folder named for a project (<home>/design/<project>/file.html, how the designer saves) - the direction whose name says the same;
 // else the words of the title and of the file name. The list of directions is the one of the snapshot, nothing is hard-coded.
-export function homeOf(f, dirs = [], taskRows = [], tasks = new Set()) {
+const homeByName = (dirs, name) => (name && (dirs.find((d) => d.names && d.names.includes(name)) || {}).key) || "";
+const taskHome = (t, dirs) => (t ? homeByName(dirs, t.by) || homeByName(dirs, t.dir) || homeByName(dirs, t.who) : "");
+export function homeOf(f, dirs = [], taskRows = []) {
   const byPath = folderOf(f.path, dirs);
   if (byPath) return byPath;
-  const home = (name) => (name && (dirs.find((d) => d.names && d.names.includes(name)) || {}).key) || "";
   const task = f.task ? (taskRows || []).find((x) => x.id === f.task) : null;
-  return home(f.session) || (task ? home(task.by) || home(task.dir) || home(task.who) : "") || projectDirOf(f, dirs, taskRows, tasks);
+  return homeByName(dirs, f.session) || taskHome(task, dirs) || projectDirOf(f, dirs, taskRows);
 }
 // the words of a name: lower case, letters and digits, three signs and more (a lone "b" or "a" is a label, not a word), without the words every design folder has
 const COMMON = new Set(["design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub", "icons8"]);
@@ -1026,29 +1035,42 @@ export function nearestDir(name, dirs = []) {
   }
   return best && !tie ? best.key : "";
 }
-// a name that no direction owns but a task folder does ("ouch-templates" - "Rewarded-ads Ouch, beat 8"): the words of the name against the titles of the task folders;
-// one task folder nearest - its key, a tie or nothing in common - ""
-export function taskNear(name, taskRows = [], tasks = new Set()) {
+// a name that no direction owns but a task does ("ouch-templates" - "Rewarded-ads Ouch, beat 8"): the words of the name against the titles of the tasks;
+// the direction that asked for the nearest tasks - its folder; two directions equally near or nothing in common - ""
+export function taskNear(name, taskRows = [], dirs = []) {
   const w = [...new Set(wordsOf(name))];
-  let best = null, tie = false;
+  const by = new Map();
   for (const t of taskRows || []) {
-    if (!tasks.has(t.id)) continue;
+    const home = taskHome(t, dirs);
+    if (!home) continue;
     const own = [...new Set(wordsOf(t.title))];
     const points = w.reduce((s, x) => s + Math.max(0, ...own.map((o) => near(x, o))), 0);
-    if (!points) continue;
-    if (!best || points > best.points) { best = { id: t.id, points }; tie = false; } else if (points === best.points) tie = true;
+    if (points > (by.get(home) || 0)) by.set(home, points);
   }
-  return best && !tie ? TASK_PREFIX + best.id : "";
+  let best = "", top = 0, tie = false;
+  for (const [home, points] of by) { if (points > top) { best = home; top = points; tie = false; } else if (points === top) tie = true; }
+  return top && !tie ? best : "";
 }
-export function projectDirOf(f, dirs = [], taskRows = [], tasks = new Set()) {
+export function projectDirOf(f, dirs = [], taskRows = []) {
   const project = projectOf(f.path);
-  if (project) { const k = nearestDir(project, dirs) || taskNear(project, taskRows, tasks); if (k) return k; }
+  if (project) { const k = nearestDir(project, dirs) || taskNear(project, taskRows, dirs); if (k) return k; }
   const file = String(f.path || "").split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
-  return nearestDir(f.title, dirs) || nearestDir(file, dirs) || taskNear(f.title, taskRows, tasks) || taskNear(file, taskRows, tasks);
+  return nearestDir(f.title, dirs) || nearestDir(file, dirs) || taskNear(f.title, taskRows, dirs) || taskNear(file, taskRows, dirs);
 }
-export const folderKeyOf = (f, dirs = [], tasks = new Set(), taskRows = []) => (f.task && tasks.has(f.task) ? TASK_PREFIX + f.task : homeOf(f, dirs, taskRows, tasks));
 // the name of a task folder: the title of the task (tasks: [{id, title}]); the same name for the folder on disk
 export const taskTitle = (id, tasks = []) => String(((tasks || []).find((x) => x.id === id) || {}).title || "").trim() || id;
+// the name of a task tile on the dashboard: the title cut where a path or a long tail begins ("Ouch, beat 8: D:/work/..." -> "Ouch, beat 8")
+export const SHORT_MAX = 48;
+const TAIL = /[:\u2014\u2013]\s*(?:[A-Za-z]:[\\/]|[\\/~])|\s[A-Za-z]:[\\/]|\s\/\S/;
+export function shortTitle(title) {
+  let x = String(title || "").replace(/\s+/g, " ").trim();
+  const cut = x.search(TAIL);
+  if (cut > 0) x = x.slice(0, cut).trim();
+  x = x.replace(/[\s,;:.\u2014\u2013-]+$/, "");
+  if (x.length <= SHORT_MAX) return x;
+  const at = x.lastIndexOf(" ", SHORT_MAX);
+  return (at > SHORT_MAX / 2 ? x.slice(0, at) : x.slice(0, SHORT_MAX)).replace(/[\s,;:.\u2014\u2013-]+$/, "") + "\u2026";
+}
 // a short Latin name of a task folder: "Постер к Чёрной пятнице" -> "poster-chernoy-pyatnitse" (the same as slug() of layout.py)
 export const SLUG_MAX = 32, SLUG_WORDS = 4;
 const SLUG_STOP = new Set(["the", "a", "an", "of", "for", "to", "in", "on", "and", "with", "v", "i", "na", "po", "dlya", "s", "k", "iz", "ot", "do", "za", "kak", "eto"]);
@@ -1060,18 +1082,31 @@ export function taskSlug(title) {
   for (const w of parts) { const nxt = out ? out + "-" + w : w; if (nxt.length > SLUG_MAX) break; out = nxt; }
   return out || (parts[0] || "").slice(0, SLUG_MAX);
 }
-// files by folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last.
-// tasks (a Set of ids, taskFolders(all the files)): the designs of those tasks go to the folder of the task, the rest by direction
-export function groupFiles(files = [], dirs = [], tasks = new Set(), taskRows = []) {
+// files by direction folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last.
+// lay: layoutOf() of all the designs; without it the folders of the given files only
+export function groupFiles(files = [], dirs = [], taskRows = [], lay = null) {
+  const top = (lay || layoutOf(files, dirs, taskRows)).top;
   const by = new Map();
   for (const f of files) {
-    const key = folderKeyOf(f, dirs, tasks, taskRows);
+    const key = top.has(f.path) ? top.get(f.path) : homeOf(f, dirs, taskRows);
     if (!by.has(key)) by.set(key, []);
     by.get(key).push(f);
   }
   const last = (rows) => Math.max(0, ...rows.map((f) => Number(f.last || f.ts) || 0));
-  return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, task: taskOfKey(key), last: last(rows) }))
+  return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, last: last(rows) }))
     .sort((a, b) => (a.key === "") - (b.key === "") || b.last - a.last);
+}
+// the subfolders of a task inside one folder: [{key: "task:<id>", files, last}], the newest first; loose - the designs that lie in no subfolder
+export function subGroups(files = [], lay) {
+  const by = new Map(), loose = [];
+  for (const f of files) {
+    const k = lay.sub.get(f.path);
+    if (!k) { loose.push(f); continue; }
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(f);
+  }
+  const last = (rows) => Math.max(0, ...rows.map((f) => Number(f.last || f.ts) || 0));
+  return { subs: [...by.entries()].map(([key, rows]) => ({ key, files: rows, last: last(rows) })).sort((a, b) => b.last - a.last), loose };
 }
 // the cwd of the direction a session is (nothing for the hub, specialists, executors, an unknown name): new designs go into <cwd>/design
 export function saveDirOf(name, sessions = [], directions = []) {

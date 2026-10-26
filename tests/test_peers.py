@@ -348,16 +348,17 @@ class Projects(unittest.TestCase):
         self.assertEqual(win("ani-x"), "")                     # three signs are not a beginning
         self.assertEqual(peers.project_label("/h/design/hub-recap/a.html", "", [("/p/A", "ads")]), "")   # no hub direction: none
 
-    def test_a_folder_no_direction_owns_goes_to_the_task_folder_named_for_it(self):
-        folders = [("d1", "Rewarded-ads Ouch, beat 8, EN"), ("d2", "Pulse landing, round 2")]
+    def test_a_folder_no_direction_owns_goes_to_the_direction_that_asked_for_the_task_named_like_it(self):
+        folders = [("rewarded-ads", "Rewarded-ads Ouch, beat 8, EN"), ("ads-passport", "Pulse landing, round 2")]
         label = lambda path, title="": peers.project_label(path, title, self.dirs, self.names, folders)
-        self.assertEqual(label("/h/design/ouch-templates/a.html"), "Rewarded-ads Ouch, beat 8, EN")
-        self.assertEqual(label("/h/design/ouch-templates/tenner-post-a.html"), "Rewarded-ads Ouch, beat 8, EN")
-        self.assertEqual(label("/h/design/misc/a.html", "Ouch email"), "Rewarded-ads Ouch, beat 8, EN")
+        self.assertEqual(label("/h/design/ouch-templates/a.html"), "rewarded-ads")
+        self.assertEqual(label("/h/design/ouch-templates/tenner-post-a.html"), "rewarded-ads")
+        self.assertEqual(label("/h/design/misc/a.html", "Ouch email"), "rewarded-ads")
         self.assertEqual(label("/h/design/misc/a.html"), "")
-        self.assertEqual(peers.task_near("ouch pulse", folders), "")   # two folders equally near - nothing
-        self.assertEqual(label("/h/design/rewarded-ads/a.html"), "rewarded-ads")   # a direction speaks before a task folder
-        self.assertEqual(peers.project_label("/h/design/ouch-templates/a.html", "", [], None, folders), "Rewarded-ads Ouch, beat 8, EN")
+        self.assertEqual(peers.task_near("ouch pulse", folders), "")   # two directions equally near - nothing
+        self.assertEqual(peers.task_near("ouch", folders + [("rewarded-ads", "Ouch again")]), "rewarded-ads")   # one direction asked for both: its label
+        self.assertEqual(label("/h/design/rewarded-ads/a.html"), "rewarded-ads")   # a direction speaks before a task
+        self.assertEqual(peers.project_label("/h/design/ouch-templates/a.html", "", [], None, folders), "rewarded-ads")
 
     def test_the_title_and_the_file_name_are_the_last_resort(self):
         self.assertEqual(peers.project_label("/home/o/x/a.html", "Black Friday, banner 2", self.dirs, self.names), "black-friday-2026")

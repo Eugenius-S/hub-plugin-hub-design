@@ -207,6 +207,18 @@ class Server(unittest.TestCase):
         r, _ = self.get(q, headers={"Sec-Fetch-Site": "cross-site"})
         self.assertEqual(r.status, 403)
 
+    def test_times_cover_documents_too(self):
+        # pdf and svg have a shot like a page (/__canvas/thumb): without a time a card has no address for it and its preview stays empty
+        doc = os.path.join(os.path.realpath(SITE), "paper.pdf")
+        with open(doc, "wb") as f:
+            f.write(b"%PDF-1.4\n")
+        self.addCleanup(os.remove, doc)
+        from urllib.parse import urlencode
+        r, body = self.get("/__canvas/times?" + urlencode([("path", doc)]), headers={"Origin": "http://localhost:8787"})
+        got = json.loads(body)
+        self.assertEqual(list(got), [doc])
+        self.assertEqual(got[doc], os.path.getmtime(doc))   # its own time, not the newest file of the folder
+
     def test_missing_document_page_speaks_the_hub_language(self):
         gone = os.path.join(os.path.realpath(SITE), "weekly", "nope.html")
         r, body = self.get(self.url(gone) + "&lang=ru" if "?" in self.url(gone) else self.url(gone) + "?lang=ru")
@@ -1155,7 +1167,7 @@ class DesignRegistry(unittest.TestCase):
         self.assertNotIn("title", got["gone.html"])   # a missing file is not read
         self.assertEqual(server.peer_title(os.path.join(d, "h.html")), "Email 1 & Kyoto")   # the other machines get the same name
 
-    def test_the_answer_names_the_tasks_of_the_designs_and_the_other_machines_get_the_title_as_the_folder(self):
+    def test_the_answer_names_the_tasks_of_the_designs_and_the_other_machines_get_the_direction_not_the_task_title(self):
         here, other = os.path.join(os.path.realpath(self.old), "a.html"), os.path.join(os.path.realpath(self.old), "b.html")
         for path in (here, other):
             self.put(path)
@@ -1171,15 +1183,18 @@ class DesignRegistry(unittest.TestCase):
         d = json.loads(body)
         self.assertEqual([t["id"] for t in d["tasks"]], ["d10", "d11"])
         self.assertEqual({os.path.basename(x["path"]): x.get("task") for x in d["items"]}, {"a.html": "d10", "b.html": "d10", "lone.html": "d11"})
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"rewarded": "rewarded-ads"}):
+            rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
+        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": ""})   # the top level of the other machine is the direction; a task title is never a folder there
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Ролик Ouch", "lone.html": ""})   # one design makes no folder
+        self.assertEqual(rows, {"a.html": "", "b.html": "", "lone.html": ""})   # no direction asked: none
         # the lone one was asked for by a direction ("x"): it goes to the folder of that direction, not to "no direction" (hd-sort)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"x": "icons8-smm"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
         self.assertEqual(rows["lone.html"], "icons8-smm")
 
-    def test_a_design_of_a_folder_no_direction_owns_goes_to_the_task_folder_named_for_it_on_the_other_machine_too(self):
+    def test_a_design_of_a_folder_no_direction_owns_goes_to_the_direction_of_the_task_named_for_it_on_the_other_machine_too(self):
         base = os.path.realpath(self.old)
         for n in ("a.html", "b.html"):
             self.put(os.path.join(base, n))
@@ -1193,9 +1208,9 @@ class DesignRegistry(unittest.TestCase):
             f.write("<p>x</p>")
         self.put(loose)
         self.reg.state["tasks"] = {"d10": {"title": "Rewarded-ads Ouch, beat 8", "by": "rewarded", "who": "designer", "ts": 1, "root": "d10"}}
-        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"rewarded": "rewarded-ads"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows["c.html"], "Rewarded-ads Ouch, beat 8")
+        self.assertEqual(rows["c.html"], "rewarded-ads")
 
     def test_no_registry_means_an_empty_not_ready_list(self):
         with unittest.mock.patch.object(server, "REG", None):
