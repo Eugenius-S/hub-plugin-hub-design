@@ -965,16 +965,28 @@ export const TASK_MIN = 2;
 export const TASK_PREFIX = "task:";
 export const isTaskKey = (key) => String(key || "").startsWith(TASK_PREFIX);
 export const taskOfKey = (key) => (isTaskKey(key) ? String(key).slice(TASK_PREFIX.length) : "");
-// the layout of the dashboard over all the designs (a search or a tab does not change it): the top folder of each design is its direction ("" - none);
-// a task makes a subfolder inside it when the direction holds several designs of the task. Nothing else makes a folder of the top level.
+// a design that no direction owns is a tile of the top level named for its own task: "task:<id>" (the task has a title) or "name:<folder, title or file name>"
+export const NAME_PREFIX = "name:";
+export const isNameKey = (key) => String(key || "").startsWith(NAME_PREFIX);
+export const nameOfKey = (key) => (isNameKey(key) ? String(key).slice(NAME_PREFIX.length) : "");
+export function placeKeyOf(f, taskRows = []) {
+  const row = f.task ? (taskRows || []).find((x) => x.id === f.task) : null;
+  if (row && shortTitle(row.title)) return TASK_PREFIX + f.task;
+  const parts = String(f.path || "").split(/[\\/]/).filter(Boolean), file = (parts.pop() || "").replace(/\.[^.]+$/, "");
+  return NAME_PREFIX + (projectOf(f.path) || shortTitle(f.title) || (file === "index" ? parts.pop() : file) || "?");   // index.html is named by its folder
+}
+// the top folder of a design: its direction, else the tile of its own task - "" is never a folder
+export const topKeyOf = (f, dirs = [], taskRows = []) => homeOf(f, dirs, taskRows) || placeKeyOf(f, taskRows);
+// the layout of the dashboard over all the designs (a search or a tab does not change it): the top folder of each design is its direction, else the tile of its own task;
+// a task makes a subfolder inside a direction when the direction holds several designs of the task.
 // returns {top: Map(path -> direction folder), sub: Map(path -> "task:<id>")}
 export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
   const top = new Map(), n = new Map();
   for (const f of files) {
     if (!f) continue;
-    const k = homeOf(f, dirs, taskRows);
+    const k = topKeyOf(f, dirs, taskRows);
     top.set(f.path, k);
-    if (f.task) n.set(k + "|" + f.task, (n.get(k + "|" + f.task) || 0) + 1);
+    if (f.task && !isTaskKey(k) && !isNameKey(k)) n.set(k + "|" + f.task, (n.get(k + "|" + f.task) || 0) + 1);
   }
   const sub = new Map();
   for (const f of files) if (f && f.task && n.get(top.get(f.path) + "|" + f.task) >= min) sub.set(f.path, TASK_PREFIX + f.task);
@@ -1082,19 +1094,19 @@ export function taskSlug(title) {
   for (const w of parts) { const nxt = out ? out + "-" + w : w; if (nxt.length > SLUG_MAX) break; out = nxt; }
   return out || (parts[0] || "").slice(0, SLUG_MAX);
 }
-// files by direction folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first; "" - no direction, always last.
+// files by top folder; a folder holds its files in the order they came in (the caller sorts). Folders: the newest design first.
 // lay: layoutOf() of all the designs; without it the folders of the given files only
 export function groupFiles(files = [], dirs = [], taskRows = [], lay = null) {
   const top = (lay || layoutOf(files, dirs, taskRows)).top;
   const by = new Map();
   for (const f of files) {
-    const key = top.has(f.path) ? top.get(f.path) : homeOf(f, dirs, taskRows);
+    const key = top.has(f.path) ? top.get(f.path) : topKeyOf(f, dirs, taskRows);
     if (!by.has(key)) by.set(key, []);
     by.get(key).push(f);
   }
   const last = (rows) => Math.max(0, ...rows.map((f) => Number(f.last || f.ts) || 0));
   return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, last: last(rows) }))
-    .sort((a, b) => (a.key === "") - (b.key === "") || b.last - a.last);
+    .sort((a, b) => b.last - a.last);
 }
 // the subfolders of a task inside one folder: [{key: "task:<id>", files, last}], the newest first; loose - the designs that lie in no subfolder
 export function subGroups(files = [], lay) {

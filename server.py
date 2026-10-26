@@ -1065,17 +1065,20 @@ def peer_rows():
             folders.append((label, titles[tid]))
 
     def folder(r):   # the file is in a direction's folder; else the direction made it; else the direction asked for the task
-        label = peers.folder_label(os.path.expanduser(r["path"]), dirs) or homes.get(r.get("session"), "")
+        real = os.path.expanduser(r["path"])
+        label = peers.folder_label(real, dirs) or homes.get(r.get("session"), "")
         for name in asked.get(r.get("task"), ()):
             label = label or homes.get(name, "")
-        if not label and (dirs or folders):   # the last rule: the project folder design/<project>/, the title, the file name (peers.project_label, as projectDirOf of lib.js)
-            real = os.path.expanduser(r["path"])
-            try:
-                title = head_of(os.path.realpath(real)) if real.lower().endswith(HTML) else ""
-            except Exception:
-                title = ""
+        if label:
+            return label
+        try:
+            title = head_of(os.path.realpath(real)) if real.lower().endswith(HTML) else ""
+        except Exception:
+            title = ""
+        if dirs or folders:   # the project folder design/<project>/, the title, the file name (peers.project_label, as projectDirOf of lib.js)
             label = peers.project_label(real, title, dirs, names, folders)
-        return label
+        # no direction owns it: the tile of its own task, there is no "no direction" folder (peers.place_label, as placeKeyOf of lib.js)
+        return label or peers.place_label(real, title, titles.get(r.get("task"), ""))
     return [{**r, "dir": folder(r)} for r in rows]
 
 

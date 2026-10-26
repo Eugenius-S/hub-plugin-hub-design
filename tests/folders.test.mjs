@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dashboardFiles, directionDirs, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine } from "../lib.js";
+import { dashboardFiles, directionDirs, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine, topKeyOf, placeKeyOf, isNameKey, nameOfKey } from "../lib.js";
 import { PREVIEWS, folderTitle, newest, shown, view } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -35,7 +35,7 @@ test("a design belongs to the deepest direction folder; elsewhere - no direction
   assert.equal(folderOf("C:\\Work\\Ads\\a.html", directionDirs([{ name: "w", role: "worker", cwd: "C:\\Work\\ads" }])), "C:/Work/ads");
 });
 
-test("groups: newest folder first, 'no direction' last", () => {
+test("groups: newest folder first; a design no direction owns is a tile of its own, not a 'no direction' folder", () => {
   const files = [
     { path: "/h/design/a/index.html", last: 900 },
     { path: "/p/Gen/design/b/index.html", last: 300 },
@@ -43,10 +43,11 @@ test("groups: newest folder first, 'no direction' last", () => {
     { path: "/p/Ads/design/d/index.html", last: 100 },
   ];
   const g = groupFiles(files, dirs);
-  assert.deepEqual(g.map((x) => x.key), ["/p/Ads", "/p/Gen", ""]);
-  assert.equal(g[0].files.length, 2);
-  assert.equal(g[0].dir.label, "Ads");
-  assert.equal(g[2].dir, null);
+  assert.deepEqual(g.map((x) => x.key), ["name:a", "/p/Ads", "/p/Gen"]);   // /h/design/a/ - the folder of its task names it; it is the newest
+  assert.equal(g[1].files.length, 2);
+  assert.equal(g[1].dir.label, "Ads");
+  assert.equal(g[0].dir, null);
+  assert.ok(!g.some((x) => x.key === ""));
 });
 
 test("newest: the last PREVIEWS designs, newest first", () => {
@@ -55,14 +56,16 @@ test("newest: the last PREVIEWS designs, newest first", () => {
   assert.deepEqual(newest(rows).map((f) => f.last), [60, 50, 40, 30]);
 });
 
-test("view: folders only when there are direction folders, no search and no open folder", () => {
+test("view: the tiles of the top level when nothing is searched and no folder is open; a design no direction owns is a tile named for it", () => {
   const rows = [{ path: "/p/Ads/design/a/index.html", last: 1 }, { path: "/h/design/b/index.html", last: 2 }];
-  assert.equal(view(rows, dirs).mode, "folders");
+  const top = view(rows, dirs);
+  assert.equal(top.mode, "folders");
+  assert.deepEqual(top.groups.map((g) => g.key), ["name:b", "/p/Ads"]);
   assert.equal(view(rows, dirs, { q: "a" }).mode, "files");                 // a search looks through everything
-  assert.equal(view(rows, []).mode, "files");                                // no directions - the flat list as before
-  assert.equal(view([rows[1]], dirs).mode, "files");                         // nothing in a direction folder - no folder tiles
+  assert.equal(view(rows, []).mode, "folders");                              // no directions - the tiles of the designs themselves
+  assert.deepEqual(view(rows, [], {}).groups.map((g) => g.key).sort(), ["name:a", "name:b"]);
   assert.deepEqual(view(rows, dirs, { folder: "/p/Ads" }).rows.map((f) => f.path), [rows[0].path]);
-  assert.deepEqual(view(rows, dirs, { folder: "" }).rows.map((f) => f.path), [rows[1].path]);
+  assert.deepEqual(view(rows, dirs, { folder: "name:b" }).rows.map((f) => f.path), [rows[1].path]);   // the tile opens into its cards
 });
 
 test("where a new design goes: the cwd of a direction session, nowhere for the hub, specialists and executors", () => {
@@ -84,11 +87,11 @@ test("the line for the designer: a task folder in design/ of the direction, none
   assert.match(saveLine("", "/u/design"), /^Сохрани в папку задачи: \/u\/design\/<задача>\//);
 });
 
-test("folder title: the direction label, 'No direction' for the rest", () => {
+test("folder title: the direction label, the name of the tile for a design no direction owns", () => {
   assert.equal(folderTitle("/p/Gen", dirs), "gen-y2k");
-  assert.equal(folderTitle("", dirs), "No direction");
+  assert.equal(folderTitle("name:poster-bf-sale", dirs), "poster-bf-sale");
   lang("ru");
-  assert.equal(folderTitle("", dirs), "Без направления");
+  assert.equal(folderTitle("name:poster-bf-sale", dirs), "poster-bf-sale");
 });
 
 // --- tasks: the top level is the directions only; a task is a subfolder inside its direction ---
@@ -138,16 +141,30 @@ test("a task title on a tile is short: the path and the long tail are cut", () =
   assert.equal(folderTitle("task:d1", dirs, [{ id: "d1", title: "Ouch: C:\\work\\x" }]), "Ouch");
 });
 
-test("no direction folders at all: the 'no direction' place opens at once - its tasks are tiles, the rest cards; no tasks - the flat list as before", () => {
-  const files = [{ path: "/x/a/index.html", task: "d10" }, { path: "/x/b/index.html", task: "d10" }, { path: "/x/c/index.html" }];
-  const v = view(files, [], {});
-  assert.equal(v.mode, "files");
-  assert.deepEqual(v.subs.map((x) => x.key), ["task:d10"]);
-  assert.equal(v.rows.length, 1);
-  const flat = view([{ path: "/x/a/index.html" }], [], {});
-  assert.equal(flat.mode, "files");
-  assert.equal(flat.subs.length, 0);
-  assert.equal(flat.rows.length, 1);
+test("there is no 'no direction' folder: a design no direction owns is a top tile named for its task (the title), else its project folder, its title, its file", () => {
+  const rows = [{ id: "d10", title: "Poster of the Black Friday sale: D:/work/x", by: "designer" }, { id: "d11", title: "" }];
+  const f = (path, extra = {}) => ({ path, ...extra });
+  // the task of the design has a title: one tile for every design of the task, the name is the short title
+  const a = f("/x/a/index.html", { task: "d10" }), b = f("/x/b/index.html", { task: "d10" });
+  assert.equal(topKeyOf(a, dirs, rows), "task:d10");
+  assert.equal(folderTitle("task:d10", dirs, rows), "Poster of the Black Friday sale");
+  const v = view([a, b, f("/x/c/index.html", { task: "d11" })], [], { taskRows: rows });
+  assert.equal(v.mode, "folders");
+  assert.deepEqual(v.groups.map((g) => [g.key, g.files.length]).sort(), [["name:c", 1], ["task:d10", 2]]);   // d11 has no title: its folder names it
+  // no task: the folder design/<project>/, then the title, then the file (index.html - its folder)
+  assert.equal(placeKeyOf(f("/h/design/poster-bf-sale/v2/index.html")), "name:poster-bf-sale");
+  assert.equal(placeKeyOf(f("/x/y/z.html", { title: "Email 1: Kyoto, D:/a/b" })), "name:Email 1: Kyoto");
+  assert.equal(placeKeyOf(f("/x/y/z.html")), "name:z");
+  assert.equal(placeKeyOf(f("/x/y/index.html")), "name:y");
+  assert.ok(isNameKey("name:z") && nameOfKey("name:z") === "z" && nameOfKey("task:d1") === "");
+  // the names are short and have no path
+  const long = placeKeyOf(f("/x/z.html", { title: "A very long title that goes on and on for many many words indeed yes" }));
+  assert.ok(nameOfKey(long).length <= 49);
+  // a direction still wins over the name
+  assert.equal(topKeyOf(f("/p/Ads/design/a/index.html", { task: "d10" }), dirs, rows), "/p/Ads");
+  // a task tile never makes a subfolder: all its designs lie in it
+  const lay = layoutOf([a, b, f("/p/Ads/design/q/index.html", { task: "d10" })], dirs, rows);
+  assert.deepEqual([a, b].map((x) => lay.sub.get(x.path) || ""), ["", ""]);
 });
 
 test("the folder of a task on disk: <direction>/design/<latin slug>/, none - <designer>/<slug>/, and the line for the designer", () => {

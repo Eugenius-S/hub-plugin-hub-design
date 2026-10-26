@@ -1185,10 +1185,10 @@ class DesignRegistry(unittest.TestCase):
         self.assertEqual({os.path.basename(x["path"]): x.get("task") for x in d["items"]}, {"a.html": "d10", "b.html": "d10", "lone.html": "d11"})
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"rewarded": "rewarded-ads"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": ""})   # the top level of the other machine is the direction; a task title is never a folder there
+        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": "Один"})   # the top level of the other machine is the direction; a design no direction owns is named for its task (no "no direction" tile)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows, {"a.html": "", "b.html": "", "lone.html": ""})   # no direction asked: none
+        self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Ролик Ouch", "lone.html": "Один"})   # no direction asked: the tile is the name of the task, never empty
         # the lone one was asked for by a direction ("x"): it goes to the folder of that direction, not to "no direction" (hd-sort)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"x": "icons8-smm"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}

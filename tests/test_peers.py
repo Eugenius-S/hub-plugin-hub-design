@@ -377,3 +377,18 @@ class Homes(unittest.TestCase):
                     {"name": "hub", "cwd": "/h", "kind": "hub", "role": "worker"}]
         homes = peers.direction_homes(sessions, set())
         self.assertEqual(homes, {"rewarded-ads": "ads", "ads-two": "ads", "motion": "motion"})   # two directions in one folder - the folder name; the designer and the hub are none
+
+
+class PlaceNames(unittest.TestCase):
+    def test_the_name_of_a_tile_no_direction_owns_is_short_and_has_no_path(self):
+        self.assertEqual(peers.short_title("Poster of the Black Friday sale: D:/work/x"), "Poster of the Black Friday sale")
+        self.assertEqual(peers.short_title("Ouch, beat 8 \u2014 /Users/a/b"), "Ouch, beat 8")
+        self.assertLessEqual(len(peers.short_title("A very long title that goes on and on for many many words indeed yes")), 49)
+        self.assertEqual(peers.short_title(""), "")
+
+    def test_place_label_goes_task_then_project_then_title_then_file_and_index_is_named_by_its_folder(self):
+        self.assertEqual(peers.place_label("/h/design/poster-bf/v2/index.html", "T", "Ролик Ouch: D:/x"), "Ролик Ouch")
+        self.assertEqual(peers.place_label("/h/design/poster-bf/v2/index.html"), "poster-bf")
+        self.assertEqual(peers.place_label("/x/y/z.html", "Email 1: Kyoto, D:/a"), "Email 1: Kyoto")
+        self.assertEqual(peers.place_label("/x/y/z.html"), "z")
+        self.assertEqual(peers.place_label("/x/y/index.html"), "y")

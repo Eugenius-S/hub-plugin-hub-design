@@ -119,7 +119,7 @@ test("a design that never gets a shot is marked with its file type, not left bla
   const doc = [{ path: "/w/a/paper.pdf", session: "designer", ts: 100, last: 200 }];
   const a = build(doc);
   showAll();
-  const shotOf = () => a.log.made.find((e) => e.className === "hdd-shot");
+  const shotOf = () => a.log.made.find((e) => e.className.startsWith("hdd-shot"));   // a tile of the top level or a card: both say what the file is
   assert.equal(shotOf().dataset.ext, "pdf");
   for (let i = 0; i < 4; i++) {   // the first ask and the three retries all fail
     settle(asked(a.log)[0], false);

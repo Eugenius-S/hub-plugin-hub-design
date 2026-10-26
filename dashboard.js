@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, groupFiles, homeOf, isGone, isTaskKey, labelsOf, layoutOf, nameOf, scrollsRight, shortTitle, subGroups, taskOfKey, taskTitle } from "./lib.js";
+import { ago, bannerText, groupFiles, isGone, isNameKey, isTaskKey, labelsOf, layoutOf, nameOf, nameOfKey, scrollsRight, shortTitle, subGroups, taskOfKey, taskTitle, topKeyOf } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 
@@ -134,19 +134,20 @@ export function createNeed(app, cls = "") {
 // the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
 // dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
 export const PREVIEWS = 4;
-export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? shortTitle(taskTitle(taskOfKey(key), tasks)) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
-// what the dashboard shows: "folders" (the tiles of the directions) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
-// The top level is the directions only. A task is a subfolder inside its direction (several designs of it there); no direction folders at all - the "no direction" place opens at once.
+export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? shortTitle(taskTitle(taskOfKey(key), tasks)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+// what the dashboard shows: "folders" (the tiles of the top level) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
+// The top level is the directions and, next to them, a tile named for the own task of each design that no direction owns - there is no "no direction" folder.
+// A task is a subfolder inside its direction (several designs of it there).
 // lay: layoutOf() of all the designs (a search or a tab does not dissolve a folder); folder: the open direction folder (null - the top), sub: the open task ("task:<id>")
 export function view(rows, dirs, { folder = null, sub = null, q = "", taskRows = [], lay = null } = {}) {
   lay = lay || layoutOf(rows, dirs, taskRows);
-  const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : homeOf(f, dirs, taskRows));
+  const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : topKeyOf(f, dirs, taskRows));
   const here = folder === null ? rows : rows.filter((f) => topOf(f) === folder);
   if (sub !== null) return { mode: "files", rows: here.filter((f) => lay.sub.get(f.path) === sub), subs: [] };
   if (String(q || "").trim()) return { mode: "files", rows: here, subs: [] };
   if (folder === null) {
     const groups = groupFiles(rows, dirs, taskRows, lay);
-    if (groups.some((g) => g.key)) return { mode: "folders", groups, subs: [], rows: [] };
+    if (groups.length) return { mode: "folders", groups, subs: [], rows: [] };
   }
   const { subs, loose } = subGroups(here, lay);
   return { mode: "files", rows: loose, subs };
@@ -654,7 +655,7 @@ export function createDashboard(app) {
     const body = el("span", "hdd-fbody");
     body.append(icon, text);
     node.append(shots, body);
-    node.addEventListener("click", () => { if (isTaskKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
+    node.addEventListener("click", () => { if (S.folder !== null && isTaskKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
     tl = { node, cells, name, count };
     tiles.set(key, tl);
     return tl;
@@ -665,7 +666,7 @@ export function createDashboard(app) {
     const taskList = app.tasks ? app.tasks() : [];
     const alive = all.filter((f) => !isGone(app.fileState(f.path)));
     const lay = layoutOf(alive, dirs, taskList);   // counted over all the designs: a search or a tab does not dissolve a folder
-    const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : homeOf(f, dirs, taskList));
+    const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : topKeyOf(f, dirs, taskList));
     // the labels ("Email-1: Kyoto") are numbered over all the designs of the folder too: a search or a tab does not renumber them
     const labels = labelsOf(alive.map((f) => ({ key: f.path, title: f.title, path: f.path, group: topOf(f) + "|" + (lay.sub.get(f.path) || ""), ts: f.ts || f.last })));
     // designs whose files are gone (or that the plugin cannot show) are not listed at all; one open on the canvas gets a message in its frame
@@ -678,11 +679,12 @@ export function createDashboard(app) {
     const inFolder = S.folder !== null || S.sub !== null;
     setHidden(crumb, !inFolder && !inPeer);
     backLabel = S.sub !== null && S.folder !== null ? folderTitle(S.folder, dirs, taskList) : t("crumb_all");
-    if (S.sub !== null) { const full = taskTitle(taskOfKey(S.sub), taskList); setText(cname, folderTitle(S.sub, dirs, taskList)); setTitle(cname, full); }
-    else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, S.folder); }
+    const fullOf = (key) => (isTaskKey(key) ? taskTitle(taskOfKey(key), taskList) : isNameKey(key) ? nameOfKey(key) : key);   // the tooltip: the whole title, not the short name
+    if (S.sub !== null) { setText(cname, folderTitle(S.sub, dirs, taskList)); setTitle(cname, fullOf(S.sub)); }
+    else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, fullOf(S.folder)); }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
-    const named = !inFolder && dirs.length > 0;   // a search across folders tells where each design lies
+    const named = !inFolder;   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
       const fk = topOf(f);
@@ -698,7 +700,7 @@ export function createDashboard(app) {
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);
       setText(tl.name, folderTitle(g.key, dirs, taskList));
-      setTitle(tl.node, isTaskKey(g.key) ? taskTitle(taskOfKey(g.key), taskList) : g.key || t("folder_none"));
+      setTitle(tl.node, fullOf(g.key));
       setText(tl.count, t("folder_count", { n: g.files.length }));
       newest(g.files).forEach((f, i) => {
         const c = thumb(f.path);

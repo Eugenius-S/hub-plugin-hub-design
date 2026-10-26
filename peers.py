@@ -224,6 +224,34 @@ def project_label(path, title, dirs, names=None, folders=None):
     return nearest_dir(title, dirs, names) or nearest_dir(base, dirs, names) or task_near(title, folders) or task_near(base, folders)
 
 
+SHORT_MAX = 48
+_TAIL = re.compile(r"[:\u2014\u2013]\s*(?:[A-Za-z]:[\\/]|[\\/~])|\s[A-Za-z]:[\\/]|\s/\S")
+_END = " \t\n,;:.\u2014\u2013-"
+
+
+def short_title(title):
+    """The name of a task tile (the same rule as shortTitle of lib.js): the title cut where a path or a long tail begins, 48 signs at most."""
+    x = re.sub(r"\s+", " ", str(title or "")).strip()
+    m = _TAIL.search(x)
+    if m and m.start() > 0:
+        x = x[:m.start()].strip()
+    x = x.rstrip(_END)
+    if len(x) <= SHORT_MAX:
+        return x
+    at = x.rfind(" ", 0, SHORT_MAX + 1)
+    return (x[:at] if at > SHORT_MAX / 2 else x[:SHORT_MAX]).rstrip(_END) + "\u2026"
+
+
+def place_label(path, title="", task_title=""):
+    """The tile of a design that no direction owns: it is named for its own task - the short title of the task, else the project folder it was saved in
+    (design/<project>/), else its title, else its file name (the same order as placeKeyOf of lib.js)."""
+    parts = [x for x in _key(path).split("/") if x]
+    base = os.path.splitext(parts.pop() if parts else "")[0]
+    if base == "index":   # index.html is named by its folder
+        base = parts.pop() if parts else ""
+    return (short_title(task_title) or project_of(path) or short_title(title) or base or "?")[:80]
+
+
 def item_id(path):
     return hashlib.sha1(str(path).replace("\\", "/").lower().encode("utf-8")).hexdigest()[:16]
 
