@@ -388,6 +388,10 @@ class PlaceNames(unittest.TestCase):
 
     def test_a_headline_is_a_few_words_not_the_start_of_a_brief(self):
         self.assertEqual(peers.headline_of("Ролик Ouch"), "Ролик Ouch")
+        for service in ("Задача владельца (d95926)", "Задача владельца d95926", "Owner task (d12)", "Задача от hub-dev (d7)", "(d95926)", "d95926"):
+            self.assertEqual(peers.headline_of(service), "", service)   # the id of a task and the service name of a task of the owner are no headline
+        self.assertEqual(peers.headline_of("Ролик Ouch (d95926)"), "Ролик Ouch")
+        self.assertEqual(peers.place_label("/x/a/report.html", "Landing", "Задача владельца (d95926)"), "Landing")
         for brief in ("Role: the hub's designer", "Trial: the same brief went to Claude Design", "Довести PR Hub Design за Windows", "Сейчас у gen-y2k почти 7 мин ждёт\u2026",
                       "Cut\u2026", "Poster D:/work/x", "", "An overly long headline of three words aaaaaaaaaaaa"):
             self.assertEqual(peers.headline_of(brief), "", brief)

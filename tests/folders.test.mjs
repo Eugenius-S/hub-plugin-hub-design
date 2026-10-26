@@ -163,6 +163,10 @@ test("there is no 'no direction' folder: a design no direction owns is a top til
   // a headline is not a brief
   for (const brief of ["Role: the hub's designer", "Довести PR Hub Design за Windows", "Cut\u2026", "Poster D:/work/x", "", "An overly long headline of three words aaaaaaaaaaaa"]) assert.equal(headlineOf(brief), "", brief);
   assert.equal(headlineOf("Ролик Ouch"), "Ролик Ouch");
+  // the id of a task and the service name of a task of the owner are no headline
+  for (const service of ["Задача владельца (d95926)", "Задача владельца d95926", "Owner task (d12)", "Задача от hub-dev (d7)", "(d95926)", "d95926"]) assert.equal(headlineOf(service), "", service);
+  assert.equal(headlineOf("Ролик Ouch (d95926)"), "Ролик Ouch");
+  assert.equal(placeKeyOf({ path: "/x/a/index.html", task: "d9", title: "Landing" }, [{ id: "d9", title: "Задача владельца (d95926)" }]), "name:Landing");
   // the tiles of the dashboard: designs of one name lie in one tile
   const v = view([f("/h/design/poster-bf-sale/a/index.html", { task: "d10" }), f("/h/design/poster-bf-sale/b/index.html", { task: "d10" }), f("/x/c/index.html", { task: "d12", title: "Landing" })], [], { taskRows: rows });
   assert.equal(v.mode, "folders");

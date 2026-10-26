@@ -977,9 +977,12 @@ export const readableSlug = (slug) => {
 // the title of a task is a headline when it reads as a name and not as the start of a brief: a few words, not cut ("..."), no "Role:", no path in it
 export const HEADLINE_WORDS = 4, HEADLINE_MAX = 32;
 const BRIEF = /^(?:role|trial|task|brief|\u0440\u043e\u043b\u044c|\u0437\u0430\u0434\u0430\u0447\u0430)\s*:/i;
+// the id of a task in a title ("(d95926)", "d95926") is no name, nor is the service name the hub gives a task of the owner ("Owner task", "Task from ..."): the headline is what is left of the title
+const TASK_ID = /\s*\([dmq]\d+\)|(?:^|\s)[dmq]\d{3,}(?=\s|$)/gi;
+const SERVICE = /^(?:задача владельца|задача от(?: .*)?|owner(?:'s)? task|task from(?: .*)?)$/i;
 export function headlineOf(title) {
-  const x = String(title || "").replace(/\s+/g, " ").trim();
-  if (!x || x.length > HEADLINE_MAX || /[\u2026]|\.\.\.$/.test(x) || BRIEF.test(x) || shortTitle(x) !== x) return "";
+  const x = String(title || "").replace(TASK_ID, " ").replace(/\s+/g, " ").trim().replace(/[\s,;:.—–-]+$/, "");
+  if (!x || SERVICE.test(x) || x.length > HEADLINE_MAX || /[\u2026]|\.\.\.$/.test(x) || BRIEF.test(x) || shortTitle(x) !== x) return "";
   return x.split(" ").length <= HEADLINE_WORDS ? x : "";
 }
 // the name of a design's own task: the folder of the task (design/<task>/), else the title of the task when it is a headline, else the title of the design, else its file

@@ -252,10 +252,15 @@ HEADLINE_WORDS, HEADLINE_MAX = 4, 32
 _BRIEF = re.compile(r"^(?:role|trial|task|brief|\u0440\u043e\u043b\u044c|\u0437\u0430\u0434\u0430\u0447\u0430)\s*:", re.I)
 
 
+_TASK_ID = re.compile(r"\s*\([dmq]\d+\)|(?:^|\s)[dmq]\d{3,}(?=\s|$)", re.I)
+_SERVICE = re.compile(r"^(?:задача владельца|задача от(?: .*)?|owner(?:'s)? task|task from(?: .*)?)$", re.I)
+
+
 def headline_of(title):
-    """The title of a task when it reads as a name and not as the start of a brief (as headlineOf of lib.js): a few words, not cut, no "Role:", no path."""
-    x = re.sub(r"\s+", " ", str(title or "")).strip()
-    if not x or len(x) > HEADLINE_MAX or "\u2026" in x or x.endswith("...") or _BRIEF.match(x) or short_title(x) != x:
+    """The title of a task when it reads as a name and not as the start of a brief (as headlineOf of lib.js): a few words, not cut, no "Role:", no path;
+    the id of the task ("(d95926)") and the service name of a task of the owner ("Owner task") are no name."""
+    x = re.sub(r"\s+", " ", _TASK_ID.sub(" ", str(title or ""))).strip().rstrip(" \t\n,;:.—–-")
+    if not x or _SERVICE.match(x) or len(x) > HEADLINE_MAX or "\u2026" in x or x.endswith("...") or _BRIEF.match(x) or short_title(x) != x:
         return ""
     return x if len(x.split(" ")) <= HEADLINE_WORDS else ""
 
