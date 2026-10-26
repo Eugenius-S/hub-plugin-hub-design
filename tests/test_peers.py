@@ -386,9 +386,16 @@ class PlaceNames(unittest.TestCase):
         self.assertLessEqual(len(peers.short_title("A very long title that goes on and on for many many words indeed yes")), 49)
         self.assertEqual(peers.short_title(""), "")
 
-    def test_place_label_goes_task_then_project_then_title_then_file_and_index_is_named_by_its_folder(self):
-        self.assertEqual(peers.place_label("/h/design/poster-bf/v2/index.html", "T", "Ролик Ouch: D:/x"), "Ролик Ouch")
-        self.assertEqual(peers.place_label("/h/design/poster-bf/v2/index.html"), "poster-bf")
+    def test_a_headline_is_a_few_words_not_the_start_of_a_brief(self):
+        self.assertEqual(peers.headline_of("Ролик Ouch"), "Ролик Ouch")
+        for brief in ("Role: the hub's designer", "Trial: the same brief went to Claude Design", "Довести PR Hub Design за Windows", "Сейчас у gen-y2k почти 7 мин ждёт\u2026",
+                      "Cut\u2026", "Poster D:/work/x", "", "An overly long headline of three words aaaaaaaaaaaa"):
+            self.assertEqual(peers.headline_of(brief), "", brief)
+
+    def test_place_label_goes_folder_of_the_task_then_headline_then_title_then_file_and_index_is_named_by_its_folder(self):
+        self.assertEqual(peers.place_label("/u/design/poster-bf-sale/v2/index.html", "T", "Ролик Ouch"), "Poster bf sale")   # the folder of the task first, readable
+        self.assertEqual(peers.place_label("/u/x/report.html", "Неделя", "Ролик Ouch"), "Ролик Ouch")
+        self.assertEqual(peers.place_label("/u/x/report.html", "Неделя", "Role: the hub's designer \u2014 read only\u2026"), "Неделя")
         self.assertEqual(peers.place_label("/x/y/z.html", "Email 1: Kyoto, D:/a"), "Email 1: Kyoto")
-        self.assertEqual(peers.place_label("/x/y/z.html"), "z")
-        self.assertEqual(peers.place_label("/x/y/index.html"), "y")
+        self.assertEqual(peers.place_label("/x/y/z.html"), "Z")
+        self.assertEqual(peers.place_label("/x/y/index.html"), "Y")

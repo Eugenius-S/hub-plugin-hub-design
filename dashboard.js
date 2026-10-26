@@ -134,7 +134,7 @@ export function createNeed(app, cls = "") {
 // the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
 // dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
 export const PREVIEWS = 4;
-export const folderTitle = (key, dirs = [], tasks = []) => (isTaskKey(key) ? shortTitle(taskTitle(taskOfKey(key), tasks)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isTaskKey(key) ? (lay && lay.names.get(key)) || shortTitle(taskTitle(taskOfKey(key), tasks)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
 // what the dashboard shows: "folders" (the tiles of the top level) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
 // The top level is the directions and, next to them, a tile named for the own task of each design that no direction owns - there is no "no direction" folder.
 // A task is a subfolder inside its direction (several designs of it there).
@@ -678,17 +678,17 @@ export function createDashboard(app) {
     const v = inPeer ? { mode: "files", rows: [], subs: [] } : view(rows, dirs, { folder: S.folder, sub: S.sub, q: S.q, taskRows: taskList, lay });
     const inFolder = S.folder !== null || S.sub !== null;
     setHidden(crumb, !inFolder && !inPeer);
-    backLabel = S.sub !== null && S.folder !== null ? folderTitle(S.folder, dirs, taskList) : t("crumb_all");
-    const fullOf = (key) => (isTaskKey(key) ? taskTitle(taskOfKey(key), taskList) : isNameKey(key) ? nameOfKey(key) : key);   // the tooltip: the whole title, not the short name
-    if (S.sub !== null) { setText(cname, folderTitle(S.sub, dirs, taskList)); setTitle(cname, fullOf(S.sub)); }
-    else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList)); setTitle(cname, fullOf(S.folder)); }
+    backLabel = S.sub !== null && S.folder !== null ? folderTitle(S.folder, dirs, taskList, lay) : t("crumb_all");
+    const fullOf = (key) => folderTitle(key, dirs, taskList, lay);   // the tooltip is the name too: a path is never shown
+    if (S.sub !== null) { setText(cname, folderTitle(S.sub, dirs, taskList, lay)); setTitle(cname, fullOf(S.sub)); }
+    else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList, lay)); setTitle(cname, fullOf(S.folder)); }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
     const named = !inFolder;   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
       const fk = topOf(f);
-      const where = named ? folderTitle(fk, dirs, taskList) : "";
+      const where = named ? folderTitle(fk, dirs, taskList, lay) : "";
       setText(c.name, labels.get(f.path) || nameOf(f.path));
       setText(c.text, [f.session, named && fk ? where : "", editedText(f)].filter(Boolean).join(" · "));
       return c.node;
@@ -699,7 +699,7 @@ export function createDashboard(app) {
     const live = new Set();
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);
-      setText(tl.name, folderTitle(g.key, dirs, taskList));
+      setText(tl.name, folderTitle(g.key, dirs, taskList, lay));
       setTitle(tl.node, fullOf(g.key));
       setText(tl.count, t("folder_count", { n: g.files.length }));
       newest(g.files).forEach((f, i) => {

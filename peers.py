@@ -242,14 +242,32 @@ def short_title(title):
     return (x[:at] if at > SHORT_MAX / 2 else x[:SHORT_MAX]).rstrip(_END) + "\u2026"
 
 
+def readable_slug(slug):
+    """The folder of a task in a readable form (as readableSlug of lib.js): "poster-bf-sale" -> "Poster bf sale"."""
+    x = re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", str(slug or ""))).strip()
+    return x[:1].upper() + x[1:]
+
+
+HEADLINE_WORDS, HEADLINE_MAX = 4, 32
+_BRIEF = re.compile(r"^(?:role|trial|task|brief|\u0440\u043e\u043b\u044c|\u0437\u0430\u0434\u0430\u0447\u0430)\s*:", re.I)
+
+
+def headline_of(title):
+    """The title of a task when it reads as a name and not as the start of a brief (as headlineOf of lib.js): a few words, not cut, no "Role:", no path."""
+    x = re.sub(r"\s+", " ", str(title or "")).strip()
+    if not x or len(x) > HEADLINE_MAX or "\u2026" in x or x.endswith("...") or _BRIEF.match(x) or short_title(x) != x:
+        return ""
+    return x if len(x.split(" ")) <= HEADLINE_WORDS else ""
+
+
 def place_label(path, title="", task_title=""):
-    """The tile of a design that no direction owns: it is named for its own task - the short title of the task, else the project folder it was saved in
-    (design/<project>/), else its title, else its file name (the same order as placeKeyOf of lib.js)."""
+    """The tile of a design that no direction owns: named for its own task - the folder of the task (design/<task>/) in a readable form, else the title of the task
+    when it is a headline, else the title of the design, else its file name; index.html is named by its folder (the same order as placeNameOf of lib.js)."""
     parts = [x for x in _key(path).split("/") if x]
     base = os.path.splitext(parts.pop() if parts else "")[0]
-    if base == "index":   # index.html is named by its folder
+    if base == "index":
         base = parts.pop() if parts else ""
-    return (short_title(task_title) or project_of(path) or short_title(title) or base or "?")[:80]
+    return (readable_slug(project_of(path)) or headline_of(task_title) or short_title(title) or readable_slug(base) or "?")[:80]
 
 
 def item_id(path):

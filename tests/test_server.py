@@ -1185,10 +1185,23 @@ class DesignRegistry(unittest.TestCase):
         self.assertEqual({os.path.basename(x["path"]): x.get("task") for x in d["items"]}, {"a.html": "d10", "b.html": "d10", "lone.html": "d11"})
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"rewarded": "rewarded-ads"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": "Один"})   # the top level of the other machine is the direction; a design no direction owns is named for its task (no "no direction" tile)
+        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": "V1"})   # the top level of the other machine is the direction; a design no direction owns is named for the folder of its task (no "no direction" tile)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Ролик Ouch", "lone.html": "Один"})   # no direction asked: the tile is the name of the task, never empty
+        self.assertEqual(rows, {"a.html": "V1", "b.html": "V1", "lone.html": "V1"})   # no direction asked: the folder of the task (design/v1/) names the tile, never empty
+        # no folder of a task: the title of the task when it is a headline ("Ролик Ouch"), not when it is the start of a brief
+        loose = os.path.join(TMP, "old-project", "misc")
+        os.makedirs(loose, exist_ok=True)
+        for n, task in (("a.html", "d10"), ("b.html", "d12")):
+            path = os.path.join(os.path.realpath(loose), n)
+            self.put(path)
+            self.reg.items[self.registry.key_of(path)]["task"] = task
+            with open(path, "w") as f:
+                f.write("<title>Лендинг Kolo</title>")
+        self.reg.state["tasks"]["d12"] = {"title": "Role: the hub's designer \u2014 read only\u2026", "by": "x", "who": "designer", "ts": 3, "root": "d12"}
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "file_state", return_value="ok"):
+            rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows() if os.path.realpath(loose) in r["path"]}
+        self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Лендинг Kolo"})
         # the lone one was asked for by a direction ("x"): it goes to the folder of that direction, not to "no direction" (hd-sort)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"x": "icons8-smm"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
