@@ -351,7 +351,7 @@ class Projects(unittest.TestCase):
             self.assertEqual(win(folder), "hub-work", folder)
         self.assertEqual(win("hub"), "")                       # "hub" alone says nothing
         self.assertEqual(win("motion-loader"), "")
-        self.assertEqual(win("style-previews", "Hub Design: style previews"), "hub-work")
+        self.assertEqual(win("style-previews", "Hub Design: style previews"), "")   # the folder is the place: the title does not move it
         self.assertEqual(win("ani-x"), "")                     # three signs are not a beginning
         self.assertEqual(peers.project_label("/h/design/hub-recap/a.html", "", [("/p/A", "ads")]), "")   # no hub direction: none
 
@@ -360,7 +360,8 @@ class Projects(unittest.TestCase):
         label = lambda path, title="": peers.project_label(path, title, self.dirs, self.names, folders)
         self.assertEqual(label("/h/design/ouch-templates/a.html"), "rewarded-ads")
         self.assertEqual(label("/h/design/ouch-templates/tenner-post-a.html"), "rewarded-ads")
-        self.assertEqual(label("/h/design/misc/a.html", "Ouch email"), "rewarded-ads")
+        self.assertEqual(label("/h/design/misc/a.html", "Ouch email"), "")   # a project folder: its place on disk, not the title
+        self.assertEqual(label("/h/x/a.html", "Ouch email"), "rewarded-ads")   # no project folder: the title
         self.assertEqual(label("/h/design/misc/a.html"), "")
         self.assertEqual(peers.task_near("ouch pulse", folders), "")   # two directions equally near - nothing
         self.assertEqual(peers.task_near("ouch", folders + [("rewarded-ads", "Ouch again")]), "rewarded-ads")   # one direction asked for both: its label

@@ -73,13 +73,15 @@
 
 /* the "list" view */
 .hdd-files.list{display:flex;flex-direction:column;gap:4px}
-.hdd-files.list .hdd-card{flex-direction:row;align-items:center;border-radius:var(--radius);border-color:transparent;background:none}
-.hdd-files.list .hdd-card:hover{background:var(--muted);box-shadow:none}
-.hdd-files.list .hdd-shot{display:none}
-.hdd-files.list .hdd-tile{position:static;margin:8px 0 8px 10px;flex:none;box-shadow:none}
-.hdd-files.list .hdd-body{flex:1;flex-direction:row;align-items:center;justify-content:space-between;gap:var(--space-3);padding:8px 14px 8px 12px}
-.hdd-files.list .hdd-name{flex:1}
+.hdd-files.compact:not(.list){display:grid;grid-template-columns:repeat(2,minmax(0,312px));gap:4px 20px;margin-top:20px}
+.hdd-files.list .hdd-card,.hdd-files.compact .hdd-card{flex-direction:row;align-items:center;border-radius:var(--radius);border-color:transparent;background:none}
+.hdd-files.list .hdd-card:hover,.hdd-files.compact .hdd-card:hover{background:var(--muted);box-shadow:none}
+.hdd-files.list .hdd-shot,.hdd-files.compact .hdd-shot{display:none}
+.hdd-files.list .hdd-tile,.hdd-files.compact .hdd-tile{position:static;margin:8px 0 8px 10px;flex:none;box-shadow:none}
+.hdd-files.list .hdd-body,.hdd-files.compact .hdd-body{flex:1;flex-direction:row;align-items:center;justify-content:space-between;gap:var(--space-3);padding:8px 14px 8px 12px}
+.hdd-files.list .hdd-name,.hdd-files.compact .hdd-name{flex:1}
 .hdd-files.list .hdd-meta{flex:none}
+.hdd-files.compact:not(.list) .hdd-meta{display:none}
 .hdd-files.list .hdd-mtext{overflow:visible}
 
 /* a specialist is needed */

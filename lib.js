@@ -965,6 +965,10 @@ export const TASK_MIN = 2;
 export const TASK_PREFIX = "task:";
 export const isTaskKey = (key) => String(key || "").startsWith(TASK_PREFIX);
 export const taskOfKey = (key) => (isTaskKey(key) ? String(key).slice(TASK_PREFIX.length) : "");
+// a subfolder inside a direction is a folder of a project on disk (<home>/design/<project>/): "proj:<project>"
+export const PROJECT_PREFIX = "proj:";
+export const isProjectKey = (key) => String(key || "").startsWith(PROJECT_PREFIX);
+export const projectOfKey = (key) => (isProjectKey(key) ? String(key).slice(PROJECT_PREFIX.length) : "");
 // a design that no direction owns is a tile of the top level named for its own task: "name:<the name>"; the name is short, readable and has no path
 export const NAME_PREFIX = "name:";
 export const isNameKey = (key) => String(key || "").startsWith(NAME_PREFIX);
@@ -996,22 +1000,24 @@ export const placeKeyOf = (f, taskRows = []) => NAME_PREFIX + placeNameOf(f, tas
 // the top folder of a design: its direction, else the tile of its own task - "" is never a folder
 export const topKeyOf = (f, dirs = [], taskRows = []) => homeOf(f, dirs, taskRows) || placeKeyOf(f, taskRows);
 // the layout of the dashboard over all the designs (a search or a tab does not change it): the top folder of each design is its direction, else the tile of its own task;
-// a task makes a subfolder inside a direction when the direction holds several designs of the task.
-// returns {top: Map(path -> direction folder), sub: Map(path -> "task:<id>"), names: Map("task:<id>" -> the name of the subfolder, as placeNameOf)}
+// a folder of a project on disk (<home>/design/<project>/) makes a subfolder inside a direction when the direction holds several designs of it: the place on disk, not the task id
+// (one task makes several folders, one folder holds the designs of several tasks). A design with no project folder lies loose.
+// returns {top: Map(path -> direction folder), sub: Map(path -> "proj:<project>"), names: Map("proj:<project>" -> the name of the subfolder)}
 export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
   const top = new Map(), n = new Map();
   for (const f of files) {
     if (!f) continue;
-    const k = topKeyOf(f, dirs, taskRows);
+    const k = topKeyOf(f, dirs, taskRows), project = projectOf(f.path);
     top.set(f.path, k);
-    if (f.task && !isNameKey(k)) n.set(k + "|" + f.task, (n.get(k + "|" + f.task) || 0) + 1);
+    if (project && !isNameKey(k)) n.set(k + "|" + project, (n.get(k + "|" + project) || 0) + 1);
   }
   const sub = new Map();
   const names = new Map();
   for (const f of files) {
-    if (!f || !f.task || !(n.get(top.get(f.path) + "|" + f.task) >= min)) continue;
-    sub.set(f.path, TASK_PREFIX + f.task);
-    if (!names.has(TASK_PREFIX + f.task)) names.set(TASK_PREFIX + f.task, placeNameOf(f, taskRows));
+    const project = f && projectOf(f.path);
+    if (!project || !(n.get(top.get(f.path) + "|" + project) >= min)) continue;
+    sub.set(f.path, PROJECT_PREFIX + project);
+    if (!names.has(PROJECT_PREFIX + project)) names.set(PROJECT_PREFIX + project, readableSlug(project));
   }
   return { top, sub, names };
 }
@@ -1087,8 +1093,9 @@ export function taskNear(name, taskRows = [], dirs = []) {
   return top && !tie ? best : "";
 }
 export function projectDirOf(f, dirs = [], taskRows = []) {
+  // a design lying in a project folder is judged by the name of that folder only: the words of its title are no place on disk
   const project = projectOf(f.path);
-  if (project) { const k = nearestDir(project, dirs) || taskNear(project, taskRows, dirs); if (k) return k; }
+  if (project) return nearestDir(project, dirs) || taskNear(project, taskRows, dirs);
   const file = String(f.path || "").split(/[\\/]/).pop().replace(/\.[^.]+$/, "");
   return nearestDir(f.title, dirs) || nearestDir(file, dirs) || taskNear(f.title, taskRows, dirs) || taskNear(file, taskRows, dirs);
 }
@@ -1131,7 +1138,7 @@ export function groupFiles(files = [], dirs = [], taskRows = [], lay = null) {
   return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, last: last(rows) }))
     .sort((a, b) => b.last - a.last);
 }
-// the subfolders of a task inside one folder: [{key: "task:<id>", files, last}], the newest first; loose - the designs that lie in no subfolder
+// the subfolders of projects inside one folder: [{key: "proj:<project>", files, last}], the newest first; loose - the designs that lie in no subfolder
 export function subGroups(files = [], lay) {
   const by = new Map(), loose = [];
   for (const f of files) {
@@ -1152,10 +1159,17 @@ export function saveDirOf(name, sessions = [], directions = []) {
 const sepOf = (p) => (/\\/.test(p) && !p.includes("/") ? "\\" : "/");
 // the folder of a task on disk: <the direction that asked>/design/<slug>/; no direction - <the designer's folder>/<slug>/
 export function taskDir(cwd, title, home = "") {
+  return slugDir(cwd, taskSlug(title) || "task", home);
+}
+// the folder of a project: <the direction>/design/<project>/; no direction - <the designer's folder>/<project>/
+export function projectDir(cwd, project, home = "") {
+  return project ? slugDir(cwd, project, home) : "";
+}
+function slugDir(cwd, name, home) {
   const root = cwd || home;
   if (!root) return "";
   const sep = sepOf(root);
-  return String(root).replace(/[\\/]+$/, "") + sep + (cwd ? "design" + sep : "") + (taskSlug(title) || "task") + sep;
+  return String(root).replace(/[\\/]+$/, "") + sep + (cwd ? "design" + sep : "") + name + sep;
 }
 // the task folder of a design: <task>/<design>/index.html -> <task>/; a loose <task>/x.html -> <task>/
 export function placeOf(path) {

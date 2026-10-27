@@ -215,12 +215,12 @@ def task_near(name, folders):
 
 
 def project_label(path, title, dirs, names=None, folders=None):
-    """The direction of a design that lies in no direction folder and was made by none: the project folder it was saved in (design/<project>/), else its
-    title, else its file name; no direction owns the name - the direction of the task that does (folders: [(direction label, task title)])."""
+    """The direction of a design that lies in no direction folder and was made by none: the project folder it was saved in (design/<project>/) - by that name
+    only, the words of the title are no place on disk; a design in no project folder - by its title, else its file name; no direction owns the name -
+    the direction of the task that does (folders: [(direction label, task title)])."""
     project = project_of(path)
-    label = (nearest_dir(project, dirs, names) or task_near(project, folders)) if project else ""
-    if label:
-        return label
+    if project:
+        return nearest_dir(project, dirs, names) or task_near(project, folders)
     base = os.path.splitext(os.path.basename(_key(path)))[0]
     return nearest_dir(title, dirs, names) or nearest_dir(base, dirs, names) or task_near(title, folders) or task_near(base, folders)
 

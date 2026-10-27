@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, groupFiles, isGone, isNameKey, isTaskKey, labelsOf, layoutOf, nameOf, nameOfKey, scrollsRight, shortTitle, subGroups, taskOfKey, taskTitle, topKeyOf } from "./lib.js";
+import { ago, bannerText, groupFiles, isGone, isNameKey, isProjectKey, labelsOf, layoutOf, nameOf, nameOfKey, projectOfKey, readableSlug, scrollsRight, subGroups, topKeyOf } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 
@@ -134,11 +134,11 @@ export function createNeed(app, cls = "") {
 // the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
 // dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
 export const PREVIEWS = 4;
-export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isTaskKey(key) ? (lay && lay.names.get(key)) || shortTitle(taskTitle(taskOfKey(key), tasks)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isProjectKey(key) ? (lay && lay.names.get(key)) || readableSlug(projectOfKey(key)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
 // what the dashboard shows: "folders" (the tiles of the top level) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
 // The top level is the directions and, next to them, a tile named for the own task of each design that no direction owns - there is no "no direction" folder.
-// A task is a subfolder inside its direction (several designs of it there).
-// lay: layoutOf() of all the designs (a search or a tab does not dissolve a folder); folder: the open direction folder (null - the top), sub: the open task ("task:<id>")
+// A project folder on disk is a subfolder inside its direction (several designs of it there); a design with no project folder lies loose.
+// lay: layoutOf() of all the designs (a search or a tab does not dissolve a folder); folder: the open direction folder (null - the top), sub: the open project folder ("proj:<project>")
 export function view(rows, dirs, { folder = null, sub = null, q = "", taskRows = [], lay = null } = {}) {
   lay = lay || layoutOf(rows, dirs, taskRows);
   const topOf = (f) => (lay.top.has(f.path) ? lay.top.get(f.path) : topKeyOf(f, dirs, taskRows));
@@ -655,7 +655,7 @@ export function createDashboard(app) {
     const body = el("span", "hdd-fbody");
     body.append(icon, text);
     node.append(shots, body);
-    node.addEventListener("click", () => { if (S.folder !== null && isTaskKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
+    node.addEventListener("click", () => { if (S.folder !== null && isProjectKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
     tl = { node, cells, name, count };
     tiles.set(key, tl);
     return tl;
@@ -720,6 +720,7 @@ export function createDashboard(app) {
     }
     setHidden(folders, !tnodes.length);
     setHidden(files, inPeer || v.mode !== "files");
+    files.classList.toggle("compact", v.mode === "files" && v.subs.length > 0);   // designs lying in no folder, next to the folders: a line each (icon and name), two columns
     const peerCount = paintPeers();
     setHidden(empty, nodes.length > 0 || tnodes.length > 0 || peerCount > 0);
     // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"

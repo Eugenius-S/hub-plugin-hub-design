@@ -5,7 +5,7 @@
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCanvasFile, isCopy, fileUrl, nameOf,
   goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
-  describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
+  describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isProjectKey, projectOfKey, projectDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll, handoffHome } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
@@ -386,14 +386,13 @@ function saveFolder() {
   const snap = hub.snapshot() || {};
   return saveDirOf(P.origin, snap.sessions, snap.directions);
 }
-// a task folder is open on the dashboard: the designs of the task go into its own folder next to the others of the direction that asked
+// a project folder is open on the dashboard: new designs go into that folder, next to the others of the direction it lies in
 function taskSaveLine() {
   const st = ui ? ui.dash.state : null;
   const f = st && st.sub;
-  if (!isTaskKey(f)) return "";
-  const id = taskOfKey(f), snap = hub.snapshot() || {}, task = P.tasks.find((x) => x.id === id) || {};
-  const cwd = saveDirOf(task.by, snap.sessions, snap.directions) || saveDirOf(task.dir, snap.sessions, snap.directions) || saveDirOf(P.origin, snap.sessions, snap.directions);
-  return taskLine(taskDir(cwd, taskTitle(id, P.tasks), designerHome()));
+  if (!isProjectKey(f)) return "";
+  const cwd = st.folder !== null ? (dirsNow().find((d) => d.key === st.folder) || {}).cwd || "" : "";
+  return taskLine(projectDir(cwd, projectOfKey(f), designerHome()));
 }
 // the working folder of the designer: a design without a direction goes into <it>/<task>/
 function designerHome() {
