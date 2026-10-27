@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FROM_TTL, waitFresh, handoffHome, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, editsTo, homeOf, directionDirs, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
+import { FROM_TTL, waitFresh, handoffHome, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, isCanvasFile, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, editsTo, homeOf, directionDirs, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -353,6 +353,13 @@ test("dashboard: a design only from the canvas - the author and the file's edit 
   assert.equal(rows[0].session, "designer");
   assert.equal(rows[0].last, 1000);
   assert.equal(dashboardFiles([], [{ path: "/u/k.html" }], ["/u"])[0].session, "");
+});
+
+test("dashboard: only html, pdf and svg are designs - a text file never gets a card, from any source", () => {
+  assert.deepEqual(["a.html", "a.HTM", "b.pdf", "c.svg", "d.md", "e.txt", "f.pptx", "", null].map(isCanvasFile), [true, true, true, true, false, false, false, false, false]);
+  const authors = [{ path: "/u/a/ideas.md", session: "designer", ts: 5, last: 5 }, { path: "/u/a/ok.svg", session: "designer", ts: 6, last: 6 }];
+  const rows = dashboardFiles(authors, [{ path: "/u/a/opened.md" }, { path: "/u/a/shown.pdf" }], ["/u"], { registry: [{ path: "/u/a/sent.md", session: "designer", rank: 1 }] });
+  assert.deepEqual(rows.map((r) => r.path).sort(), ["/u/a/ok.svg", "/u/a/shown.pdf"]);
 });
 
 test("the first frame is at least 24 px below the toolbar, the title above it too", () => {

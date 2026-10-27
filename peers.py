@@ -31,6 +31,7 @@ SHOTS_PER_PASS = 12       # Chrome runs per pass: the first pass over a big regi
 EVERY = 60                # s between passes
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 SHOT_NAME = re.compile(r"^[0-9a-f]{16}\.jpg$")
+DESIGN_TYPES = (".html", ".htm", ".pdf", ".svg")   # what is a design (registry.KINDS): a peer on an older version may still list a text file
 PEER_MAX = 2000           # items read from one peer
 OS_OF = {"darwin": "mac", "win32": "windows", "cygwin": "windows"}
 
@@ -394,7 +395,7 @@ def peers(root, me=None):
             continue
         items = []
         for it in doc["items"][:PEER_MAX]:
-            if not isinstance(it, dict) or not isinstance(it.get("id"), str):
+            if not isinstance(it, dict) or not isinstance(it.get("id"), str) or (it.get("file") and not str(it["file"]).lower().endswith(DESIGN_TYPES)):
                 continue
             shot = it.get("shot") if isinstance(it.get("shot"), str) and SHOT_NAME.match(it.get("shot") or "") else ""
             if shot and not os.path.isfile(os.path.join(root, name, SHOTS, shot)):

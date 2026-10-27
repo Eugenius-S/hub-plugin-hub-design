@@ -921,13 +921,13 @@ export function dashboardFiles(authors, frames, cwds, { who = () => "", time = (
     seen.set(k, a);
     out.push(a);
   };
-  for (const a of authors || []) if (nativePath(a.path, cwds)) add({ ...a });
+  for (const a of authors || []) if (isCanvasFile(a.path) && nativePath(a.path, cwds)) add({ ...a });
   for (const r of registry || []) {
-    if (!r || !r.path || !nativePath(r.path, cwds) || skip(r.session)) continue;
+    if (!r || !r.path || !isCanvasFile(r.path) || !nativePath(r.path, cwds) || skip(r.session)) continue;
     add({ path: r.path, session: r.session || "", ts: Number(r.ts) || 0, last: Number(r.last || r.ts) || 0, rank: r.rank || 0, wrote: r.rank === 2, sent: r.rank === 1, ...(r.task ? { task: String(r.task) } : {}), ...(r.title ? { title: String(r.title) } : {}) });
   }
   for (const path of (frames || []).map((f) => (typeof f === "string" ? f : f.path))) {
-    if (seen.has(pathKey(path))) continue;
+    if (!isCanvasFile(path) || seen.has(pathKey(path))) continue;
     const t = Number(time(path)) || 0;   // open only on the canvas: the author is who wrote the file (if known), the time is the file edit on disk
     add({ path, session: who(path) || "", ts: t, last: t, wrote: false });
   }
@@ -1330,6 +1330,8 @@ export const CARD_MAX = 4;   // cards in one reply; the other paths stay links
 // The one list of file types a card offers: .html/.htm, .pdf, .svg, .pptx - the same as the core modules/telegram/design_posts.py TYPES
 export const cardKind = (path) => (/\.html?$/i.test(path || "") ? "design" : /\.pdf$/i.test(path || "") ? "pdf" : /\.svg$/i.test(path || "") ? "svg"
   : /\.pptx$/i.test(path || "") ? "pptx" : null);
+// what the canvas and the dashboard show: html, pdf, svg - never a text file (an .md the owner once opened or a session once named stays out of every list, even from older saved data)
+export const isCanvasFile = (path) => /\.(?:html?|pdf|svg)$/i.test(String(path || ""));
 export const isDocument = (path) => ["pdf", "svg"].includes(cardKind(path));
 export const isAbsPath = (p) => /^(~[\\/]|\/|[A-Za-z]:[\\/])/.test(p || "");
 

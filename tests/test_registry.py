@@ -107,6 +107,13 @@ class Registry(unittest.TestCase):
                                                     {"path": p("d", "a", "ok.html"), "session": "designer", "ts": 1, "last": 1, "rank": 1}]}, f)
         self.assertEqual(sorted(self.paths(self.reg())), ["ok.html"])
 
+    def test_a_saved_registry_never_gives_a_text_file_back(self):
+        os.makedirs(os.path.join(self.tmp, "hub-design"), exist_ok=True)
+        with open(os.path.join(self.tmp, "hub-design", "registry.json"), "w", encoding="utf-8") as f:
+            json.dump({"v": 1, "seq": 99, "items": [{"path": p("d", "a", "ideas.md"), "session": "designer", "ts": 1, "last": 1, "rank": 1},
+                                                    {"path": p("d", "a", "ok.svg"), "session": "designer", "ts": 1, "last": 1, "rank": 1}]}, f)
+        self.assertEqual(sorted(self.paths(self.reg())), ["ok.svg"])
+
     def test_one_file_written_as_c_slash_and_c_backslash_is_one_design(self):
         if not WIN:
             self.skipTest("drive paths are native on Windows only")

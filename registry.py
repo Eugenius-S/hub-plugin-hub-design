@@ -424,7 +424,7 @@ class Registry:
             with open(self.path, encoding="utf-8") as f:
                 saved = json.load(f)
             self.items = {key_of(v["path"]): v for v in saved.get("items", [])
-                          if isinstance(v, dict) and v.get("path") and not COPY.search(key_of(v["path"])) and not str(v["path"]).startswith("//")}
+                          if isinstance(v, dict) and v.get("path") and str(v["path"]).lower().endswith(KINDS) and not COPY.search(key_of(v["path"])) and not str(v["path"]).startswith("//")}
             if saved.get("v") == VERSION:
                 self.seq = int(saved.get("seq") or 0)
                 self.state = {"tasks": {k: v for k, v in (saved.get("tasks") or {}).items() if isinstance(v, dict)},

@@ -194,6 +194,13 @@ class Read(unittest.TestCase):
             with open(os.path.join(d, peers.SHOTS, s), "wb") as f:
                 f.write(JPEG)
 
+    def test_a_text_file_is_no_design_whatever_the_other_machine_exported(self):
+        self.put("pc-two", [{"id": "0123456789abcdef", "name": "Ideas", "file": "ideas.md", "last": 9},
+                            {"id": "fedcba9876543210", "name": "Deck", "file": "deck.PDF", "last": 5},
+                            {"id": "1111111111111111", "name": "Plan", "file": "plan.txt", "last": 4}])
+        out = peers.peers(self.root, me="mac-one")
+        self.assertEqual([it["name"] for it in out[0]["items"]], ["Deck"])
+
     def test_the_others_are_read_newest_first_and_this_machine_is_skipped(self):
         sid = "0123456789abcdef.jpg"
         self.put("pc-two", [{"id": "0123456789abcdef", "name": "Old", "file": "old.html", "last": 5, "shot": sid},

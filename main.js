@@ -3,7 +3,7 @@
 // shapes — mark a place, a note — a sticker on the canvas. Manual edits go by themselves 8 s after the last one — to whoever is chosen at
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
-import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCopy, fileUrl, nameOf,
+import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCanvasFile, isCopy, fileUrl, nameOf,
   goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
@@ -291,7 +291,7 @@ function save() {
 function loadKnown() {
   let k = null;
   try { k = JSON.parse(getKey("known") || "null"); } catch { k = null; }
-  P.known = Array.isArray(k && k.list) ? k.list.filter((a) => a && a.path && a.session && !isCopy(a.path)) : [];   // a core copy saved before 0.26.2 is not a design
+  P.known = Array.isArray(k && k.list) ? k.list.filter((a) => a && a.path && a.session && isCanvasFile(a.path) && !isCopy(a.path)) : [];   // a core copy saved before 0.26.2 is not a design
   P.histSeq = (k && k.seq) || {};
   P.histAt = (k && k.at) || 0;
 }
@@ -303,16 +303,17 @@ function load() {
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
-  P.frames = (b.frames || []).filter((f) => f && f.path && !isCopy(f.path)).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // before 0.4.1 the frame stretched to the document height
+  P.frames = (b.frames || []).filter((f) => f && f.path && isCanvasFile(f.path) && !isCopy(f.path)).map((f) => (f.auto && !f.fixed ? { ...f, h: windowHeight(f.w) } : f));   // before 0.4.1 the frame stretched to the document height
   P.picked = b.picked || {};
-  P.found = b.found || {};
-  P.opened = Object.fromEntries(Object.entries(b.opened || {}).filter(([p]) => !isCopy(p)));   // designs ever opened on the canvas: a frame leaves the canvas, the dashboard keeps the design
-  P.pins = b.pins || [];
-  P.changes = b.changes || [];
-  P.drawings = b.drawings || [];
-  P.notes = b.notes || [];
-  P.tweaks = b.tweaks || [];
-  P.errs = b.errs || [];
+  P.found = Object.fromEntries(Object.entries(b.found || {}).filter(([p]) => isCanvasFile(p)));
+  P.opened = Object.fromEntries(Object.entries(b.opened || {}).filter(([p]) => isCanvasFile(p) && !isCopy(p)));   // designs ever opened on the canvas: a frame leaves the canvas, the dashboard keeps the design
+  const ours = (list) => (list || []).filter((x) => !x || !x.file || isCanvasFile(x.file));   // what hangs on a text file that is no longer shown goes with it
+  P.pins = ours(b.pins);
+  P.changes = ours(b.changes);
+  P.drawings = ours(b.drawings);
+  P.notes = ours(b.notes);
+  P.tweaks = ours(b.tweaks);
+  P.errs = ours(b.errs);
   P.writers = b.writers || {};
   P.round = b.round || 1;
   try { P.asked = JSON.parse(localStorage.getItem(STORE + "asked") || "{}") || {}; } catch { P.asked = {}; }
@@ -586,7 +587,7 @@ const homeGuess = () => {
 // "+" on the canvas adds one beside
 function addFrame(path, focus, only = false) {
   path = String(path).trim().replace(/^~(?=\/)/, homeGuess());
-  if (!path) return;
+  if (!path || !isCanvasFile(path)) return;   // html, pdf, svg: a text file is no design
   if (only) for (const o of P.frames.filter((q) => q.path !== path)) removeFrame(o.path, true);
   let f = P.frames.find((q) => q.path === path);
   if (!f) {
