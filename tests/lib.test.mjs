@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FROM_TTL, waitFresh, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, editsTo, homeOf, directionDirs, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
+import { FROM_TTL, waitFresh, handoffHome, CANVAS_MAX, CANVAS_MIN, PROPS, SWATCHES, ZOOMS, canvasPort, fitView, FRAME_TOP, LABEL_H, LABEL_GAP, TOOLBAR_BOTTOM, nameOf, nativePath, pathKey, dashboardFiles, whoOf, windowHeight, wroteAt, recipientOf, editsTo, homeOf, directionDirs, searchOrder, frameTitle, nextSpot, toolMode, zoomAt, chatLines, cssValue, describeChange, describeDrawing, draftCount, fileUrl, htmlPaths, message, recentHtml, htmlAuthored, ago, createCancels, dueSessions, exitTarget, goneText, isGone, mergeTimeline, slimItems, timelineQuery, isCopy, mergeAuthors, ASK_TTL, NEEDED, bannerText, hubName, installText, lacking, scrollsRight, normTweaks, tweakValue, tweakApply, describeTweak, tweakBase, selectedLine, normErrors, describeErrors, ERR_MAX, ERR_CUT, parseGridCols, gridCols, gridForm, normGrid, normGrids, gridRects, describeGrids, newGrid, GRIDS_MAX, anchorNote, AUTO_MS, autoSig, createAuto, isColor, ownColor, withProbe, BUILTINS, builtinShow, builtinValue, isBuiltin } from "../lib.js";
 import { PRESETS } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -861,6 +861,22 @@ test("waitFresh: a wait for a session's design (handoff) is good for FROM_TTL se
   assert.equal(waitFresh(w, 1000 + FROM_TTL - 1), w);
   assert.equal(waitFresh(w, 1000 + FROM_TTL + 1), null);   // a stale wait must not pull the first new design of that session onto the canvas
   assert.ok(FROM_TTL <= 300);
+});
+
+test("handoffHome: the palette button with an empty or blank input opens the dashboard, with text - the chat", () => {
+  assert.equal(handoffHome({ session: "s", text: "" }), true);
+  assert.equal(handoffHome({ session: "s", text: " \n\t" }), true);
+  assert.equal(handoffHome({ session: "s" }), true);
+  assert.equal(handoffHome({ session: "s", text: "make the header bigger" }), false);
+});
+
+test("applyHandoff sends an empty handoff to the dashboard and does not wait for a design of the session", () => {
+  const src = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("function applyHandoff()"), src.indexOf("function openFromSession()"));
+  const at = body.indexOf("handoffHome(h)");
+  assert.ok(at > 0, "applyHandoff must check handoffHome");
+  assert.ok(body.indexOf("goHome()", at) > at, "the empty handoff goes home");
+  assert.ok(body.indexOf("goHome()", at) < body.indexOf("openFromSession()"), "before the session's design is opened");
 });
 
 // the core copy of a file sent to the owner (<state>/attachments/<id>/<name>): no assets beside it, outside the folders of the hub - not a design;

@@ -7,7 +7,7 @@ import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPo
   goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
   describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isTaskKey, taskOfKey, taskTitle, taskDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
-import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll } from "./lib.js";
+import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll, handoffHome } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
 import { mountCards } from "./card.js";
 import { createDashboard, createNeed, isStub, keyed, stubText } from "./dashboard.js";
@@ -249,6 +249,12 @@ function applyHandoff() {
   P.origin = h.session;
   P.originNew = true;
   adoptOrigin();
+  if (handoffHome(h)) {   // nothing typed in the chat: the dashboard (in the folder of this session's direction), not the canvas of an old design
+    P.openFrom = null;
+    P.note = "";
+    save();
+    return goHome();
+  }
   P.openFrom = { session: h.session, ts: Date.now() / 1000 };   // open this session's last design on the canvas if it has one (while it is not in the list — wait for the feeds)
   const ta = ui.input.node.querySelector("textarea");
   if (ta && h.text) {

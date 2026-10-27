@@ -3,7 +3,7 @@
   "icon": "icon.png",
   "description": "A design canvas inside the hub. Point at an element or an area and comment: the designer gets precise edits. Hand edits, tweaks, PDF export, and a start screen with every design you ever made.",
   "why": "Pointing a finger at a design is faster than describing in words where and what to fix",
-  "version": "0.38.8",
+  "version": "0.38.9",
   "hub": "^1.7",
   "web": "main.js",
   "run": [

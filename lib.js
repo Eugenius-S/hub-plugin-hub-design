@@ -1364,3 +1364,6 @@ export const cardText = (lang) => CARD_STR[String(lang || "").slice(0, 2)] || CA
 // a wait for the design of a session (after a handoff from its chat): fresh for FROM_TTL seconds; a stale or empty one - null
 export const FROM_TTL = 180;
 export const waitFresh = (w, now) => (w && now - w.ts <= FROM_TTL ? w : null);
+
+// a handoff from a session chat with an empty input opens the dashboard; with text - the chat with the specialist (and the session's last design)
+export const handoffHome = (h) => !String((h && h.text) || "").trim();
