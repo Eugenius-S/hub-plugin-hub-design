@@ -42,6 +42,7 @@ const STR = {
     add_html: "Add an HTML file to the canvas",
     placeholder: "Describe what to change…",
     who_title: "Send the edits to",
+    select_down: "The design service does not answer",
     exit: "Exit Hub Design", exit_title: "Exit Hub Design: back to the chat with {name}",
     q_failed: "Could not remove",
     q_removed: "Removed from the queue",
@@ -101,6 +102,7 @@ const STR = {
     add_html: "Добавить HTML на холст",
     placeholder: "Опишите, что нужно изменить…",
     who_title: "Кому отправлять правки",
+    select_down: "Сервис макетов не отвечает",
     exit: "Выйти из Hub Design", exit_title: "Выйти из Hub Design в чат: {name}",
     q_failed: "Не удалось убрать",
     q_removed: "Убрано из очереди",
@@ -531,6 +533,40 @@ async function loadRegistry(force = false) {
   // the edit time is the address of a card's shot: the files the registry vouched for have not been through verify()
   loadTimes(r.items.map((it) => abs(it.path)).filter((p) => P.have[p] === "ok" && !P.times[p]));
 }
+// what the owner does with the designs he ticked on the start screen (organize.py of the plugin process): move, delete into the plugin's trash, undo.
+// Every answer is followed by a fresh look at the registry; a deleted design that is open on the canvas leaves it
+async function selectCall(name, body) {
+  let res = null;
+  try {
+    const r = await fetch(origin() + "/__canvas/select/" + name, { method: name === "targets" ? "GET" : "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", ...(name === "targets" ? {} : { body: JSON.stringify(body) }) });
+    res = { status: r.status, ...(await r.json().catch(() => ({}))) };
+  } catch { res = { status: 0 }; }
+  if (res.status !== 200) throw new Error(res.error || tr("select_down"));
+  return res;
+}
+const organize = {
+  busy: (path) => authorBusy(abs(path)),
+  targets: async () => (await selectCall("targets")).targets || [],
+  async move(paths, dest) {
+    const res = await selectCall("move", { paths: paths.map(abs), dest });
+    await loadRegistry(true);
+    return res;
+  },
+  async remove(paths) {
+    const res = await selectCall("delete", { paths: paths.map(abs) });
+    for (const d of res.deleted || []) {
+      const from = abs(d.from).replace(/\\/g, "/");
+      for (const f of P.frames.filter((x) => { const p = x.path.replace(/\\/g, "/"); return p === from || p.startsWith(from + "/"); })) removeFrame(f.path);
+    }
+    await loadRegistry(true);
+    return res;
+  },
+  async undo(id) {
+    const res = await selectCall("undo", { id });
+    await loadRegistry(true);
+    return res;
+  },
+};
 // the designs of the other machines of the owner (peers.py of the plugin process): pictures and names, refreshed at most once a minute
 async function loadPeers(force = false) {
   if (P.alive !== true || !local()) return;
@@ -1356,7 +1392,7 @@ function build(root) {
     thumb: (path) => { const m = P.times[abs(path)]; return m ? `${origin()}/__canvas/thumb?path=${encodeURIComponent(abs(path))}&m=${m}` : ""; },
     hub, alive: () => P.alive === true, fileUrl: (path) => app.fileUrl(abs(path), { raw: true }), dirs: dirsNow, tasks: () => P.tasks, files: () => dashboardFiles(P.authors, [...P.frames.map((f) => f.path), ...Object.keys(P.opened)], (hub.snapshot()?.sessions || []).map((x) => x.cwd), { registry: P.registry, skip: (n) => P.hubs.has(n), who: (path) => recipient(path).session, time: (path) => P.times[abs(path)] || 0 }),
     fileState, mine: () => new Set(P.frames.map((f) => f.path)), open: (path) => openChecked(path, true, true), openPath: (path) => openChecked(path, true, true),
-    preset: (p) => startPreset(p), lacking: lackNow, install, peers: () => P.peers, peerShot,
+    preset: (p) => startPreset(p), lacking: lackNow, install, peers: () => P.peers, peerShot, organize: local() ? organize : null,
   });
   const exitB = button("hd-exit", tr("exit"), tr("exit_title", { name: P.session }), () => app.exit());
   right.append(cv.node, props, dash.node, st.node, exitB);

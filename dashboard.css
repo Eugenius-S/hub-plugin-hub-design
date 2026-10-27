@@ -139,3 +139,60 @@
 .hdd-lb-name{margin-top:12px;font-weight:500;font-size:var(--text-base)}
 .hdd-lb-meta,.hdd-lb-note{margin-top:4px;color:var(--muted-foreground);font-size:var(--text-sm)}
 .hdd-lb-close{position:absolute;right:10px;top:10px;width:32px;height:32px;border-radius:99px;border:1px solid var(--border);background:var(--card);color:var(--foreground);font-size:20px;line-height:1;cursor:pointer}
+
+/* ticking designs: a check in the corner of every card and folder tile, the action panel at the bottom */
+.hdd-folder{position:relative}
+.hdd-check{position:absolute;left:10px;top:10px;z-index:3;width:22px;height:22px;border-radius:6px;border:1.5px solid color-mix(in oklab,var(--foreground) 45%,transparent);background:color-mix(in oklab,var(--card) 88%,transparent);color:var(--hd-on);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s,background .12s,border-color .12s;cursor:pointer;box-sizing:border-box}
+.hdd-check i{display:none;line-height:0}
+.hdd-check svg{width:16px;height:16px;fill:currentColor}
+.hdd-card:hover .hdd-check,.hdd-folder:hover .hdd-check,.hdd-check:focus-visible,.hdd.selecting .hdd-check,.hdd-check[aria-checked=true],.hdd-check[aria-checked=mixed]{opacity:1}
+.hdd-check:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.hdd-check:hover{border-color:var(--hd-acc)}
+:is(.hd,.hdd) .hdd-check[aria-checked=true],:is(.hd,.hdd) .hdd-check[aria-checked=mixed]{background:var(--hd-acc);border-color:var(--hd-acc);color:var(--hd-on)}
+.hdd-check[aria-checked=true] .ck-on,.hdd-check[aria-checked=mixed] .ck-mix{display:block}
+.hdd-check[aria-disabled=true]{cursor:not-allowed;border-style:dashed;background:var(--muted);color:var(--muted-foreground)}
+.hdd-check[aria-disabled=true]:hover{border-color:color-mix(in oklab,var(--foreground) 45%,transparent)}
+.hdd-card.sel,.hdd-folder.sel{box-shadow:0 0 0 2px var(--hd-acc)}
+.hdd-files.list .hdd-card.sel,.hdd-files.compact .hdd-card.sel,.hdd-folders.list .hdd-folder.sel{box-shadow:none;background:color-mix(in oklab,var(--hd-acc) 12%,transparent);border-color:color-mix(in oklab,var(--hd-acc) 45%,transparent)}
+.hdd-files.list .hdd-check,.hdd-files.compact .hdd-check,.hdd-folders.list .hdd-check{position:static;order:-1;flex:none;margin:0 0 0 10px}
+.hdd-folders.list .hdd-check{margin-right:2px}
+.hdd.selecting .hdd-card,.hdd.selecting .hdd-folder{cursor:default}
+
+.hdd-dock{position:sticky;bottom:0;z-index:20;display:flex;flex-direction:column;align-items:center;gap:var(--space-2,8px);padding:0 24px 20px;pointer-events:none}
+.hdd-dock[hidden]{display:none}
+.hdd-dock>*{pointer-events:auto;max-width:100%}
+.hdd-dock>[hidden]{display:none}
+.hdd-sel{display:flex;align-items:center;gap:var(--space-2,8px);flex-wrap:wrap;justify-content:center;padding:8px 8px 8px 16px;border:1px solid var(--border);border-radius:var(--radius-xl,16px);background:var(--card);color:var(--foreground);box-shadow:var(--shadow-lift)}
+.hdd-sel-n{font-size:var(--text-sm);font-weight:500;margin-right:var(--space-2,8px);white-space:nowrap}
+.hdd-sel-ask{font-size:var(--text-sm);color:var(--muted-foreground);margin-right:var(--space-2,8px)}
+.hdd-sel-ask[hidden],.hdd-sel-b[hidden]{display:none}
+.hdd-sel-b{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card);color:var(--foreground);font-size:var(--text-sm);font-weight:500;white-space:nowrap}
+.hdd-sel-b:hover:not(:disabled){background:var(--muted)}
+.hdd-sel-b:disabled{opacity:.5;cursor:default}
+.hdd-sel-b:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.hdd-sel-b.on{background:var(--muted)}
+.hdd-sel-b.quiet{border-color:transparent;background:none;color:var(--muted-foreground)}
+.hdd-sel-b.quiet:hover:not(:disabled){background:var(--muted);color:var(--foreground)}
+:is(.hd,.hdd) .hdd-sel-b.danger{background:var(--destructive,#d64545);border-color:transparent;color:var(--destructive-foreground,#fff)}
+:is(.hd,.hdd) .hdd-sel-b.danger:hover:not(:disabled){background:color-mix(in oklab,var(--destructive,#d64545) 88%,black)}
+.hdd-sel-i{display:inline-flex;line-height:0}
+.hdd-sel-i svg{width:18px;height:18px;fill:currentColor}
+
+.hdd-pop{width:min(420px,100%);display:flex;flex-direction:column;gap:var(--space-2,8px);padding:12px;border:1px solid var(--border);border-radius:var(--radius-xl,16px);background:var(--card);color:var(--foreground);box-shadow:var(--shadow-lift)}
+.hdd-pop-h{font-size:var(--text-sm);font-weight:500;color:var(--muted-foreground);padding:0 4px}
+.hdd-pop-list{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow:auto}
+.hdd-pop-item{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:var(--radius);background:none;color:var(--foreground);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hdd-pop-item:hover{background:var(--muted)}
+.hdd-pop-item:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+.hdd-pop-none{padding:8px 10px;color:var(--muted-foreground);font-size:var(--text-sm)}
+.hdd-pop-row{display:flex;gap:var(--space-2,8px)}
+.hdd-pop-in{flex:1;min-width:0;height:36px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--background);color:var(--foreground);font-size:var(--text-sm)}
+.hdd-pop-in:focus-visible{outline:2px solid var(--ring);outline-offset:-1px}
+:is(.hd,.hdd) .hdd-pop-go{height:36px;padding:0 14px;border:0;border-radius:var(--radius);background:var(--hd-acc);color:var(--hd-on);font-size:var(--text-sm);font-weight:500}
+.hdd-pop-go:disabled{opacity:.5}
+
+.hdd-toast{display:flex;align-items:center;gap:var(--space-3,12px);padding:10px 8px 10px 16px;border:1px solid var(--border);border-radius:var(--radius-xl,16px);background:var(--card);color:var(--foreground);font-size:var(--text-sm);box-shadow:var(--shadow-lift)}
+.hdd-toast.bad{border-color:var(--destructive,#d64545)}
+.hdd-toast-b{border:0;background:none;color:var(--primary);font-size:var(--text-sm);font-weight:500;padding:6px 10px;border-radius:var(--radius)}
+.hdd-toast-b:hover{background:var(--muted)}
+.hdd-toast-b[hidden]{display:none}

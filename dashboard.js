@@ -3,6 +3,7 @@
 import { ago, bannerText, groupFiles, isGone, isNameKey, isProjectKey, labelsOf, layoutOf, nameOf, nameOfKey, projectOfKey, readableSlug, scrollsRight, subGroups, topKeyOf } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
+import { prune, rangeIds, setMany, tileState } from "./selection.js";
 
 // UI strings: en by default, ru when the hub language is Russian (see i18n.js); texts are resolved at use time, never at load
 export const STR = {
@@ -34,6 +35,13 @@ export const STR = {
     peer_note: "A picture only: the file, the canvas and the edits stay in the hub \u201c{where}\u201d",
     peer_noshot: "No picture yet",
     peer_close: "Close",
+    sel_check: "Select", sel_count: "Selected: {n}", sel_move: "Move to…", sel_delete: "Delete", sel_clear: "Clear selection",
+    sel_confirm: "Move to the trash: {n}?", sel_yes: "Yes, to the trash", sel_no: "Cancel",
+    sel_peer: "A design of another machine: it can be changed only there", sel_busy: "The author is working on it now",
+    sel_busy_now: "The author is working on the selected designs now, try again a bit later",
+    move_title: "Move to a folder", move_path_ph: "Or a full path to a folder", move_go: "Move", move_loading: "Loading folders…", move_none: "No folders to pick yet: type a path",
+    toast_moved: "Moved: {n}", toast_deleted: "In the trash: {n}", toast_undo: "Undo", toast_undone: "Restored: {n}", toast_skipped: "skipped: {n}",
+    toast_conflict: "Not everything came back: the old place is taken", toast_fail: "Did not work: {text}",
   },
   ru: {
     preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Свой код", preset_system: "Дизайн-система", preset_motion: "Анимация",
@@ -63,6 +71,13 @@ export const STR = {
     peer_note: "Только картинка: файл, холст и правки остались в хабе \u00ab{where}\u00bb",
     peer_noshot: "Снимка пока нет",
     peer_close: "Закрыть",
+    sel_check: "Выбрать", sel_count: "Выбрано: {n}", sel_move: "Перенести в…", sel_delete: "Удалить", sel_clear: "Снять выделение",
+    sel_confirm: "Убрать в корзину: {n}?", sel_yes: "Да, в корзину", sel_no: "Отмена",
+    sel_peer: "Макет другой машины: менять его можно только там", sel_busy: "Автор сейчас работает над ним",
+    sel_busy_now: "Автор сейчас работает над выбранными макетами, попробуйте чуть позже",
+    move_title: "Перенести в папку", move_path_ph: "Или полный путь к папке", move_go: "Перенести", move_loading: "Загружаем папки…", move_none: "Папок для выбора пока нет: впишите путь",
+    toast_moved: "Перенесено: {n}", toast_deleted: "В корзине: {n}", toast_undo: "Вернуть", toast_undone: "Вернули: {n}", toast_skipped: "пропущено: {n}",
+    toast_conflict: "Вернулось не всё: прежнее место занято", toast_fail: "Не получилось: {text}",
   },
 };
 export const t = makeT(STR);
@@ -294,7 +309,10 @@ function shotQueue(el, later, max = SHOTS_AT_ONCE) {
 export function createDashboard(app) {
   const el = (tag, cls, text) => app.hub.el(tag, cls, text);
   // folder: null - all folders, "" - no direction, otherwise the folder key (its cwd); sub: the task ("task:<id>") open inside it; peer: the machine whose folder is open (null - none), pdir: the direction inside it (null - all)
-  const S = { tab: "all", q: "", sort: "recent", list: false, path: false, folder: null, sub: null, peer: null, pdir: null };
+  // sel: the paths of the own designs the owner ticked (a tile ticks every design in it); anchor: the item he ticked last (Shift-click ticks the range up to it);
+  // moving / confirm: the "Move to" list and the "to the trash?" question are open; work: a move or a delete is under way
+  const S = { tab: "all", q: "", sort: "recent", list: false, path: false, folder: null, sub: null, peer: null, pdir: null, sel: new Set(), anchor: null, moving: false, confirm: false, work: false };
+  const org = app.organize || null;   // { busy(path), targets(), move(paths, dest), remove(paths), undo(id) }: none - the dashboard only shows and opens
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
@@ -384,9 +402,200 @@ export function createDashboard(app) {
   lb.append(lbBox);
   const closeLb = () => { lb.hidden = true; lbImg.removeAttribute("src"); };
   lb.addEventListener("click", (e) => { if (e.target === lb || e.target === lbClose) closeLb(); });
-  root.append(page, lb);
-  // keys typed in the search and path fields do not reach the canvas hotkeys
-  root.addEventListener("keydown", (e) => { if (e.key === "Escape" && !lb.hidden) closeLb(); e.stopPropagation(); });
+
+  // --- what the owner ticks: a check in the corner of every card and tile, the panel with the actions at the bottom
+  const items = new Map();   // id -> {node, check, paths, peer, off}; made again on every paintFiles, so a gone card leaves no trace
+  let lastView = "";         // the open folder / machine: the ticks do not go with the owner into another one
+  let order = [];            // the ids of the own items as they stand on the screen (tiles, then cards): the range of a Shift-click
+  const busy = (p) => !!(org && org.busy(p));
+  function mkCheck() {
+    if (!org) return null;
+    const box = el("span", "hdd-check");
+    box.setAttribute("role", "checkbox");
+    box.tabIndex = 0;
+    box.innerHTML = '<i class="ck-on">' + CI.check + '</i><i class="ck-mix">' + CI.minus + "</i>";
+    return box;
+  }
+  function reg(id, node, check, paths, peer = false) {
+    if (!check) return;
+    items.set(id, { node, check, paths, peer, off: false });
+    if (!check.dataset.bound) {
+      check.dataset.bound = "1";
+      const hit = (e) => { e.stopPropagation(); e.preventDefault(); toggle(check.dataset.id, e.shiftKey); };
+      check.addEventListener("click", hit);
+      check.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") hit(e); });
+    }
+    check.dataset.id = id;
+  }
+  function toggle(id, range) {
+    const it = items.get(id);
+    if (!it || it.off) return;
+    const on = tileState(S.sel, it.paths) !== "all";
+    for (const k of range && S.anchor ? rangeIds(order, S.anchor, id) : [id]) {
+      const x = items.get(k);
+      if (x && !x.off) setMany(S.sel, x.paths, on);
+    }
+    S.anchor = id;
+    paintSel();
+  }
+  const dock = el("div", "hdd-dock");
+  dock.hidden = true;
+  const toast = el("div", "hdd-toast");
+  toast.setAttribute("role", "status");
+  toast.hidden = true;
+  const toastText = el("span", "hdd-toast-t");
+  const toastUndo = el("button", "hdd-toast-b");
+  toastUndo.type = "button";
+  toast.append(toastText, toastUndo);
+  const pop = el("div", "hdd-pop");
+  pop.hidden = true;
+  const popHead = el("div", "hdd-pop-h");
+  const popList = el("div", "hdd-pop-list");
+  const popPath = el("input", "hdd-pop-in");
+  const popGo = el("button", "hdd-pop-go");
+  popGo.type = "button";
+  const popRow = el("div", "hdd-pop-row");
+  popRow.append(popPath, popGo);
+  pop.append(popHead, popList, popRow);
+  const panel = el("div", "hdd-sel");
+  panel.hidden = true;
+  const selCount = el("span", "hdd-sel-n");
+  const act = (cls, icon, fn) => {
+    const b = el("button", "hdd-sel-b " + cls);
+    b.type = "button";
+    const label = el("span", "hdd-sel-t");
+    if (icon) { const i = el("i", "hdd-sel-i"); i.innerHTML = CI[icon]; b.append(i); }
+    b.append(label);
+    b.addEventListener("click", fn);
+    return { b, label };
+  };
+  const bMoveTo = act("move", "move", () => { S.confirm = false; if (S.moving) closePop(); else openPop(); paintDock(); });
+  const bTrash = act("del", "trash", () => { S.moving = false; S.confirm = true; paintDock(); });
+  const bNo = act("quiet", "", () => { S.confirm = false; paintDock(); });
+  const bYes = act("danger", "trash", () => work("delete", (paths) => org.remove(paths)));
+  const bClear = act("quiet", "close", () => { S.sel.clear(); S.anchor = null; paintSel(); });
+  const ask = el("span", "hdd-sel-ask");
+  panel.append(selCount, bMoveTo.b, bTrash.b, ask, bYes.b, bNo.b, bClear.b);
+  dock.append(toast, pop, panel);
+  popGo.addEventListener("click", () => { if (popPath.value.trim()) work("move", (paths) => org.move(paths, popPath.value.trim())); });
+  popPath.addEventListener("keydown", (e) => { if (e.key === "Enter" && popPath.value.trim()) work("move", (paths) => org.move(paths, popPath.value.trim())); });
+
+  function closePop() { S.moving = false; }
+  function openPop() {
+    S.moving = true;
+    popList.replaceChildren(el("div", "hdd-pop-none", t("move_loading")));
+    Promise.resolve(org.targets()).then((rows) => {
+      if (!S.moving) return;
+      popList.replaceChildren(...(rows.length ? rows.map((r) => {
+        const b = el("button", "hdd-pop-item");
+        b.type = "button";
+        b.title = r.path;
+        b.dataset.path = r.path;
+        b.append(el("span", "hdd-pop-name", r.label || r.path));
+        b.addEventListener("click", () => work("move", (paths) => org.move(paths, r.path)));
+        return b;
+      }) : [el("div", "hdd-pop-none", t("move_none"))]));
+    }, () => { if (S.moving) popList.replaceChildren(el("div", "hdd-pop-none", t("move_none"))); });
+  }
+  let toastSeq = 0;
+  const later = app.later || ((f, ms) => setTimeout(f, ms));
+  function say(text, { undo = null, bad = false } = {}) {
+    const mine = ++toastSeq;
+    setText(toastText, text);
+    toast.classList.toggle("bad", bad);
+    toastUndo.hidden = !undo;
+    toastUndo.onclick = undo ? () => undoRun(undo) : null;
+    toast.hidden = false;
+    later(() => { if (toastSeq === mine) { toast.hidden = true; paintDock(); } }, 12000);
+    paintDock();
+  }
+  const summary = (res, kind) => {
+    const n = (kind === "move" ? res.moved : res.deleted || []).length, skipped = (res.skipped || []).length;
+    return t(kind === "move" ? "toast_moved" : "toast_deleted", { n }) + (skipped ? " (" + t("toast_skipped", { n: skipped }) + ")" : "");
+  };
+  // a move or a delete of everything ticked; what the author is busy with now is left out (his state is checked again at the moment of the click)
+  async function work(kind, fn) {
+    if (S.work || !org) return;
+    const paths = [...S.sel].filter((p) => !busy(p));
+    if (!paths.length) { say(t("sel_busy_now"), { bad: true }); return; }
+    S.work = true;
+    paintDock();
+    try {
+      const res = await fn(paths);
+      S.sel.clear();
+      S.anchor = null;
+      S.moving = false;
+      S.confirm = false;
+      say(summary(res, kind), { undo: res.id || null });
+    } catch (e) {
+      say(t("toast_fail", { text: (e && e.message) || String(e) }), { bad: true });
+    } finally {
+      S.work = false;
+      paint();
+    }
+  }
+  async function undoRun(id) {
+    if (S.work) return;
+    S.work = true;
+    paintDock();
+    try {
+      const res = await org.undo(id);
+      say((res.conflicts || []).length ? t("toast_conflict") : t("toast_undone", { n: res.restored || 0 }), { bad: (res.conflicts || []).length > 0 });
+    } catch (e) {
+      say(t("toast_fail", { text: (e && e.message) || String(e) }), { bad: true });
+    } finally {
+      S.work = false;
+      paint();
+    }
+  }
+  function paintSel() {
+    for (const it of items.values()) {
+      const state = tileState(S.sel, it.paths);
+      const off = it.peer || it.paths.some(busy);
+      it.off = off;
+      setAttr(it.check, "aria-checked", state === "all" ? "true" : state === "some" ? "mixed" : "false");
+      setAttr(it.check, "aria-disabled", off ? "true" : "false");
+      const why = off ? (it.peer ? t("sel_peer") : t("sel_busy")) : t("sel_check");
+      setTitle(it.check, why);
+      setAttr(it.check, "aria-label", why);
+      if (it.node.classList.contains("sel") !== (state !== "none")) it.node.classList.toggle("sel", state !== "none");
+    }
+    paintDock();
+  }
+  function paintDock() {
+    const n = S.sel.size;
+    if (!n) { S.moving = false; S.confirm = false; }
+    if (root.classList.contains("selecting") !== (n > 0)) root.classList.toggle("selecting", n > 0);
+    setHidden(panel, !n);
+    setHidden(pop, !S.moving);
+    setText(selCount, t("sel_count", { n }));
+    setText(bMoveTo.label, t("sel_move"));
+    setText(bTrash.label, t("sel_delete"));
+    setText(bClear.label, t("sel_clear"));
+    setText(bYes.label, t("sel_yes"));
+    setText(bNo.label, t("sel_no"));
+    setText(ask, t("sel_confirm", { n }));
+    for (const b of [bMoveTo.b, bTrash.b, bClear.b]) setHidden(b, S.confirm);
+    for (const x of [bYes.b, bNo.b, ask]) setHidden(x, !S.confirm);
+    for (const b of [bMoveTo.b, bTrash.b, bYes.b, bClear.b, popGo]) if (b.disabled !== S.work) b.disabled = S.work;
+    bMoveTo.b.classList.toggle("on", S.moving);
+    setText(popHead, t("move_title"));
+    setText(popGo, t("move_go"));
+    setText(toastUndo, t("toast_undo"));
+    if (popPath.placeholder !== t("move_path_ph")) popPath.placeholder = t("move_path_ph");
+    setHidden(dock, !n && toast.hidden);
+  }
+
+  root.append(page, dock, lb);
+  // keys typed in the search and path fields do not reach the canvas hotkeys; Escape closes what is open, then clears the ticks
+  root.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (!lb.hidden) closeLb();
+      else if (S.moving || S.confirm) { S.moving = false; S.confirm = false; paintDock(); }
+      else if (S.sel.size) { S.sel.clear(); S.anchor = null; paintSel(); }
+    }
+    e.stopPropagation();
+  });
   function zoom(peer, it, where) {
     lbImg.hidden = !it.shot;
     if (it.shot) lbImg.src = app.peerShot(peer.machine, it.shot);
@@ -420,8 +629,10 @@ export function createDashboard(app) {
       meta.append(badge, text);
       const body = el("span", "hdd-body");
       body.append(name, meta);
+      const check = mkCheck();
       node.append(shot, body);
-      c = { node, img, none, name, badge, text, src: "" };
+      if (check) node.append(check);
+      c = { node, img, none, name, badge, text, src: "", check };
       node.addEventListener("click", () => zoom(c.peer, c.it, c.where));
       pcards.set(key, c);
     }
@@ -454,8 +665,10 @@ export function createDashboard(app) {
     text.append(name, count);
     const body = el("span", "hdd-fbody");
     body.append(icon, text);
+    const check = mkCheck();
     node.append(shots, body);
-    tl = { node, cells, name, count };
+    if (check) node.append(check);
+    tl = { node, cells, name, count, check };
     node.addEventListener("click", () => pick(tl));
     ptiles.set(key, tl);
     return tl;
@@ -517,6 +730,7 @@ export function createDashboard(app) {
       const where = peerHub(peer, list);
       if (tilesOnly) {
         const tl = ptile(peer.machine, () => { S.peer = peer.machine; S.pdir = null; paint(); });
+        reg("pt:" + peer.machine, tl.node, tl.check, [], true);
         fillTile(tl, peer, rows, where);
         liveTiles.add(peer.machine);
         count += 1;
@@ -528,6 +742,7 @@ export function createDashboard(app) {
         place(grid, pv.groups.map((g) => {
           const key = peer.machine + "/" + g.key;
           const tl = ptile(key, () => { S.pdir = g.key; paint(); });
+          reg("pt:" + key, tl.node, tl.check, [], true);
           fillTile(tl, peer, g.files, g.key || t("folder_none"));
           liveTiles.add(key);
           return tl.node;
@@ -547,6 +762,7 @@ export function createDashboard(app) {
         live.add(peer.machine + "/" + it.id);
         Object.assign(c, { peer, it, where });
         setTitle(c.node, it.file || "");
+        reg("p:" + peer.machine + "/" + it.id, c.node, c.check, [], true);
         setText(c.name, plabels.get(it.id) || peerName(it));
         setText(c.badge, where);
         setText(c.text, [it.session, editedText(it)].filter(Boolean).join(" · "));
@@ -627,9 +843,11 @@ export function createDashboard(app) {
     meta.append(lock, text);
     const body = el("span", "hdd-body");
     body.append(name, meta);
+    const check = mkCheck();
     node.append(shot, tile, body);
+    if (check) node.append(check);
     node.addEventListener("click", () => app.open(f.path));
-    c = { path: f.path, node, shot, img, name, text, visible: false };
+    c = { path: f.path, node, shot, img, name, text, visible: false, check };
     cards.set(f.path, c);
     seen.observe(node);
     load(c);
@@ -654,9 +872,11 @@ export function createDashboard(app) {
     text.append(name, count);
     const body = el("span", "hdd-fbody");
     body.append(icon, text);
+    const check = mkCheck();
     node.append(shots, body);
+    if (check) node.append(check);
     node.addEventListener("click", () => { if (S.folder !== null && isProjectKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
-    tl = { node, cells, name, count };
+    tl = { node, cells, name, count, check };
     tiles.set(key, tl);
     return tl;
   }
@@ -684,6 +904,7 @@ export function createDashboard(app) {
     else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList, lay)); setTitle(cname, fullOf(S.folder)); }
     // flat cards (a folder, a search or no direction folders at all)
     const list = v.mode === "files" ? v.rows : [];
+    items.clear();
     const named = !inFolder;   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
       const c = card(f);
@@ -691,6 +912,7 @@ export function createDashboard(app) {
       const where = named ? folderTitle(fk, dirs, taskList, lay) : "";
       setText(c.name, labels.get(f.path) || nameOf(f.path));
       setText(c.text, [f.session, named && fk ? where : "", editedText(f)].filter(Boolean).join(" · "));
+      reg("c:" + f.path, c.node, c.check, [f.path]);
       return c.node;
     });
     place(files, nodes);   // move only the ones that shifted: a card put back replays its entrance animation
@@ -702,6 +924,7 @@ export function createDashboard(app) {
       setText(tl.name, folderTitle(g.key, dirs, taskList, lay));
       setTitle(tl.node, fullOf(g.key));
       setText(tl.count, t("folder_count", { n: g.files.length }));
+      reg("f:" + g.key, tl.node, tl.check, g.files.map((f) => f.path));
       newest(g.files).forEach((f, i) => {
         const c = thumb(f.path);
         live.add("t:" + f.path);
@@ -722,6 +945,14 @@ export function createDashboard(app) {
     setHidden(files, inPeer || v.mode !== "files");
     files.classList.toggle("compact", v.mode === "files" && v.subs.length > 0);   // designs lying in no folder, next to the folders: a line each (icon and name), two columns
     const peerCount = paintPeers();
+    // what the owner ticked is only what he sees: a design that left the screen (another folder, a search, deleted) is let go, so a delete never reaches what is out of sight
+    const viewKey = [S.folder, S.sub, S.peer, S.pdir].join("|");
+    if (viewKey !== lastView) { lastView = viewKey; S.sel.clear(); S.anchor = null; }
+    const visible = new Set(list.map((f) => f.path));
+    for (const g of groups) for (const f of g.files) visible.add(f.path);
+    prune(S.sel, visible);
+    order = [...groups.map((g) => "f:" + g.key), ...list.map((f) => "c:" + f.path)].filter((id) => items.has(id));
+    paintSel();
     setHidden(empty, nodes.length > 0 || tnodes.length > 0 || peerCount > 0);
     // "Nothing found" only when the owner searched or picked a tab; on "All" with no search and no designs - "No designs yet"
     setText(empty, inFolder && !S.q.trim() && S.tab === "all" ? t("empty_folder") : S.q.trim() || S.tab !== "all" ? t("empty_found") : t("empty_none"));
