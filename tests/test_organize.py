@@ -159,6 +159,22 @@ class Organize(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(dest, "poster", "v1", "index.html")))
         self.assertEqual(self.read(self.design, "poster", "new.html"), "new")
 
+    def test_the_registry_follows_a_move_and_comes_back_with_the_undo(self):
+        import registry
+        a, b = self.task("poster", ("v1", "v2"))
+        reg = registry.Registry(self.state)
+        for p in (a, b):
+            reg.items[registry.key_of(p)] = {"path": p, "session": "designer", "ts": 1, "last": 1, "rank": 2}
+        dest = os.path.join(self.design, "archive")
+        got = organize.move(self.state, [a, b], dest, self.ctx)
+        reg.relocate()
+        moved = {registry.key_of(v["path"]) for v in reg.listing()}
+        self.assertEqual(moved, {registry.key_of(os.path.join(dest, "poster", v, "index.html")) for v in ("v1", "v2")})
+        back = organize.undo(self.state, got["id"])
+        self.assertTrue(reg.rename(back["back"]))
+        reg.relocate()
+        self.assertEqual({registry.key_of(v["path"]) for v in reg.listing()}, {registry.key_of(a), registry.key_of(b)})
+
     def test_the_layout_undo_leaves_the_steps_of_the_selection_alone(self):
         (page,) = self.task("poster")
         dest = os.path.join(self.design, "archive")

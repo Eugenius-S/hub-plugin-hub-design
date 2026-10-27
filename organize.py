@@ -259,8 +259,9 @@ def undo(state_dir, id):
             layout.undo(state_dir, run=row["run"])
             conflicts = [i["dst"] for i in row["items"] if os.path.exists(i["dst"])]
             restored = len(row["items"]) - len(conflicts)
+            back = [(i["dst"], i["src"]) for i in row["items"] if i["dst"] not in conflicts]
         else:
-            restored, conflicts = 0, []
+            restored, conflicts, back = 0, [], []
             for i in reversed(row["items"]):
                 if os.path.exists(i["dst"]) and not os.path.lexists(i["src"]):
                     os.makedirs(os.path.dirname(i["src"]), exist_ok=True)
@@ -274,4 +275,4 @@ def undo(state_dir, id):
                 pass
         if not conflicts:
             record(state_dir, {"op": "undone", "id": id, "ts": int(time.time())})
-        return {"id": id, "op": row["op"], "restored": restored, "conflicts": conflicts}
+        return {"id": id, "op": row["op"], "restored": restored, "conflicts": conflicts, "back": back}

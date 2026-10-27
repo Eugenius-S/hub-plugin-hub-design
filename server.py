@@ -789,6 +789,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.say(500, {"error": "Cannot do it: " + (e.strerror or str(e))}, extra)
         if REG:
             REG.relocate()   # the registry follows the moved designs now, not at its next look at the journal
+            if out.get("back"):
+                REG.rename(out["back"])   # and back, when a move is undone (moves.json forgets the step, the entries keep the new place)
         return self.say(200, out, extra)
 
     def do_HEAD(self):

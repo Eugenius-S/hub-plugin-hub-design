@@ -549,6 +549,25 @@ class Registry:
                 changed = True
         return changed
 
+    def rename(self, pairs):
+        """A move was undone: the entries under each new place go back under the old one. pairs: [(new, old)]. True if one moved."""
+        changed = False
+        with self.lock:
+            for new, old in pairs:
+                nk = key_of(new).rstrip("/")
+                for k in list(self.items):
+                    v = self.items[k]
+                    vk = key_of(v["path"])
+                    if vk != nk and not vk.startswith(nk + "/"):
+                        continue
+                    back = old.rstrip("/\\") + v["path"][len(new.rstrip("/\\")):]
+                    del self.items[k]
+                    self.items[key_of(back)] = {**v, "path": back}
+                    changed = True
+        if changed:
+            self.save()
+        return changed
+
     def listing(self):
         with self.lock:
             return sorted((dict(v) for v in self.items.values()), key=lambda v: v["last"], reverse=True)
