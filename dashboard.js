@@ -429,7 +429,8 @@ export function createDashboard(app) {
   }
   function toggle(id, range) {
     const it = items.get(id);
-    if (!it || it.off) return;
+    if (!it) return;
+    if (it.off || it.paths.some(busy)) { paintSel(); return; }   // the author may have started a turn since the last look: the check goes off, nothing is ticked
     const on = tileState(S.sel, it.paths) !== "all";
     for (const k of range && S.anchor ? rangeIds(order, S.anchor, id) : [id]) {
       const x = items.get(k);
@@ -549,6 +550,8 @@ export function createDashboard(app) {
     }
   }
   function paintSel() {
+    // a design its author took into work after the tick is let go quietly: the check of its card goes off, and an action never meets it (no toast before a click)
+    for (const p of [...S.sel]) if (busy(p)) S.sel.delete(p);
     for (const it of items.values()) {
       const state = tileState(S.sel, it.paths);
       const off = it.peer || it.paths.some(busy);

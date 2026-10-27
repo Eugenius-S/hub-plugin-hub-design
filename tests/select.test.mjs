@@ -195,3 +195,19 @@ test("a search that hides a ticked design lets it go: a delete never reaches wha
   dash.paint();
   assert.equal(dash.state.sel.size, 0);
 });
+
+test("an author who takes a ticked design into work lets the tick go quietly: no toast before any click", () => {
+  setLangSource(() => "en");
+  let on = false;
+  const { dash } = build({ busy: () => on });
+  click(at(dash, paths[0]));
+  assert.equal(dash.state.sel.size, 1);
+  on = true;
+  dash.paint();
+  assert.equal(dash.state.sel.size, 0);
+  assert.ok(toast(dash).hidden);
+  assert.equal(at(dash, paths[0]).getAttribute("aria-disabled"), "true");
+  click(at(dash, paths[0]));
+  assert.equal(dash.state.sel.size, 0);
+  assert.ok(toast(dash).hidden);
+});
