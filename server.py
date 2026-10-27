@@ -24,6 +24,7 @@ import handwrite
 import linkctl
 import links as linkmem
 import layout
+import organize
 import peers
 import registry
 import styles
@@ -55,6 +56,10 @@ PDF_TIMEOUT = 45   # seconds to print one design, then Chrome is killed
 PDF_SIZE = (1440, 900)   # the design window if the page did not send its own
 PDF_MAX = 20000          # pixels: we do not stretch a PDF page beyond this
 WRITE_MAX = 2 * 1024 * 1024   # request body for writing edits
+SELECT = ("/__canvas/select/move", "/__canvas/select/delete", "/__canvas/select/undo")
+SELECT_MAX = 256 * 1024       # request body of the actions on the ticked designs
+SELECT_FILES = 2000
+TARGETS_MAX = 200             # task folders of one direction offered as a place to move to
 THUMB_SIZE = (1440, 900)   # the window a design is shot in for a card in the feed
 DOC_SIZE = (900, 634)       # the window a document is shot in: the same ratio as the card tile
 THUMB_SCALE = 0.34         # Chrome shrinks the shot at once: ~490 px wide
@@ -135,6 +140,36 @@ def roots():
         if os.path.isdir(real) and os.path.dirname(real) != real:
             out.append(real)
     _roots.update(at=time.time(), list=sorted(out))
+    return out
+
+
+def work_folders():
+    """The working folders of the sessions and the project folders: the directions. They are never moved or deleted as a whole."""
+    roots()
+    extra = {os.path.expanduser(p["path"]) for p in (config().get("projects") or {}).values() if isinstance(p, dict) and p.get("path")}
+    return sorted(os.path.realpath(r) for r in set(_roots["seen"]) | extra if os.path.isdir(r))
+
+
+def organize_ctx():
+    """What organize.py needs: the designs we serve, the folders that are never moved whole, the folders anything may go into."""
+    return organize.Ctx(allowed, work_folders(), roots())
+
+
+def move_targets():
+    """The folders a ticked design may go to: the design folder of every direction and the folders of the tasks in it."""
+    out, seen = [], set()
+    for r in work_folders():
+        base = r if os.path.basename(r).lower() == "design" else os.path.join(r, "design")
+        if not os.path.isdir(base) or registry.key_of(base) in seen:
+            continue
+        seen.add(registry.key_of(base))
+        label = os.path.basename(os.path.dirname(base) if os.path.basename(r).lower() == "design" else r)
+        out.append({"path": base, "label": label, "kind": "design"})
+        try:
+            subs = sorted(n for n in os.listdir(base) if not n.startswith(".") and os.path.isdir(os.path.join(base, n)))
+        except OSError:
+            subs = []
+        out += [{"path": os.path.join(base, n), "label": label, "kind": "task", "name": n} for n in subs[:TARGETS_MAX]]
     return out
 
 
@@ -701,13 +736,15 @@ class Handler(BaseHTTPRequestHandler):
         /__canvas/fetch: start or stop the download of styles (fetcher.py)."""
         bad = self.guard()
         url = urlparse(self.path)
-        if bad or url.path not in ("/__canvas/write", "/__canvas/fetch"):
+        if bad or url.path not in ("/__canvas/write", "/__canvas/fetch") + SELECT:
             return self.say(403 if bad else 404, {"error": bad or "no page"})
         extra = self.cors()
         if not extra:
             return self.say(403, {"error": "origin"})
         if url.path == "/__canvas/fetch":
             return self.fetch(extra)
+        if url.path in SELECT:
+            return self.select(url.path, extra)
         try:
             size = int(self.headers.get("Content-Length") or 0)
             if size <= 0 or size > WRITE_MAX:
@@ -724,6 +761,35 @@ class Handler(BaseHTTPRequestHandler):
             return self.say(e.code, {"error": e.text}, extra)
         except OSError as e:
             return self.say(500, {"error": "Cannot write the file: " + (e.strerror or str(e))}, extra)
+
+    def select(self, path, extra):
+        """/__canvas/select/move|delete|undo: what the owner does with the designs he ticked (organize.py). Nothing is erased: a deleted design lies
+        in the trash of the plugin and every action can be undone by its id."""
+        try:
+            size = int(self.headers.get("Content-Length") or 0)
+            if size <= 0 or size > SELECT_MAX:
+                return self.say(413, {"error": "body"}, extra)
+            body = json.loads(self.rfile.read(size).decode("utf-8"))
+            if not isinstance(body, dict):
+                raise ValueError("body")
+        except (ValueError, UnicodeDecodeError):
+            return self.say(400, {"error": "body"}, extra)
+        paths = body.get("paths") if isinstance(body.get("paths"), list) else []
+        paths = [str(x) for x in paths[:SELECT_FILES]]
+        try:
+            if path.endswith("/move"):
+                out = organize.move(state_dir(), paths, body.get("dest"), organize_ctx())
+            elif path.endswith("/delete"):
+                out = organize.delete(state_dir(), paths, organize_ctx())
+            else:
+                out = organize.undo(state_dir(), str(body.get("id") or ""))
+        except organize.Refused as e:
+            return self.say(e.code, {"error": e.text}, extra)
+        except OSError as e:
+            return self.say(500, {"error": "Cannot do it: " + (e.strerror or str(e))}, extra)
+        if REG:
+            REG.relocate()   # the registry follows the moved designs now, not at its next look at the journal
+        return self.say(200, out, extra)
 
     def do_HEAD(self):
         self.do_GET()
@@ -758,6 +824,8 @@ class Handler(BaseHTTPRequestHandler):
                 st = file_state(real)
                 out.append({**r, "state": st, **({"title": head_of(os.path.realpath(real))} if st == "ok" and real.lower().endswith(HTML) else {})})
             return self.say(200, {"ready": bool(REG and REG.ready), "items": out, "tasks": REG.task_rows() if REG else []}, self.cors())
+        if url.path == "/__canvas/select/targets":
+            return self.say(200, {"targets": move_targets()}, self.cors())
         if url.path == "/__canvas/moves":
             # the designs layout.py moved to their task folders ({"files": {old: new}, "dirs": {old: new}}): the page follows its pins and cards
             mv = layout.Moves(state_dir())

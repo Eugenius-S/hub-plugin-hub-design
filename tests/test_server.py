@@ -1231,6 +1231,94 @@ class DesignRegistry(unittest.TestCase):
         self.assertEqual(json.loads(body), {"ready": False, "items": [], "tasks": []})
 
 
+class Select(unittest.TestCase):
+    """/__canvas/select/*: move, delete (to the trash) and undo of the designs ticked on the start screen; only inside the known folders."""
+
+    ORIGIN = "http://localhost:8787"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = server.serve(0)
+        cls.port = cls.srv.server_address[1]
+        server.PORT = cls.port
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        server._roots["at"] = 0
+        self.design = os.path.join(os.path.realpath(SITE), "design")
+        shutil.rmtree(self.design, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.design, ignore_errors=True)
+        self.page = os.path.join(self.design, "poster", "v1", "index.html")
+        os.makedirs(os.path.dirname(self.page))
+        with open(self.page, "w", encoding="utf-8") as f:
+            f.write("<p>poster</p>")
+
+    def call(self, what, body, origin=ORIGIN, method="POST", host=None):
+        h = {"Host": host or f"localhost:{self.port}", "Content-Type": "application/json"}
+        if origin:
+            h["Origin"] = origin
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request(method, "/__canvas/select/" + what, body=json.dumps(body).encode() if method == "POST" else None, headers=h)
+        r = c.getresponse()
+        out = r.read()
+        c.close()
+        return r, (json.loads(out) if out else {})
+
+    def test_move_and_undo(self):
+        dest = os.path.join(self.design, "archive")
+        r, d = self.call("move", {"paths": [self.page], "dest": dest})
+        self.assertEqual(r.status, 200)
+        self.assertTrue(os.path.isfile(os.path.join(dest, "poster", "v1", "index.html")))
+        self.assertFalse(os.path.exists(self.page))
+        self.assertEqual(r.getheader("Access-Control-Allow-Origin"), self.ORIGIN)
+        r, back = self.call("undo", {"id": d["id"]})
+        self.assertEqual((r.status, back["restored"]), (200, 1))
+        self.assertTrue(os.path.isfile(self.page))
+
+    def test_delete_goes_to_the_trash_and_comes_back(self):
+        r, d = self.call("delete", {"paths": [self.page]})
+        self.assertEqual(r.status, 200)
+        self.assertFalse(os.path.exists(self.page))
+        self.assertTrue(os.path.isfile(os.path.join(d["deleted"][0]["to"], "v1", "index.html")))
+        self.call("undo", {"id": d["id"]})
+        self.assertTrue(os.path.isfile(self.page))
+        r, again = self.call("undo", {"id": d["id"]})
+        self.assertEqual(r.status, 409)
+
+    def test_a_foreign_origin_a_foreign_host_and_a_wrong_target_change_nothing(self):
+        for kw in ({"origin": "https://evil.example"}, {"origin": None}, {"host": "evil.example"}):
+            r, _ = self.call("delete", {"paths": [self.page]}, **kw)
+            self.assertEqual(r.status, 403, kw)
+        outside = os.path.join(OUT, "x.html")
+        r, _ = self.call("delete", {"paths": [outside]})
+        self.assertEqual(r.status, 404)
+        r, _ = self.call("move", {"paths": [self.page], "dest": os.path.join(OUT, "there")})
+        self.assertEqual(r.status, 403)
+        self.assertTrue(os.path.isfile(self.page) and os.path.isfile(outside))
+        self.assertFalse(os.path.exists(os.path.join(OUT, "there")))
+
+    def test_the_targets_are_the_design_folders_of_the_directions_and_the_tasks_in_them(self):
+        r, d = self.call("targets", None, method="GET")
+        self.assertEqual(r.status, 200)
+        got = {t["path"]: t["kind"] for t in d["targets"]}
+        self.assertEqual(got[self.design], "design")
+        self.assertEqual(got[os.path.join(self.design, "poster")], "task")
+
+    def test_a_broken_body_is_a_400(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("POST", "/__canvas/select/delete", body=b"not json", headers={"Host": f"localhost:{self.port}", "Origin": self.ORIGIN})
+        r = c.getresponse()
+        r.read()
+        c.close()
+        self.assertEqual(r.status, 400)
+        self.assertTrue(os.path.isfile(self.page))
+
+
 class Moves(unittest.TestCase):
     """/__canvas/moves: where layout.py moved the old designs - the page follows its pins and cards; the plan at the start once per version."""
     ORIGIN = {"Origin": f"http://localhost:{server.WEB_PORT}"}

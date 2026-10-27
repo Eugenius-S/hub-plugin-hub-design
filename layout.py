@@ -376,16 +376,17 @@ def folder_of(state_dir):
     return os.path.join(state_dir, "hub-design", LAYOUT)
 
 
-def apply(state_dir, p, now=None):
-    """Do the moves of the plan; every step goes to moves.jsonl before the next one. -> the number of designs moved."""
+def apply(state_dir, p, now=None, by=None, run=None):
+    """Do the moves of the plan; every step goes to moves.jsonl before the next one. -> the number of designs moved.
+    by: who asks (organize.py writes "select": its steps are undone one run at a time, never by --undo); run: the name of the run."""
     base = folder_of(state_dir)
     os.makedirs(os.path.join(base, "backup"), exist_ok=True)
     log = os.path.join(base, "moves.jsonl")
-    run = str(int(now or time.time()))
+    run = run or str(int(now or time.time()))
     done = 0
     with open(log, "a", encoding="utf-8") as out:
         def note(**x):
-            out.write(json.dumps({"run": run, **x}, ensure_ascii=False) + "\n")
+            out.write(json.dumps({"run": run, **({"by": by} if by else {}), **x}, ensure_ascii=False) + "\n")
             out.flush()
         for m in p["moves"]:
             top = m["root"]
@@ -461,34 +462,36 @@ def write_map(state_dir):
     return moves
 
 
-def undo(state_dir):
+def undo(state_dir, run=None):
     """Put back what --apply did, newest step first: a moved file or folder goes back (if its old place is free), a copy made by us is
-    erased only if it is still the same, a rewritten html gets its text back. -> the number of steps undone."""
-    rows = steps(state_dir)
-    undone = {(s.get("src"), s.get("dst")) for s in rows if s.get("op", "").startswith("un")}
+    erased only if it is still the same, a rewritten html gets its text back. -> the number of steps undone.
+    run: only the steps of that run (organize.py undoes its own); without it the steps of the selection on the start screen are left alone."""
+    every = steps(state_dir)
+    rows = [s for s in every if (s.get("run") == run if run else s.get("by") != "select")]
+    undone = {(s.get("run"), s.get("src"), s.get("dst")) for s in every if s.get("op", "").startswith("un")}   # a path may be moved twice: by the run
     n = 0
     log = os.path.join(folder_of(state_dir), "moves.jsonl")
     with open(log, "a", encoding="utf-8") as out:
         for s in reversed(rows):
             op = s.get("op")
-            if op not in ("move", "copy", "rewrite") or (s.get("src"), s.get("dst")) in undone:
+            if op not in ("move", "copy", "rewrite") or (s.get("run"), s.get("src"), s.get("dst")) in undone or (s.get("by") != "select" and (None, s.get("src"), s.get("dst")) in undone):
                 continue
             if op == "rewrite":
                 if os.path.isfile(s["dst"]) and os.path.isfile(s.get("backup") or ""):
                     shutil.copyfile(s["backup"], s["dst"])
-                    out.write(json.dumps({"op": "unrewrite", "src": None, "dst": s["dst"]}, ensure_ascii=False) + "\n")
+                    out.write(json.dumps({"op": "unrewrite", "run": s.get("run"), "src": s.get("src"), "dst": s["dst"]}, ensure_ascii=False) + "\n")
                     n += 1
                 continue
             if op == "copy":
                 if os.path.isfile(s["dst"]) and os.path.isfile(s["src"]) and same(s["src"], s["dst"]):
                     os.remove(s["dst"])
-                    out.write(json.dumps({"op": "uncopy", "src": s["src"], "dst": s["dst"]}, ensure_ascii=False) + "\n")
+                    out.write(json.dumps({"op": "uncopy", "run": s.get("run"), "src": s["src"], "dst": s["dst"]}, ensure_ascii=False) + "\n")
                     n += 1
                 continue
             if os.path.exists(s["dst"]) and not os.path.exists(s["src"]):
                 os.makedirs(os.path.dirname(s["src"]), exist_ok=True)
                 shutil.move(s["dst"], s["src"])
-                out.write(json.dumps({"op": "unmove", "src": s["src"], "dst": s["dst"], "design": s.get("design"),
+                out.write(json.dumps({"op": "unmove", "run": s.get("run"), "src": s["src"], "dst": s["dst"], "design": s.get("design"),
                                       "src_dir": s["src"] if s.get("design") and s["src"] != s["design"] else None}, ensure_ascii=False) + "\n")
                 n += 1
     for s in rows:   # the folders our moves left empty, up to the root of the task folders
