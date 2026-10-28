@@ -81,8 +81,8 @@ test("relative time, errors, chat names, specialists and grids are English by de
 test("getters follow the language: panel groups and specialists are read at use time", () => {
   assert.deepEqual(PROPS.map((g) => g.title), ["Text", "Size", "Layout", "Grid", "Block"]);
   assert.deepEqual(as("ru", () => PROPS.map((g) => g.title)), ["Текст", "Размер", "Раскладка", "Сетка", "Блок"]);
-  assert.deepEqual(NEEDED.map((n) => n.title), ["designer", "writer", "animator"]);
-  assert.deepEqual(as("ru", () => NEEDED.map((n) => n.title)), ["дизайнер", "райтер", "аниматор"]);
+  assert.deepEqual(NEEDED.map((n) => n.title), ["designer", "writer"]);
+  assert.deepEqual(as("ru", () => NEEDED.map((n) => n.title)), ["дизайнер", "райтер"]);
 });
 
 test("the style reference line is the same in every language: the designer's skill looks for it", () => {

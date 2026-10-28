@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PRESETS, SORTS, STR, TABS, editedText, isStub, nameOf, shown, stubText, t } from "../dashboard.js";
+import { PRESETS, SORTS, STR, TABS, editedText, isStub, nameOf, shown, sortGroups, stubText, t } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
 const files = [
@@ -34,24 +34,37 @@ test("search by name, path and session; sort - newest first or by name", () => {
   assert.deepEqual(shown(files, { sort: "recent" }).map((f) => f.last), [400, 300, 200]);
 });
 
+test("every sort order changes the order: the cards and the tiles follow the same four", () => {
+  const names = (o) => shown(files, { sort: o }).map((f) => nameOf(f.path));
+  assert.deepEqual(SORTS, ["recent", "oldest", "name", "name_desc"]);
+  assert.deepEqual(names("oldest"), names("recent").reverse());
+  assert.deepEqual(names("name_desc"), names("name").reverse());
+  const groups = [{ key: "b", files: [{ last: 5 }] }, { key: "a", files: [{ last: 9 }] }, { key: "c", files: [{ last: 1 }, { last: 7 }] }];
+  const keys = (o) => sortGroups(groups, o, (k) => k.toUpperCase()).map((g) => g.key).join("");
+  assert.equal(keys("recent"), "acb");
+  assert.equal(keys("oldest"), "bca");
+  assert.equal(keys("name"), "abc");
+  assert.equal(keys("name_desc"), "cba");
+  assert.equal(groups.map((g) => g.key).join(""), "bac", "the source list stays");
+});
+
 test("shown does not change the source list", () => {
   const before = files.map((f) => f.path).join();
   shown(files, { sort: "name" });
   assert.equal(files.map((f) => f.path).join(), before);
 });
 
-test("presets: Animation goes to the animator, the rest to the designer; each has a stub 'new ...: '", () => {
-  assert.deepEqual(PRESETS.map((p) => p.id), ["slides", "design", "system", "motion", "codebase"]);
-  assert.equal(PRESETS.find((p) => p.id === "motion").to, "animator");
-  for (const p of PRESETS.filter((p) => p.id !== "motion")) assert.equal(p.to, "designer");
+test("presets: all go to the designer (no Animation); each has a stub 'new ...: '", () => {
+  assert.deepEqual(PRESETS.map((p) => p.id), ["slides", "design", "system", "codebase"]);
+  for (const p of PRESETS) assert.equal(p.to, "designer");
   for (const p of PRESETS) assert.match(p.lead, /: $/);
 });
 
 test("a stub replaces the previous stub, but never the owner's words", () => {
-  const [slides, , , , motion] = PRESETS;
+  const [slides, , , code] = PRESETS;
   assert.equal(stubText("", slides.lead), slides.lead);
-  assert.equal(stubText(slides.lead, motion.lead), motion.lead);
-  assert.equal(stubText("make a landing page", motion.lead), "make a landing page");
+  assert.equal(stubText(slides.lead, code.lead), code.lead);
+  assert.equal(stubText("make a landing page", code.lead), "make a landing page");
   assert.ok(isStub(slides.lead));
   assert.ok(!isStub("make a landing page"));
 });
@@ -80,7 +93,7 @@ test("language: Russian when the hub language is Russian (also ru-RU)", () => {
 });
 
 test("language is read at use time: PRESETS getters and t() follow a switch without reloading", () => {
-  const p = PRESETS.find((x) => x.id === "motion");
+  const p = PRESETS.find((x) => x.id === "slides");
   lang("en");
   const en = [p.title, p.lead, t("sort_name")];
   lang("ru");
@@ -88,7 +101,7 @@ test("language is read at use time: PRESETS getters and t() follow a switch with
   lang("en");
   assert.deepEqual([p.title, p.lead, t("sort_name")], en);
   assert.notDeepEqual(en, ru);
-  assert.deepEqual(ru, ["Анимация", "новая анимация: ", "По названию"]);
+  assert.deepEqual(ru, ["Презентация", "новая презентация: ", "Название, от А до Я"]);
 });
 
 test("a stub is recognised in every language, whichever one is active now", () => {

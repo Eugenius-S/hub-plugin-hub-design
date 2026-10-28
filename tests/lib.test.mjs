@@ -283,8 +283,8 @@ test("Exit Hub Design: to the chat of the specialist the conversation was with; 
   assert.equal(exitTarget("", undefined, "", "hub-design"), "#/");
 });
 
-test("the plugin's specialists: designer and writer required, animator desirable; every preset leads to someone from the list", () => {
-  assert.deepEqual(NEEDED.map((n) => [n.name, n.need]), [["designer", "required"], ["writer", "required"], ["animator", "wanted"]]);
+test("the plugin's specialists: designer and writer required; every preset leads to someone from the list", () => {
+  assert.deepEqual(NEEDED.map((n) => [n.name, n.need]), [["designer", "required"], ["writer", "required"]]);
   for (const p of PRESETS) assert.ok(NEEDED.some((n) => n.name === p.to), p.id);
 });
 
@@ -292,7 +292,7 @@ test("lacking: who is not in the snapshot; the hub does not count as a specialis
   const sessions = [{ name: "hub", kind: "hub" }, { name: "animator" }];
   assert.deepEqual(lacking(sessions).map((n) => [n.name, n.state]), [["designer", "ask"], ["writer", "ask"]]);
   assert.deepEqual(lacking([...sessions, { name: "designer" }, { name: "writer" }]), []);
-  assert.deepEqual(lacking([{ name: "designer", kind: "hub" }]).map((n) => n.name), ["designer", "writer", "animator"]);
+  assert.deepEqual(lacking([{ name: "designer", kind: "hub" }]).map((n) => n.name), ["designer", "writer"]);
   assert.equal(lacking(sessions, { designer: 1000 }, 1000 + ASK_TTL - 1)[0].state, "wait");
   assert.equal(lacking(sessions, { designer: 1000 }, 1000 + ASK_TTL)[0].state, "ask");
   assert.deepEqual(lacking(sessions, { designer: 1000 }, 5, []), []);

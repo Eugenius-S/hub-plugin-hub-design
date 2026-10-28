@@ -32,7 +32,6 @@
 .a-design{--art:color-mix(in oklab,var(--primary) 16%,var(--muted))}
 .a-codebase{--art:color-mix(in oklab,var(--foreground) 6%,var(--muted))}
 .a-system{--art:color-mix(in oklab,var(--primary) 22%,var(--muted))}
-.a-motion{--art:color-mix(in oklab,var(--destructive) 14%,var(--muted))}
 .hdd-art i{position:absolute;display:block;font-style:normal}
 .hdd-art .a-card{background:var(--card);border-radius:8px;box-shadow:0 0 0 1px var(--border),0 2px 6px color-mix(in oklab,var(--foreground) 8%,transparent)}
 .hdd-art .a-bar{border-radius:99px;background:color-mix(in oklab,var(--foreground) 62%,var(--card))}
@@ -49,9 +48,6 @@
 .hdd-art .s2{background:color-mix(in oklab,var(--primary) 40%,var(--card))}
 .hdd-art .s3{background:color-mix(in oklab,var(--destructive) 22%,var(--card))}
 .hdd-art .s4{background:color-mix(in oklab,var(--foreground) 12%,var(--card))}
-.hdd-art .a-ball{top:38%;width:11px;height:11px;border-radius:99px;background:color-mix(in oklab,var(--destructive) 40%,var(--card))}
-.hdd-art .b1{left:14%}.hdd-art .b2{left:34%;background:color-mix(in oklab,var(--destructive) 55%,var(--card))}
-.hdd-art .b3{left:54%;background:color-mix(in oklab,var(--destructive) 70%,var(--card))}.hdd-art .b4{left:74%;background:var(--destructive)}
 
 /* past files */
 .hdd-files{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px;margin-top:40px;align-items:start}

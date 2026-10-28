@@ -8,10 +8,10 @@ import { prune, rangeIds, setMany, tileState } from "./selection.js";
 // UI strings: en by default, ru when the hub language is Russian (see i18n.js); texts are resolved at use time, never at load
 export const STR = {
   en: {
-    preset_slides: "Presentation", preset_design: "Design", preset_codebase: "Your code", preset_system: "Design system", preset_motion: "Animation",
-    lead_slides: "new presentation: ", lead_design: "new design: ", lead_codebase: "new design in the project code: ", lead_system: "new design system: ", lead_motion: "new animation: ",
+    preset_slides: "Presentation", preset_design: "Design", preset_codebase: "Your code", preset_system: "Design system",
+    lead_slides: "new presentation: ", lead_design: "new design: ", lead_codebase: "new design in the project code: ", lead_system: "new design system: ",
     tab_all: "All", tab_mine: "Mine", tab_others: "Others",
-    sort_recent: "Newest first", sort_name: "By name",
+    sort_recent: "Newest first", sort_oldest: "Oldest first", sort_name: "Name, A to Z", sort_name_desc: "Name, Z to A",
     edited: "edited {ago}",
     asked: "Request sent to the hub, waiting",
     install: "Install",
@@ -44,10 +44,10 @@ export const STR = {
     toast_conflict: "Not everything came back: the old place is taken", toast_fail: "Did not work: {text}",
   },
   ru: {
-    preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Свой код", preset_system: "Дизайн-система", preset_motion: "Анимация",
-    lead_slides: "новая презентация: ", lead_design: "новый дизайн: ", lead_codebase: "новый дизайн в коде проекта: ", lead_system: "новая дизайн-система: ", lead_motion: "новая анимация: ",
+    preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Свой код", preset_system: "Дизайн-система",
+    lead_slides: "новая презентация: ", lead_design: "новый дизайн: ", lead_codebase: "новый дизайн в коде проекта: ", lead_system: "новая дизайн-система: ",
     tab_all: "Все", tab_mine: "Мои", tab_others: "Остальные",
-    sort_recent: "Сначала новые", sort_name: "По названию",
+    sort_recent: "Сначала новые", sort_oldest: "Сначала старые", sort_name: "Название, от А до Я", sort_name_desc: "Название, от Я до А",
     edited: "изменён {ago}",
     asked: "Запрос отправлен хабу, ждём",
     install: "Поставить",
@@ -85,9 +85,9 @@ export const t = makeT(STR);
 // a preset is a new file of that kind: the chat goes to the specialist of the kind, a stub "new <kind>: …" lands in the input.
 // title and lead are getters: they follow the hub language at the moment they are read
 const preset = (id, to) => ({ id, to, get title() { return t("preset_" + id); }, get lead() { return t("lead_" + id); } });
-export const PRESETS = [preset("slides", "designer"), preset("design", "designer"), preset("system", "designer"), preset("motion", "animator"), preset("codebase", "designer")];
+export const PRESETS = [preset("slides", "designer"), preset("design", "designer"), preset("system", "designer"), preset("codebase", "designer")];
 export const TABS = ["all", "mine", "others"];   // ids; the label is t("tab_<id>")
-export const SORTS = ["recent", "name"];         // ids; the label is t("sort_<id>")
+export const SORTS = ["recent", "oldest", "name", "name_desc"];         // ids; the label is t("sort_<id>")
 // stubs in EVERY language: the language may change between putting a stub in the input and checking it
 const STUBS = new Set(PRESETS.flatMap((p) => allLangs(STR, "lead_" + p.id)));
 
@@ -104,8 +104,18 @@ export function shown(files, { tab = "all", q = "", sort = "recent", mine = new 
   const label = (f) => labels.get(f.path) || nameOf(f.path);
   const rows = files.filter((f) => (tab === "all" || (tab === "mine") === mine.has(f.path))
     && (!needle || (label(f) + " " + nameOf(f.path) + " " + f.path + " " + (f.session || "")).toLowerCase().includes(needle)));
-  const by = sort === "name" ? (a, b) => label(a).localeCompare(label(b)) : (a, b) => (b.last || b.ts || 0) - (a.last || a.ts || 0);
+  const time = (f) => f.last || f.ts || 0;
+  const by = sort === "name" ? (a, b) => label(a).localeCompare(label(b)) : sort === "name_desc" ? (a, b) => label(b).localeCompare(label(a))
+    : sort === "oldest" ? (a, b) => time(a) - time(b) : (a, b) => time(b) - time(a);
   return rows.sort(by);
+}
+// the tiles (folders) go in the same order as the cards: a tile is as new as its newest design, and is named by title(key)
+export function sortGroups(groups, sort = "recent", title = (key) => key) {
+  const last = (g) => Number(g.last) || Math.max(0, ...g.files.map((f) => Number(f.last || f.ts) || 0));
+  const name = (g) => String(title(g.key) || "");
+  const by = sort === "name" ? (a, b) => name(a).localeCompare(name(b)) : sort === "name_desc" ? (a, b) => name(b).localeCompare(name(a))
+    : sort === "oldest" ? (a, b) => last(a) - last(b) : (a, b) => last(b) - last(a);
+  return [...groups].sort(by);
 }
 export const editedText = (f, now) => {
   const a = ago(f.last || f.ts, now);
@@ -118,7 +128,6 @@ const ART = {
   design: '<i class="a-card a-phone"><i class="a-line a-notch"></i><i class="a-dot a-pd" style="top:24%"></i><i class="a-line" style="left:42%;top:25.5%;width:42%;height:5%"></i><i class="a-dot a-pd" style="top:41%"></i><i class="a-line" style="left:42%;top:42.5%;width:30%;height:5%"></i><i class="a-dot a-pg" style="left:30%"></i><i class="a-dot a-pg" style="left:46%"></i><i class="a-dot a-pg" style="left:62%"></i></i>',
   codebase: '<i class="a-card" style="left:44%;top:14%;width:36%;height:40%;opacity:.8"></i><i class="a-term" style="left:16%;top:38%;width:50%;height:48%"><b>&gt;_</b></i>',
   system: '<i class="a-card" style="left:14%;top:14%;width:72%;height:72%"><i class="a-sw s1" style="left:10%;top:14%"></i><i class="a-sw s2" style="left:30%;top:14%"></i><i class="a-sw s3" style="left:50%;top:14%"></i><i class="a-sw s4" style="left:70%;top:14%"></i><i class="a-bar" style="left:10%;top:58%;width:42%;height:10%"></i><i class="a-line" style="left:10%;top:76%;width:80%;height:8%"></i></i>',
-  motion: '<i class="a-card" style="left:14%;top:16%;width:72%;height:68%"><i class="a-ball b1"></i><i class="a-ball b2"></i><i class="a-ball b3"></i><i class="a-ball b4"></i></i>',
 };
 
 // the "specialist needed" banner: rows come from lacking() in lib.js; "Install" asks the hub, while waiting - "Asked the hub, waiting"
@@ -340,7 +349,7 @@ export function createDashboard(app) {
   searchBox.innerHTML = CI.search;
   searchBox.append(search);
   const bView = tool("list", () => { S.list = !S.list; paint(); });
-  const bSort = tool("sort", () => { S.sort = S.sort === "recent" ? "name" : "recent"; paint(); });
+  const bSort = tool("sort", () => { S.sort = SORTS[(SORTS.indexOf(S.sort) + 1) % SORTS.length]; paint(); });
   const bMore = tool("more", () => { S.path = !S.path; paint(); if (S.path) pathIn.focus(); });
   bMore.classList.add("hdd-more");
   const tools = el("div", "hdd-tools");
@@ -920,7 +929,7 @@ export function createDashboard(app) {
     });
     place(files, nodes);   // move only the ones that shifted: a card put back replays its entrance animation
     // tiles
-    const groups = v.mode === "folders" ? v.groups : (v.subs || []);
+    const groups = sortGroups(v.mode === "folders" ? v.groups : (v.subs || []), S.sort, fullOf);
     const live = new Set();
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);

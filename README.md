@@ -125,7 +125,7 @@ The folder is `<hub code>/hub-sync/design` when the hub code has a `hub-sync/syn
 
 ### Specialists
 
-Hub Design installs the designer specialist from the specialists catalog (a button on the start screen). The specialists the plugin needs are designer and writer (required) and animator (for the "Animation" preset, desirable); the list is `NEEDED` in `lib.js`. If there is no designer or writer in the hub, the start screen shows a banner "Hub Design needs the designer" with an "Install" button: it sends the hub, in your name, "Install the specialist for Hub Design: specialists install designer" (the hub installs it); after the click it reads "Asked the hub, waiting", and the banner disappears by itself when the session appears. If there is no animator, a quiet line "no specialist animator" appears by the "Animation" preset. If you write in the chat of a specialist who is not in the hub, the same banner shows above the input.
+Hub Design installs the designer specialist from the specialists catalog (a button on the start screen). The specialists the plugin needs are designer and writer (required); the list is `NEEDED` in `lib.js`. If there is no designer or writer in the hub, the start screen shows a banner "Hub Design needs the designer" with an "Install" button: it sends the hub, in your name, "Install the specialist for Hub Design: specialists install designer" (the hub installs it); after the click it reads "Asked the hub, waiting", and the banner disappears by itself when the session appears. If you write in the chat of a specialist who is not in the hub, the same banner shows above the input.
 
 ### The palette button in the input
 

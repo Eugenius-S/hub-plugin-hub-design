@@ -66,7 +66,7 @@ export const STR = {
     m_place: "The next round of this design goes into the same task folder {dir} as a folder of its own: <design-name>-<round>/index.html, its assets inside.",
     gone_denied: "The file is outside the hub's project and session folders, so the plugin will not show it: {path}",
     gone_missing: "File not found: {path}",
-    t_designer: "designer", t_writer: "writer", t_animator: "animator",
+    t_designer: "designer", t_writer: "writer",
     install: "Install the specialist for Hub Design: specialists install {name}",
     banner: "Hub Design needs the {title}",
     k_email: "Email", k_post: "Post", k_story: "Story", k_banner: "Banner", k_landing: "Landing", k_slides: "Slides", k_poster: "Poster", k_ad: "Ad", k_screen: "Screen", k_design: "Design",
@@ -133,7 +133,7 @@ export const STR = {
     m_place: "Следующий раунд этого макета — в ту же папку задачи {dir} своей папкой: <имя-макета>-<раунд>/index.html, ресурсы в ней.",
     gone_denied: "Файл вне папок проектов и сессий хаба, плагин его не покажет: {path}",
     gone_missing: "Файл не найден: {path}",
-    t_designer: "дизайнер", t_writer: "райтер", t_animator: "аниматор",
+    t_designer: "дизайнер", t_writer: "райтер",
     install: "Поставь специалиста для Hub Design: specialists install {name}",
     banner: "Для Hub Design нужен {title}",
     k_email: "Email", k_post: "Пост", k_story: "Сторис", k_banner: "Баннер", k_landing: "Лендинг", k_slides: "Слайды", k_poster: "Постер", k_ad: "Реклама", k_screen: "Экран", k_design: "Макет",
@@ -1321,7 +1321,6 @@ export function exitTarget(session, known, back, id) {
 export const NEEDED = [
   { name: "designer", need: "required", get title() { return tr("t_designer"); } },
   { name: "writer", need: "required", get title() { return tr("t_writer"); } },
-  { name: "animator", need: "wanted", get title() { return tr("t_animator"); } },
 ];
 export const ASK_TTL = 30 * 60 * 1000;   // "asked the hub" lasts this long, then "Install" again
 export const installText = (name) => tr("install", { name });
