@@ -1,37 +1,37 @@
-/* Hub Design icon in the sidebar / ☰ menu and on the palette button in a session's input: on hover the outline palette turns
-   filled and a pink/primary gradient sweeps over it, like the send button's color. The menu icon is drawn by the core as a
-   mask (.ext-icon, --src), the button holds an empty span (.hd-pi); in both, two layers replace it: the outline (::before,
+/* Hub Design palette button in a session's input: on hover the outline palette turns filled and a pink/primary gradient sweeps
+   over it, like the send button's color. The button holds an empty span (.hd-pi); two layers replace it: the outline (::before,
    currentColor) and the filled palette with the gradient (::after), cross-faded by opacity, since a mask image cannot be
-   transitioned. Only our icon matches the selectors; the file paths resolve against this stylesheet. */
-:is(.srow.nav .ext-icon[style*="hub-design/icon.svg"], .hd-palette .hd-pi) {
+   transitioned. The menu icon (sidebar, hamburger menu) is not touched: the core draws it, and it hovers like every other item.
+   The file paths resolve against this stylesheet. */
+.hd-palette .hd-pi {
   --hdi-pink: light-dark(#ec3f97, #ff7ab8);
   position: relative; background: none; -webkit-mask: none; mask: none;
   transition: transform 150ms ease;
 }
-:is(.srow.nav .ext-icon[style*="hub-design/icon.svg"], .hd-palette .hd-pi)::before,
-:is(.srow.nav .ext-icon[style*="hub-design/icon.svg"], .hd-palette .hd-pi)::after {
+.hd-palette .hd-pi::before,
+.hd-palette .hd-pi::after {
   content: ""; position: absolute; inset: 0;
   -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat;
   transition: opacity 150ms ease;
 }
-:is(.srow.nav .ext-icon[style*="hub-design/icon.svg"], .hd-palette .hd-pi)::before {
+.hd-palette .hd-pi::before {
   background: currentColor; -webkit-mask-image: url("icon.svg"); mask-image: url("icon.svg"); opacity: 1;
 }
-:is(.srow.nav .ext-icon[style*="hub-design/icon.svg"], .hd-palette .hd-pi)::after {
+.hd-palette .hd-pi::after {
   -webkit-mask-image: url("icon-filled.svg"); mask-image: url("icon-filled.svg"); opacity: 0;
   background: linear-gradient(90deg, var(--primary), var(--hdi-pink), color-mix(in oklab, var(--primary) 55%, var(--hdi-pink)), var(--primary)) 0 0 / 200% 100% repeat-x;
 }
 /* hover (tens a day): a near-imperceptible swell, only under a real pointer; keyboard focus swaps the fill without moving */
 @media (hover: hover) and (pointer: fine) {
-  :is(.srow.nav, .hd-palette):hover :is(.ext-icon[style*="hub-design/icon.svg"], .hd-pi) { transform: scale(1.06); }
+  .hd-palette:hover .hd-pi { transform: scale(1.06); }
 }
-:is(.srow.nav, .hd-palette):is(:hover, :focus-visible) :is(.ext-icon[style*="hub-design/icon.svg"], .hd-pi)::before { opacity: 0; }
-:is(.srow.nav, .hd-palette):is(:hover, :focus-visible) :is(.ext-icon[style*="hub-design/icon.svg"], .hd-pi)::after {
+.hd-palette:is(:hover, :focus-visible) .hd-pi::before { opacity: 0; }
+.hd-palette:is(:hover, :focus-visible) .hd-pi::after {
   opacity: 1; animation: hdi-sweep 1.8s linear infinite;
 }
 @keyframes hdi-sweep { to { background-position: 200% 0; } }
 @media (prefers-reduced-motion: reduce) {
   /* gentler, not zero: the outline-to-fill fade stays, the swell and the sweep go */
-  :is(.srow.nav, .hd-palette):is(:hover, :focus-visible) :is(.ext-icon[style*="hub-design/icon.svg"], .hd-pi) { transform: none; }
-  :is(.srow.nav, .hd-palette):is(:hover, :focus-visible) :is(.ext-icon[style*="hub-design/icon.svg"], .hd-pi)::after { animation: none; }
+  .hd-palette:is(:hover, :focus-visible) .hd-pi { transform: none; }
+  .hd-palette:is(:hover, :focus-visible) .hd-pi::after { animation: none; }
 }
