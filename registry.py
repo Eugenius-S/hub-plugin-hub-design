@@ -261,17 +261,20 @@ def designs_in(folder):
 
 def neighbours(items, now=None):
     """The folders of the designs a task already shows: a script that builds the rest of its frames writes beside them, though the command names another folder.
-    {folder: [[task, session, ts]]} - from NEIGHBOUR_BACK s before the design, newest designs only."""
+    {folder: [[task, session, ts]]} - one row per task, from NEIGHBOUR_BACK s before its first design there; newest folders first."""
     now = time.time() if now is None else now
     out = {}
     for it in sorted(items.values(), key=lambda x: -x.get("last", 0)):
-        if len(out) >= NEIGHBOURS or now - it.get("last", 0) > NEIGHBOUR_DAYS * 86400 or not it.get("task") or not it.get("session"):
+        if now - it.get("last", 0) > NEIGHBOUR_DAYS * 86400 or not it.get("task") or not it.get("session"):
             continue
         folder = os.path.dirname(it["path"])
-        if not folder or folder in out or broad(os.path.expanduser(folder)):
+        if not folder or folder not in out and (len(out) >= NEIGHBOURS or broad(os.path.expanduser(folder))):
             continue
-        out[folder] = [[it["task"], it["session"], it["ts"] - NEIGHBOUR_BACK]]
-    return out
+        rows = out.setdefault(folder, {})
+        ts = it["ts"] - NEIGHBOUR_BACK
+        if it["task"] not in rows or ts < rows[it["task"]][2]:
+            rows[it["task"]] = [it["task"], it["session"], ts]
+    return {f: sorted(r.values(), key=lambda x: x[2])[-5:] for f, r in out.items()}
 
 
 def adopt(items, state):
