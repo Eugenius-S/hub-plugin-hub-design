@@ -39,7 +39,7 @@
 .hdd-art .a-pic{border-radius:4px;background:color-mix(in oklab,var(--primary) 30%,var(--card))}
 .hdd-art .a-dot{width:11px;height:11px;border-radius:99px;background:color-mix(in oklab,var(--primary) 55%,var(--card))}
 .hdd-art .a-term{background:color-mix(in oklab,var(--foreground) 62%,var(--card));border-radius:7px;color:var(--card);font-size:12px;padding:8px 9px;font-family:var(--font-mono)}
-.hdd-art .a-phone{left:28%;top:7%;width:44%;height:86%;border-radius:9px;box-shadow:0 0 0 1.5px color-mix(in oklab,var(--foreground) 22%,var(--card)),0 2px 6px color-mix(in oklab,var(--foreground) 8%,transparent)}
+.hdd-art .a-phone{left:30%;top:15%;width:40%;height:70%;border-radius:9px;box-shadow:0 0 0 1.5px color-mix(in oklab,var(--foreground) 22%,var(--card)),0 2px 6px color-mix(in oklab,var(--foreground) 8%,transparent)}
 .hdd-art .a-notch{left:36%;top:5%;width:28%;height:3.5%}
 .hdd-art .a-pd{left:14%;width:8px;height:8px}
 .hdd-art .a-pg{top:89%;width:4px;height:4px;background:color-mix(in oklab,var(--primary) 30%,var(--card))}
