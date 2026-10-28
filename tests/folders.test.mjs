@@ -94,7 +94,7 @@ test("folder title: the direction label, the name of the tile for a design no di
 });
 
 // --- tasks: the top level is the directions only; a task is a subfolder inside its direction ---
-import { layoutOf, subGroups, isProjectKey, projectOfKey, taskTitle, shortTitle, taskSlug, taskDir, projectDir, taskLine, placeOf, message, TASK_MIN } from "../lib.js";
+import { familyOf, isKindKey, kindOfKey, isSubKey, layoutOf, subGroups, isProjectKey, projectOfKey, taskTitle, shortTitle, taskSlug, taskDir, projectDir, taskLine, placeOf, message, TASK_MIN } from "../lib.js";
 
 const tasks = [{ id: "d10", title: "Rewarded video for Ouch", by: "ads-a" }];
 
@@ -107,6 +107,28 @@ test("layout: designs of one project folder in a direction are a subfolder there
   assert.ok(isProjectKey("proj:pack") && !isProjectKey("/p/Ads") && !isProjectKey(""));
   assert.equal(projectOfKey("proj:pack"), "pack");
   assert.equal(projectOfKey("/p/Ads"), "");
+});
+
+test("family: variants and rounds of one thing in a direction are a subfolder there; a lone design and a name that is nothing but variants stay loose", () => {
+  assert.deepEqual(familyOf("/p/Ads/x/tv-price-b-2a/index.html"), { slug: "tv-price", dir: "p/Ads/x" });
+  assert.deepEqual(familyOf("/p/Ads/x/style-frames-v4.html"), { slug: "style-frames", dir: "p/Ads/x" });
+  assert.equal(familyOf("/p/Ads/x/logos-b-4a/index.html").slug, "logos");
+  assert.equal(familyOf("/p/Ads/x/grid-ill-c-1a/index.html").slug, "grid-ill");
+  assert.equal(familyOf("/p/Ads/x/bf-scenarios-timeline.html").slug, "bf-scenarios-timeline");
+  assert.equal(familyOf("/p/Ads/x/v2/index.html"), null);
+  const files = ["tv-price-b-2a", "tv-price-c-4a", "tv-price-a-1a", "logos-b-4a", "logos-v2", "bf-scenarios-timeline", "tv-end-b-1a"].map((n) => ({ path: "/p/Ads/x/" + n + "/index.html" }));
+  files.push({ path: "/p/Ads/y/tv-price-b-2a/index.html" }, { path: "/p/Ads/z/report.html" }, { path: "/p/Ads/w/report.html" });
+  const lay = layoutOf(files, dirs);
+  const key = (f) => lay.sub.get(f.path) || "";
+  assert.deepEqual(files.map(key), ["kind:p/Ads/x|tv-price", "kind:p/Ads/x|tv-price", "kind:p/Ads/x|tv-price", "kind:p/Ads/x|logos", "kind:p/Ads/x|logos", "", "", "", "", ""]);
+  assert.ok(isKindKey("kind:p/Ads/x|tv-price") && isSubKey("kind:p/Ads/x|tv-price") && isSubKey("proj:a") && !isSubKey("/p/Ads"));
+  assert.equal(kindOfKey("kind:p/Ads/x|tv-price"), "tv-price");
+  assert.equal(folderTitle("kind:p/Ads/x|tv-price", dirs, [], lay), "Tv price");
+  assert.equal(lay.names.get("kind:p/Ads/x|logos"), "Logos");
+  const inAds = view(files, dirs, { folder: "/p/Ads" });
+  assert.deepEqual(inAds.subs.map((s) => [s.key, s.files.length]), [["kind:p/Ads/x|tv-price", 3], ["kind:p/Ads/x|logos", 2]]);
+  assert.equal(inAds.rows.length, 5);
+  assert.equal(view(files, dirs, { folder: "/p/Ads", sub: "kind:p/Ads/x|logos" }).rows.length, 2);
 });
 
 test("tiles: the top tiles are the directions, a project folder is a tile inside; the layout does not change with a search", () => {

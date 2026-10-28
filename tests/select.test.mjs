@@ -211,3 +211,22 @@ test("an author who takes a ticked design into work lets the tick go quietly: no
   assert.equal(dash.state.sel.size, 0);
   assert.ok(toast(dash).hidden);
 });
+
+test("designs next to the subfolders are cards with a preview, not lines: the compact look is gone, only the owner's list view makes lines", () => {
+  setLangSource(() => "en");
+  const log = { attached: [], srcSets: [] };
+  const hub = { el: (tag, cls, text) => { const e = new El(tag, cls, log); if (text) e.textContent = text; return e; } };
+  const rows = ["tv-price-b-2a", "tv-price-c-4a", "bf-scenarios", "bf-timeline"].map((n, i) => ({ path: "/p/Ads/x/" + n + "/index.html", session: "designer", ts: 100 + i, last: 200 + i }));
+  const app = {
+    hub, files: () => rows, dirs: () => [{ key: "/p/Ads", label: "Ads" }], mine: () => new Set(), fileState: () => "ok", alive: () => true, fileUrl: () => "", open() {},
+    peers: () => [], peerShot: () => "", lacking: () => [], preset() {}, install() {}, openPath() {}, organize: null, later() {},
+  };
+  const dash = createDashboard(app);
+  dash.state.folder = "/p/Ads";
+  dash.paint();
+  const files = find(dash.node, "hdd-files")[0];
+  assert.ok(files, "the files block is painted");
+  assert.ok(!files.classList.contains("compact"));
+  assert.equal(find(files, "hdd-card").length, 2, "the two lone designs are cards");
+  assert.equal(find(dash.node, "hdd-folder").length, 1, "the family is a tile");
+});

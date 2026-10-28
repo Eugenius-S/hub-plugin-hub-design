@@ -969,6 +969,21 @@ export const taskOfKey = (key) => (isTaskKey(key) ? String(key).slice(TASK_PREFI
 export const PROJECT_PREFIX = "proj:";
 export const isProjectKey = (key) => String(key || "").startsWith(PROJECT_PREFIX);
 export const projectOfKey = (key) => (isProjectKey(key) ? String(key).slice(PROJECT_PREFIX.length) : "");
+// the other subfolder inside a direction is a family: the variants and rounds of one thing lying side by side ("tv-price-b-2a", "tv-price-c-4a"): "kind:<folder>|<family>"
+export const KIND_PREFIX = "kind:";
+export const isKindKey = (key) => String(key || "").startsWith(KIND_PREFIX);
+export const kindOfKey = (key) => (isKindKey(key) ? String(key).slice(KIND_PREFIX.length).split("|").pop() : "");
+export const isSubKey = (key) => isProjectKey(key) || isKindKey(key);
+// the family of a design: the name of its folder (index.html) or of its file without the variant letter and the round at its end ("tv-price-b-2a" -> "tv-price",
+// "style-frames-v4" -> "style-frames"), and the folder that holds it; none - the name is nothing but variants
+const ROUND = /(?:[-_ ](?:v?\d+[a-z]?|[a-e]))+$/i;
+export function familyOf(path) {
+  const parts = dirKey(path).split("/").filter(Boolean);
+  let name = (parts.pop() || "").replace(/\.[^.]+$/, "");
+  if (name.toLowerCase() === "index") name = parts.pop() || "";
+  const slug = name.replace(ROUND, "").trim();
+  return slug && !/^(?:v?\d+[a-z]?|[a-e])$/i.test(slug) ? { slug, dir: parts.join("/") } : null;
+}
 // a design that no direction owns is a tile of the top level named for its own task: "name:<the name>"; the name is short, readable and has no path
 export const NAME_PREFIX = "name:";
 export const isNameKey = (key) => String(key || "").startsWith(NAME_PREFIX);
@@ -1022,15 +1037,22 @@ export const topKeyOf = (f, dirs = [], taskRows = []) => homeOf(f, dirs, taskRow
 // the layout of the dashboard over all the designs (a search or a tab does not change it): the top folder of each design is its direction, else the tile of its own task;
 // a folder of a project on disk (<home>/design/<project>/) makes a subfolder inside a direction when the direction holds several designs of it: the place on disk, not the task id
 // (one task makes several folders, one folder holds the designs of several tasks). A design with no project folder lies loose.
-// returns {top: Map(path -> direction folder), sub: Map(path -> "proj:<project>"), names: Map("proj:<project>" -> the name of the subfolder)}
+// A design in no project folder joins a family subfolder: the designs of one folder whose names differ by the variant and the round only ("kind:<folder>|<family>").
+// returns {top: Map(path -> direction folder), sub: Map(path -> "proj:<project>" | "kind:<folder>|<family>"), names: Map(sub key -> the name of the subfolder)}
 export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
-  const top = new Map(), n = new Map(), named = new Map();
+  const top = new Map(), n = new Map(), named = new Map(), fam = new Map(), famOf = new Map(), own = new Set(dirs.map((d) => d.key));
   for (const f of files) {
     if (!f) continue;
     const k = topKeyOf(f, dirs, taskRows), project = projectOf(f.path);
     top.set(f.path, k);
     if (project && !isNameKey(k)) n.set(k + "|" + project, (n.get(k + "|" + project) || 0) + 1);
     if (isNameKey(k)) named.set(k, (named.get(k) || 0) + 1);
+    const fm = !project && own.has(k) ? familyOf(f.path) : null;
+    if (fm) {
+      const id = k + "|" + fm.dir + "|" + fm.slug.toLowerCase();
+      famOf.set(f.path, { id, slug: fm.slug });
+      fam.set(id, (fam.get(id) || 0) + 1);
+    }
   }
   // a tile of a task needs several designs; one design alone is the designer's (the designer's folder) or lies loose among the folders ("")
   for (const f of files) {
@@ -1040,7 +1062,13 @@ export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
   const sub = new Map();
   const names = new Map();
   for (const f of files) {
-    const project = f && projectOf(f.path);
+    const project = f && projectOf(f.path), fm = f && famOf.get(f.path);
+    if (fm && fam.get(fm.id) >= min) {
+      const key = KIND_PREFIX + fm.id.split("|").slice(1).join("|");
+      sub.set(f.path, key);
+      if (!names.has(key)) names.set(key, readableSlug(fm.slug));
+      continue;
+    }
     if (!project || !(n.get(top.get(f.path) + "|" + project) >= min)) continue;
     sub.set(f.path, PROJECT_PREFIX + project);
     if (!names.has(PROJECT_PREFIX + project)) names.set(PROJECT_PREFIX + project, readableSlug(project));
@@ -1164,7 +1192,7 @@ export function groupFiles(files = [], dirs = [], taskRows = [], lay = null) {
   return [...by.entries()].map(([key, rows]) => ({ key, files: rows, dir: dirs.find((d) => d.key === key) || null, last: last(rows) }))
     .sort((a, b) => b.last - a.last);
 }
-// the subfolders of projects inside one folder: [{key: "proj:<project>", files, last}], the newest first; loose - the designs that lie in no subfolder
+// the subfolders (projects and families) inside one folder: [{key: "proj:<project>" | "kind:<folder>|<family>", files, last}], the newest first; loose - the designs that lie in no subfolder
 export function subGroups(files = [], lay) {
   const by = new Map(), loose = [];
   for (const f of files) {

@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, groupFiles, isDesignerKey, isGone, isNameKey, isProjectKey, labelsOf, layoutOf, nameOf, nameOfKey, projectOfKey, readableSlug, scrollsRight, isServiceKey, subGroups, topKeyOf } from "./lib.js";
+import { ago, bannerText, groupFiles, isDesignerKey, isGone, isNameKey, isSubKey, kindOfKey, labelsOf, layoutOf, nameOf, nameOfKey, projectOfKey, readableSlug, scrollsRight, isServiceKey, subGroups, topKeyOf } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 import { prune, rangeIds, setMany, tileState } from "./selection.js";
@@ -166,7 +166,7 @@ export function createNeed(app, cls = "") {
 export const PREVIEWS = 4;
 // the folder of another machine: the two common folders arrive as keys (that machine may speak another language), the rest as names
 export const peerDirName = (dir) => (isServiceKey(dir) ? t("folder_service") : isDesignerKey(dir) ? t("folder_designer") : dir || t("folder_none"));
-export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isServiceKey(key) ? t("folder_service") : isDesignerKey(key) ? t("folder_designer") : isProjectKey(key) ? (lay && lay.names.get(key)) || readableSlug(projectOfKey(key)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isServiceKey(key) ? t("folder_service") : isDesignerKey(key) ? t("folder_designer") : isSubKey(key) ? (lay && lay.names.get(key)) || readableSlug(projectOfKey(key) || kindOfKey(key)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
 // what the dashboard shows: "folders" (the tiles of the top level) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
 // The top level is the directions and, next to them, a tile named for the own task of each design that no direction owns - there is no "no direction" folder.
 // A project folder on disk is a subfolder inside its direction (several designs of it there); a design with no project folder lies loose.
@@ -896,7 +896,7 @@ export function createDashboard(app) {
     const check = mkCheck();
     node.append(shots, body);
     if (check) node.append(check);
-    node.addEventListener("click", () => { if (S.folder !== null && isProjectKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
+    node.addEventListener("click", () => { if (S.folder !== null && isSubKey(key)) S.sub = key; else { S.folder = key; S.sub = null; } paint(); });
     tl = { node, cells, name, count, check };
     tiles.set(key, tl);
     return tl;
@@ -964,7 +964,6 @@ export function createDashboard(app) {
     }
     setHidden(folders, !tnodes.length);
     setHidden(files, inPeer || !list.length);
-    files.classList.toggle("compact", v.mode === "files" ? v.subs.length > 0 : list.length > 0);   // designs lying in no folder, next to the folders: a line each (icon and name), two columns
     const peerCount = paintPeers();
     // what the owner ticked is only what he sees: a design that left the screen (another folder, a search, deleted) is let go, so a delete never reaches what is out of sight
     const viewKey = [S.folder, S.sub, S.peer, S.pdir].join("|");
