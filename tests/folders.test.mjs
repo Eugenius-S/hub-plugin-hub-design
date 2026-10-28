@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dashboardFiles, directionDirs, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine, topKeyOf, placeKeyOf, isNameKey, nameOfKey, readableSlug, headlineOf } from "../lib.js";
+import { DESIGNER_KEY, SERVICE_KEY, dashboardFiles, directionDirs, isDesigner, isDesignerKey, isService, isServiceKey, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine, topKeyOf, placeKeyOf, isNameKey, nameOfKey, readableSlug, headlineOf } from "../lib.js";
 import { PREVIEWS, folderTitle, newest, shown, view } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -35,7 +35,7 @@ test("a design belongs to the deepest direction folder; elsewhere - no direction
   assert.equal(folderOf("C:\\Work\\Ads\\a.html", directionDirs([{ name: "w", role: "worker", cwd: "C:\\Work\\ads" }])), "C:/Work/ads");
 });
 
-test("groups: newest folder first; a design no direction owns is a tile of its own, not a 'no direction' folder", () => {
+test("groups: newest folder first; a design of a task with one design belongs to no folder and lies loose (key \"\")", () => {
   const files = [
     { path: "/h/design/a/index.html", last: 900 },
     { path: "/p/Gen/design/b/index.html", last: 300 },
@@ -43,11 +43,10 @@ test("groups: newest folder first; a design no direction owns is a tile of its o
     { path: "/p/Ads/design/d/index.html", last: 100 },
   ];
   const g = groupFiles(files, dirs);
-  assert.deepEqual(g.map((x) => x.key), ["name:A", "/p/Ads", "/p/Gen"]);   // /h/design/a/ - the folder of its task names it; it is the newest
+  assert.deepEqual(g.map((x) => x.key), ["", "/p/Ads", "/p/Gen"]);   // /h/design/a/ - the only design of its task: no tile, it lies loose; it is the newest
   assert.equal(g[1].files.length, 2);
   assert.equal(g[1].dir.label, "Ads");
   assert.equal(g[0].dir, null);
-  assert.ok(!g.some((x) => x.key === ""));
 });
 
 test("newest: the last PREVIEWS designs, newest first", () => {
@@ -56,16 +55,16 @@ test("newest: the last PREVIEWS designs, newest first", () => {
   assert.deepEqual(newest(rows).map((f) => f.last), [60, 50, 40, 30]);
 });
 
-test("view: the tiles of the top level when nothing is searched and no folder is open; a design no direction owns is a tile named for it", () => {
+test("view: the tiles of the top level when nothing is searched and no folder is open; a lone design of no direction lies loose below the tiles", () => {
   const rows = [{ path: "/p/Ads/design/a/index.html", last: 1 }, { path: "/h/design/b/index.html", last: 2 }];
   const top = view(rows, dirs);
   assert.equal(top.mode, "folders");
-  assert.deepEqual(top.groups.map((g) => g.key), ["name:B", "/p/Ads"]);
+  assert.deepEqual(top.groups.map((g) => g.key), ["/p/Ads"]);
+  assert.deepEqual(top.loose.map((f) => f.path), [rows[1].path]);
   assert.equal(view(rows, dirs, { q: "a" }).mode, "files");                 // a search looks through everything
-  assert.equal(view(rows, []).mode, "folders");                              // no directions - the tiles of the designs themselves
-  assert.deepEqual(view(rows, [], {}).groups.map((g) => g.key).sort(), ["name:A", "name:B"]);
+  assert.equal(view(rows, []).mode, "files");                                // no directions and no task with several designs: the designs in a list
+  assert.equal(view(rows, []).rows.length, 2);
   assert.deepEqual(view(rows, dirs, { folder: "/p/Ads" }).rows.map((f) => f.path), [rows[0].path]);
-  assert.deepEqual(view(rows, dirs, { folder: "name:B" }).rows.map((f) => f.path), [rows[1].path]);   // the tile opens into its cards
 });
 
 test("where a new design goes: the cwd of a direction session, nowhere for the hub, specialists and executors", () => {
@@ -169,7 +168,9 @@ test("there is no 'no direction' folder: a design no direction owns is a top til
   // the tiles of the dashboard: designs of one name lie in one tile
   const v = view([f("/h/design/poster-bf-sale/a/index.html", { task: "d10" }), f("/h/design/poster-bf-sale/b/index.html", { task: "d10" }), f("/x/c/index.html", { task: "d12", title: "Landing" })], [], { taskRows: rows });
   assert.equal(v.mode, "folders");
-  assert.deepEqual(v.groups.map((g) => [g.key, g.files.length]).sort(), [["name:Landing", 1], ["name:Poster bf sale", 2]]);
+  assert.deepEqual(v.groups.map((g) => [g.key, g.files.length]).sort(), [["name:Poster bf sale", 2]]);   // a task with one design is no tile
+  assert.deepEqual(v.loose.map((x) => x.path), ["/x/c/index.html"]);
+  assert.deepEqual(view([f("/h/design/poster-bf-sale/a/index.html", { task: "d10" }), f("/h/design/poster-bf-sale/b/index.html", { task: "d10" })], [], { taskRows: rows, folder: "name:Poster bf sale" }).rows.length, 2);   // the tile opens into its cards
   // a direction still wins over the name
   assert.equal(topKeyOf(f("/p/Ads/design/a/index.html", { task: "d10" }), dirs, rows), "/p/Ads");
   // the subfolder inside a direction is the project folder on disk, named like the folder; the tasks that made the designs do not split it
@@ -366,4 +367,40 @@ test("the place on disk decides: every design of design/designer-eval/ is one ti
   const inCanva = view([...pack, loose], ds, { folder: "/p/Canva templates" });
   assert.deepEqual(inCanva.subs.map((x) => [x.key, x.files.length]), [["proj:canva-black-friday-pack", 4]]);
   assert.deepEqual(inCanva.rows.map((x) => x.path), [loose.path]);
+});
+
+test("service files and the designer's folder: covers, icons and test pages go to one folder, the designer's lone designs to another, the rest lies loose", () => {
+  const f = (path, extra = {}) => ({ path, ...extra });
+  // service: an icon file, a scratch or plugin folder, a service word in the file or in its folder; the designer's project folder is never service by its file
+  for (const p of ["/x/plugin/icons/check.svg", "/w/work-tmp/a/index.html", "/w/hub-plugins/p/cover.html", "/x/stage/index.html", "/x/vf-test/index.html", "/x/preview.html"]) assert.ok(isService(f(p)), p);
+  for (const p of ["/x/poster/index.html", "/h/design/poster-bf-sale/preview.html", "/x/testimonial/index.html", "/x/checkout.html"]) assert.ok(!isService(f(p)), p);
+  assert.ok(isService(f("/h/design/motion-loader/preview.html")));   // the project folder is named like a service one
+  assert.equal(topKeyOf(f("/x/stage/index.html"), dirs, []), SERVICE_KEY);
+  assert.equal(topKeyOf(f("/p/Ads/design/cover/index.html"), dirs, []), "/p/Ads");   // a direction owns it first
+  assert.ok(isServiceKey(SERVICE_KEY) && isDesignerKey(DESIGNER_KEY) && !isServiceKey("/p/Ads"));
+  assert.ok(isDesigner(f("/a", { session: "designer" })) && isDesigner(f("/a", { session: "hd-edits-2" })) && !isDesigner(f("/a", { session: "ads-a" })));
+  const rows = [
+    f("/x/a/index.html", { session: "designer", title: "Poster" }),
+    f("/x/b/index.html", { session: "ex1", title: "Banner" }),
+    f("/x/stage/index.html", { session: "designer" }),
+    f("/h/design/poster-bf-sale/a/index.html", { session: "designer" }),
+    f("/h/design/poster-bf-sale/b/index.html", { session: "designer" }),
+  ];
+  const lay = layoutOf(rows, dirs, []);
+  assert.equal(lay.top.get("/x/a/index.html"), DESIGNER_KEY);        // the designer's own, alone: the designer's folder
+  assert.equal(lay.top.get("/x/b/index.html"), "");                  // a session that is no direction, alone: loose
+  assert.equal(lay.top.get("/x/stage/index.html"), SERVICE_KEY);
+  assert.equal(lay.top.get("/h/design/poster-bf-sale/a/index.html"), "name:Poster bf sale");   // several of one task: the task's own tile
+  assert.equal(folderTitle(SERVICE_KEY, dirs, [], lay), "Service");
+  assert.equal(folderTitle(DESIGNER_KEY, dirs, [], lay), "Designer");
+  lang("ru");
+  assert.equal(folderTitle(SERVICE_KEY, dirs, [], lay), "Служебное");
+  assert.equal(folderTitle(DESIGNER_KEY, dirs, [], lay), "Дизайнер");
+  lang("en");
+  const top = view(rows, dirs, { lay });
+  assert.deepEqual(top.groups.map((g) => g.key).sort(), [DESIGNER_KEY, SERVICE_KEY, "name:Poster bf sale"].sort());
+  assert.deepEqual(top.loose.map((x) => x.path), ["/x/b/index.html"]);
+  assert.equal(view(rows, dirs, { lay, folder: DESIGNER_KEY }).rows.length, 1);
+  // a search looks through the folders and finds the service file too
+  assert.equal(view(rows, dirs, { lay, q: "stage" }).mode, "files");
 });

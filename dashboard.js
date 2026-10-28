@@ -1,6 +1,6 @@
 // Hub Design: the start screen, like the Claude Design dashboard: a title, tabs "All / Mine / Others", search, view and sort,
 // a row of presets (a new file of that kind) and past designs as cards with a live preview. Colors, fonts and shadow come from the hub theme.
-import { ago, bannerText, groupFiles, isGone, isNameKey, isProjectKey, labelsOf, layoutOf, nameOf, nameOfKey, projectOfKey, readableSlug, scrollsRight, subGroups, topKeyOf } from "./lib.js";
+import { ago, bannerText, groupFiles, isDesignerKey, isGone, isNameKey, isProjectKey, labelsOf, layoutOf, nameOf, nameOfKey, projectOfKey, readableSlug, scrollsRight, isServiceKey, subGroups, topKeyOf } from "./lib.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { allLangs, makeT } from "./i18n.js";
 import { prune, rangeIds, setMany, tileState } from "./selection.js";
@@ -10,7 +10,8 @@ export const STR = {
   en: {
     preset_slides: "Presentation", preset_design: "Design", preset_codebase: "Your code", preset_system: "Design system",
     lead_slides: "new presentation: ", lead_design: "new design: ", lead_codebase: "new design in the project code: ", lead_system: "new design system: ",
-    tab_all: "All", tab_mine: "Mine", tab_others: "Others",
+    tab_all: "All", tab_mine: "Opened", tab_others: "Not opened",
+    tab_all_hint: "All designs", tab_mine_hint: "Designs you have opened on the canvas", tab_others_hint: "Designs you have not opened yet",
     sort_recent: "Newest first", sort_oldest: "Oldest first", sort_name: "Name, A to Z", sort_name_desc: "Name, Z to A",
     edited: "edited {ago}",
     asked: "Request sent to the hub, waiting",
@@ -28,6 +29,8 @@ export const STR = {
     no_specialist: "no specialist {name}",
     crumb_all: "All folders",
     folder_none: "No direction",
+    folder_service: "Service", folder_service_hint: "Covers, icons and test pages: made along the way, not for you",
+    folder_designer: "Designer", folder_designer_hint: "The designer's designs outside any project",
     folder_count: "Designs: {n}",
     empty_folder: "No designs in this folder yet. Write on the left what you need: the designer will save it here.",
     os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
@@ -46,7 +49,8 @@ export const STR = {
   ru: {
     preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Свой код", preset_system: "Дизайн-система",
     lead_slides: "новая презентация: ", lead_design: "новый дизайн: ", lead_codebase: "новый дизайн в коде проекта: ", lead_system: "новая дизайн-система: ",
-    tab_all: "Все", tab_mine: "Мои", tab_others: "Остальные",
+    tab_all: "Все", tab_mine: "Открывал", tab_others: "Не открывал",
+    tab_all_hint: "Все макеты", tab_mine_hint: "Макеты, которые ты открывал на холсте", tab_others_hint: "Макеты, которые ты ещё не открывал",
     sort_recent: "Сначала новые", sort_oldest: "Сначала старые", sort_name: "Название, от А до Я", sort_name_desc: "Название, от Я до А",
     edited: "изменён {ago}",
     asked: "Запрос отправлен хабу, ждём",
@@ -64,6 +68,8 @@ export const STR = {
     no_specialist: "нет специалиста {name}",
     crumb_all: "Все папки",
     folder_none: "Без направления",
+    folder_service: "Служебное", folder_service_hint: "Обложки, иконки и тестовые страницы: сделаны по ходу дела, не для тебя",
+    folder_designer: "Дизайнер", folder_designer_hint: "Макеты дизайнера вне проектов",
     folder_count: "Макетов: {n}",
     empty_folder: "В этой папке пока нет макетов. Напишите слева, что нужно: дизайнер сохранит его сюда.",
     os_mac: "Mac", os_windows: "Windows", os_linux: "Linux",
@@ -158,7 +164,9 @@ export function createNeed(app, cls = "") {
 // the folders of the start screen: designs by direction folder (a tile with the newest designs), a click opens the folder.
 // dirs = directionDirs() of lib.js; the label of a folder is its direction (several directions in one folder - the folder name)
 export const PREVIEWS = 4;
-export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isProjectKey(key) ? (lay && lay.names.get(key)) || readableSlug(projectOfKey(key)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
+// the folder of another machine: the two common folders arrive as keys (that machine may speak another language), the rest as names
+export const peerDirName = (dir) => (isServiceKey(dir) ? t("folder_service") : isDesignerKey(dir) ? t("folder_designer") : dir || t("folder_none"));
+export const folderTitle = (key, dirs = [], tasks = [], lay = null) => (isServiceKey(key) ? t("folder_service") : isDesignerKey(key) ? t("folder_designer") : isProjectKey(key) ? (lay && lay.names.get(key)) || readableSlug(projectOfKey(key)) : isNameKey(key) ? nameOfKey(key) : key ? ((dirs.find((d) => d.key === key) || {}).label || key.split("/").pop()) : t("folder_none"));
 // what the dashboard shows: "folders" (the tiles of the top level) or "files" (the cards of a place; subs - the tiles of the tasks lying in it).
 // The top level is the directions and, next to them, a tile named for the own task of each design that no direction owns - there is no "no direction" folder.
 // A project folder on disk is a subfolder inside its direction (several designs of it there); a design with no project folder lies loose.
@@ -170,8 +178,9 @@ export function view(rows, dirs, { folder = null, sub = null, q = "", taskRows =
   if (sub !== null) return { mode: "files", rows: here.filter((f) => lay.sub.get(f.path) === sub), subs: [] };
   if (String(q || "").trim()) return { mode: "files", rows: here, subs: [] };
   if (folder === null) {
-    const groups = groupFiles(rows, dirs, taskRows, lay);
-    if (groups.length) return { mode: "folders", groups, subs: [], rows: [] };
+    // a design that belongs to no folder ("" - a task with one design, not the designer's) lies loose below the folders
+    const groups = groupFiles(rows, dirs, taskRows, lay).filter((g) => g.key !== "");
+    if (groups.length) return { mode: "folders", groups, subs: [], rows: [], loose: rows.filter((f) => topOf(f) === "") };
   }
   const { subs, loose } = subGroups(here, lay);
   return { mode: "files", rows: loose, subs };
@@ -729,7 +738,7 @@ export function createDashboard(app) {
     if (open) {
       setHidden(crumb, false);
       setText(back, "\u2190 " + (S.pdir !== null ? hubName : t("crumb_all")));
-      setText(cname, S.pdir !== null ? (S.pdir || t("folder_none")) : hubName);
+      setText(cname, S.pdir !== null ? (peerDirName(S.pdir)) : hubName);
       setTitle(cname, hubName);
     } else {
       setText(back, "\u2190 " + backLabel);   // set here only: paint() setting it too made it flip on every snapshot inside a machine
@@ -755,7 +764,7 @@ export function createDashboard(app) {
           const key = peer.machine + "/" + g.key;
           const tl = ptile(key, () => { S.pdir = g.key; paint(); });
           reg("pt:" + key, tl.node, tl.check, [], true);
-          fillTile(tl, peer, g.files, g.key || t("folder_none"));
+          fillTile(tl, peer, g.files, peerDirName(g.key));
           liveTiles.add(key);
           return tl.node;
         }));
@@ -915,7 +924,7 @@ export function createDashboard(app) {
     if (S.sub !== null) { setText(cname, folderTitle(S.sub, dirs, taskList, lay)); setTitle(cname, fullOf(S.sub)); }
     else if (S.folder !== null) { setText(cname, folderTitle(S.folder, dirs, taskList, lay)); setTitle(cname, fullOf(S.folder)); }
     // flat cards (a folder, a search or no direction folders at all)
-    const list = v.mode === "files" ? v.rows : [];
+    const list = v.mode === "files" ? v.rows : v.loose || [];
     items.clear();
     const named = !inFolder;   // a search across folders tells where each design lies
     const nodes = list.map((f) => {
@@ -934,7 +943,7 @@ export function createDashboard(app) {
     const tnodes = groups.map((g) => {
       const tl = tile(g.key);
       setText(tl.name, folderTitle(g.key, dirs, taskList, lay));
-      setTitle(tl.node, fullOf(g.key));
+      setTitle(tl.node, isServiceKey(g.key) ? t("folder_service_hint") : isDesignerKey(g.key) ? t("folder_designer_hint") : fullOf(g.key));
       setText(tl.count, t("folder_count", { n: g.files.length }));
       reg("f:" + g.key, tl.node, tl.check, g.files.map((f) => f.path));
       newest(g.files).forEach((f, i) => {
@@ -954,8 +963,8 @@ export function createDashboard(app) {
       if (!thumbOnly && !shownNow.has(key)) { c.visible = false; queue.drop(c); }   // a card not on the screen now waits for no shot
     }
     setHidden(folders, !tnodes.length);
-    setHidden(files, inPeer || v.mode !== "files");
-    files.classList.toggle("compact", v.mode === "files" && v.subs.length > 0);   // designs lying in no folder, next to the folders: a line each (icon and name), two columns
+    setHidden(files, inPeer || !list.length);
+    files.classList.toggle("compact", v.mode === "files" ? v.subs.length > 0 : list.length > 0);   // designs lying in no folder, next to the folders: a line each (icon and name), two columns
     const peerCount = paintPeers();
     // what the owner ticked is only what he sees: a design that left the screen (another folder, a search, deleted) is let go, so a delete never reaches what is out of sight
     const viewKey = [S.folder, S.sub, S.peer, S.pdir].join("|");
@@ -985,7 +994,7 @@ export function createDashboard(app) {
     setTitle(bSort, t("sort") + ": " + t("sort_" + S.sort));
     setAttr(bSort, "aria-label", bSort.title);
     for (const [p, label] of labels) setText(label, p.title.replace("-", "\u2011").replace(/ (\u0432|in) /, " $1\u00a0"));   // wrap only between words: not at the hyphen, not after the preposition (0432 in Russian)
-    for (const [id, b] of tabBtns) { setText(b, t("tab_" + id)); b.classList.toggle("on", S.tab === id); }
+    for (const [id, b] of tabBtns) { setText(b, t("tab_" + id)); setTitle(b, t("tab_" + id + "_hint")); b.classList.toggle("on", S.tab === id); }
     bView.classList.toggle("on", S.list);
     const icon = S.list ? "grid" : "list";
     if (bView.dataset.icon !== icon) { bView.dataset.icon = icon; bView.innerHTML = CI[icon]; }
