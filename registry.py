@@ -51,6 +51,10 @@ KEEP_WORK = 400   # work folders kept: the freshest
 SLACK = 120   # s: a file written a little before the command that named its folder was logged
 QUOTED = re.compile(r"([\"'])((?:/|~/|[A-Za-z]:[\\/])[^\"'\n]*?)\1")
 BARE = re.compile(r"(?:^|[\s=:(])((?:/|~/|[A-Za-z]:[\\/])[^\s\"'`;|&<>(),]+)")
+NEIGHBOURS = 60   # folders of known designs looked in for the frames a script made beside them
+NEIGHBOUR_DAYS = 3   # only the designs shown in the last days are looked beside
+NEIGHBOUR_BACK = 1800   # s: the frames of a design were built up to this long before it was shown
+NEIGHBOUR_MAX = 150   # a folder with more designs than this is not taken as the place of one task
 KEEP_TASKS = 1500   # tasks kept besides the roots of the designs
 # the task a turn works on, named in the head of its prompt: a reply to a task, an addition, the task itself
 TASK_IN_HEAD = re.compile(r"(?:ответ на задачу|к задаче|задач[аеуи]|task)\s+(d\d+)", re.I)
@@ -255,11 +259,31 @@ def designs_in(folder):
     return out
 
 
+def neighbours(items, now=None):
+    """The folders of the designs a task already shows: a script that builds the rest of its frames writes beside them, though the command names another folder.
+    {folder: [[task, session, ts]]} - from NEIGHBOUR_BACK s before the design, newest designs only."""
+    now = time.time() if now is None else now
+    out = {}
+    for it in sorted(items.values(), key=lambda x: -x.get("last", 0)):
+        if len(out) >= NEIGHBOURS or now - it.get("last", 0) > NEIGHBOUR_DAYS * 86400 or not it.get("task") or not it.get("session"):
+            continue
+        folder = os.path.dirname(it["path"])
+        if not folder or folder in out or broad(os.path.expanduser(folder)):
+            continue
+        out[folder] = [[it["task"], it["session"], it["ts"] - NEIGHBOUR_BACK]]
+    return out
+
+
 def adopt(items, state):
     """The designs a script made in the work folders of tasks: a new entry with the task, or the task for a known one that has none. True if changed."""
     changed = False
-    for folder, rows in list((state.get("work") or {}).items()):
-        for path, mtime in designs_in(folder):
+    folders = dict(neighbours(items))
+    folders.update(state.get("work") or {})
+    for folder, rows in list(folders.items()):
+        found = designs_in(folder)
+        if len(found) > NEIGHBOUR_MAX and folder not in (state.get("work") or {}):   # a folder of a site or an archive is not one task's frames
+            continue
+        for path, mtime in found:
             got = work_task(rows, mtime)
             if not got:
                 continue

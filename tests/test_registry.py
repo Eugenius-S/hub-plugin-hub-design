@@ -291,6 +291,27 @@ class Tasks(Registry):
             saved = json.load(f)
         self.assertEqual(list(saved["work"].values()), [[["d10", "designer", 1500]]])   # a command outside a task names no work folder
 
+    def test_frames_a_script_made_beside_a_shown_design_belong_to_its_task_though_the_command_names_another_folder(self):
+        # build.py runs in a folder of its own and writes the frames next to the overview the designer showed
+        out = os.path.join(self.tmp, "ads", "bf", "style")
+        os.makedirs(os.path.join(out, "grid-a-2a"))
+        os.makedirs(os.path.join(out, "grid-b-2a"))
+        shown = os.path.join(out, "overview.html")
+        files = {shown: 5000, os.path.join(out, "grid-a-2a", "index.html"): 4500, os.path.join(out, "grid-b-2a", "index.html"): 9000,
+                 os.path.join(out, "stale.html"): 100}
+        for name, mtime in files.items():
+            with open(name, "w", encoding="utf-8") as f:
+                f.write("<html></html>")
+            os.utime(name, (mtime, mtime))
+        now = 10000
+        with unittest.mock.patch.object(registry, "TEMP", registry.re.compile(r"(?!)")), unittest.mock.patch("time.time", return_value=now):
+            self.live([raised(10, "designer", "hub-core", title="Style frames"), turn(11, "designer", "m10"),
+                       ev(12, "turn.tool", {"id": "t12", "name": "Write", "input": {"file_path": shown, "content": "x"}}, "designer", ts=5000)])
+            r = self.reg()
+        got = {k: (v.get("task"), v.get("session")) for k, v in self.paths(r).items()}
+        self.assertEqual(got, {"overview.html": ("d10", "designer"), "index.html": ("d10", "designer")})   # stale.html is older than the window; grid-b is later than the design and counts
+        self.assertEqual(sum(1 for x in r.listing() if "grid-" in x["path"]), 2)
+
     def test_a_design_without_a_task_is_just_a_design(self):
         _, got = self.of([wrote(1, "designer", p("d", "free.html"))])
         self.assertEqual(got, {"free.html": None})
