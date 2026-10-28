@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESIGNER_KEY, SERVICE_KEY, dashboardFiles, directionDirs, isDesigner, isDesignerKey, isService, isServiceKey, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine, topKeyOf, placeKeyOf, isNameKey, nameOfKey, readableSlug, headlineOf } from "../lib.js";
+import { DESIGNER_KEY, familyTitle, homeOf, SERVICE_KEY, dashboardFiles, directionDirs, isDesigner, isDesignerKey, isService, isServiceKey, dirKey, folderOf, gistOf, groupFiles, kindOf, labelsOf, saveDirOf, saveLine, topKeyOf, placeKeyOf, isNameKey, nameOfKey, readableSlug, headlineOf } from "../lib.js";
 import { PREVIEWS, folderTitle, newest, shown, view } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
@@ -11,7 +11,7 @@ const sessions = [
   { name: "hub-core", kind: "hub", role: "hub", cwd: "/h/hub-home" },
   { name: "designer", kind: "agent", role: "agent", cwd: "/h/design" },
   { name: "ads-a", role: "worker", cwd: "/p/Ads" },
-  { name: "ads-b", role: "worker", cwd: "/p/Ads/" },
+  { name: "ads-b", role: "worker", cwd: "/p/AdsB/" },
   { name: "gen-y2k", role: "worker", cwd: "/p/Gen" },
   { name: "gen-aero", role: "worker", cwd: "/p/Gen/MJ/Aero" },
   { name: "ex1", role: "executor", cwd: "/p/Ads/.claude/worktrees/ex1" },
@@ -20,10 +20,9 @@ const sessions = [
 const dirs = directionDirs(sessions, ["odd"]);
 
 test("directions: workers and snapshot.directions, one folder per cwd; the hub, specialists and executors are not directions", () => {
-  assert.deepEqual(dirs.map((d) => d.key).sort(), ["/p/Ads", "/p/Gen", "/p/Gen/MJ/Aero", "/p/Odd"]);
+  assert.deepEqual(dirs.map((d) => d.key).sort(), ["/p/Ads", "/p/AdsB", "/p/Gen", "/p/Gen/MJ/Aero", "/p/Odd"]);
   assert.equal(dirs.find((d) => d.key === "/p/Gen").label, "gen-y2k");      // a lone direction names its folder
-  assert.equal(dirs.find((d) => d.key === "/p/Ads").label, "Ads");          // several directions of one project - the folder name
-  assert.deepEqual(dirs.find((d) => d.key === "/p/Ads").names, ["ads-a", "ads-b"]);
+  assert.equal(dirs.find((d) => d.key === "/p/Ads").label, "ads-a");
 });
 
 test("a design belongs to the deepest direction folder; elsewhere - no direction", () => {
@@ -35,7 +34,7 @@ test("a design belongs to the deepest direction folder; elsewhere - no direction
   assert.equal(folderOf("C:\\Work\\Ads\\a.html", directionDirs([{ name: "w", role: "worker", cwd: "C:\\Work\\ads" }])), "C:/Work/ads");
 });
 
-test("groups: newest folder first; a design of a task with one design belongs to no folder and lies loose (key \"\")", () => {
+test("groups: newest folder first; a design saved to design/<project>/ of no direction is the designer's (the tile \"designer:\")", () => {
   const files = [
     { path: "/h/design/a/index.html", last: 900 },
     { path: "/p/Gen/design/b/index.html", last: 300 },
@@ -43,10 +42,11 @@ test("groups: newest folder first; a design of a task with one design belongs to
     { path: "/p/Ads/design/d/index.html", last: 100 },
   ];
   const g = groupFiles(files, dirs);
-  assert.deepEqual(g.map((x) => x.key), ["", "/p/Ads", "/p/Gen"]);   // /h/design/a/ - the only design of its task: no tile, it lies loose; it is the newest
+  assert.deepEqual(g.map((x) => x.key), [DESIGNER_KEY, "/p/Ads", "/p/Gen"]);   // /h/design/a/ - a project folder of no direction: the designer's tile; it is the newest
   assert.equal(g[1].files.length, 2);
-  assert.equal(g[1].dir.label, "Ads");
+  assert.equal(g[1].dir.label, "ads-a");
   assert.equal(g[0].dir, null);
+  assert.deepEqual(groupFiles([{ path: "/h/loose/a.html", last: 1 }], dirs).map((x) => x.key), [""]);   // a lone design outside design/<project>/ lies loose
 });
 
 test("newest: the last PREVIEWS designs, newest first", () => {
@@ -56,7 +56,7 @@ test("newest: the last PREVIEWS designs, newest first", () => {
 });
 
 test("view: the tiles of the top level when nothing is searched and no folder is open; a lone design of no direction lies loose below the tiles", () => {
-  const rows = [{ path: "/p/Ads/design/a/index.html", last: 1 }, { path: "/h/design/b/index.html", last: 2 }];
+  const rows = [{ path: "/p/Ads/out/a.html", last: 1 }, { path: "/h/loose/b.html", last: 2 }];
   const top = view(rows, dirs);
   assert.equal(top.mode, "folders");
   assert.deepEqual(top.groups.map((g) => g.key), ["/p/Ads"]);
@@ -425,4 +425,49 @@ test("service files and the designer's folder: covers, icons and test pages go t
   assert.equal(view(rows, dirs, { lay, folder: DESIGNER_KEY }).rows.length, 1);
   // a search looks through the folders and finds the service file too
   assert.equal(view(rows, dirs, { lay, q: "stage" }).mode, "files");
+});
+
+const shared = directionDirs([
+  { name: "black-friday-2026", role: "worker", cwd: "/p/Ads" },
+  { name: "ads-timetracker", role: "worker", cwd: "/p/Ads/" },
+  { name: "ads-x", role: "worker", cwd: "/p/Ads/rewarded" },
+]);
+
+test("directions of one cwd are folders of their own, named for the direction; a lone direction keeps its cwd as the key", () => {
+  assert.deepEqual(shared.map((d) => d.key).sort(), ["/p/Ads#ads-timetracker", "/p/Ads#black-friday-2026", "/p/Ads/rewarded"]);
+  assert.deepEqual(shared.map((d) => d.label).sort(), ["ads-timetracker", "ads-x", "black-friday-2026"]);
+  assert.ok(shared.filter((d) => d.root === "/p/Ads").length === 2);
+  assert.equal(folderOf("/p/Ads/a.html", shared), "");                           // two of them: the path alone does not tell
+  assert.equal(folderOf("/p/Ads/rewarded/a.html", shared), "/p/Ads/rewarded");   // the deeper folder is one direction's
+});
+
+test("a design in a cwd that several directions share goes to the one that made it, then to the one that asked for the task, then to the one a folder on the way is named for", () => {
+  const tasks = [{ id: "d1", by: "ads-timetracker", title: "Timetracker ad" }];
+  const home = (f) => homeOf({ path: "/p/Ads/x/a.html", ...f }, shared, tasks);
+  assert.equal(home({ session: "black-friday-2026" }), "/p/Ads#black-friday-2026");
+  assert.equal(home({ session: "designer", task: "d1" }), "/p/Ads#ads-timetracker");
+  assert.equal(home({ session: "designer", task: "d1", path: "/p/Ads/Timetracker/a.html" }), "/p/Ads#ads-timetracker");   // the task first: it names who asked
+  assert.equal(home({ session: "designer", path: "/p/Ads/campaign/Black Friday 2026/a.html" }), "/p/Ads#black-friday-2026");
+  assert.notEqual(home({ session: "designer" }), "/p/Ads");                       // no member: never the shared folder as one tile
+  assert.equal(homeOf({ path: "/p/Ads/x/a.html", session: "ads-x" }, shared, tasks).startsWith("/p/Ads#"), false);
+});
+
+test("a design saved to design/<project>/ is the designer's, whoever made it; one the designer made anywhere is too", () => {
+  assert.ok(isDesigner({ path: "/h/design/hub-recap/compare.html", session: "" }));
+  assert.ok(isDesigner({ path: "/h/x/a.html", session: "designer" }));
+  assert.ok(!isDesigner({ path: "/h/x/a.html", session: "ads-a" }));
+});
+
+test("the name of a family is the title of its newest design without the version and the variant letter; no usable title - the folder name", () => {
+  assert.equal(familyTitle("Ad BF end card 2, title v6"), "Ad BF end card 2, title");
+  assert.equal(familyTitle("Ad BF TV Show, price C"), "Ad BF TV Show, price");
+  assert.equal(familyTitle(""), "");
+  assert.equal(familyTitle("D:/x/y.html"), "");
+  const dd = directionDirs([{ name: "w", role: "worker", cwd: "/p/W" }]);
+  const files = ["a", "b", "c"].map((v, i) => ({ path: "/p/W/styles/tv-price-" + v + "/index.html", session: "w", last: 10 + i, title: "Ad TV Show, price " + v.toUpperCase() }));
+  files[2].title = "Ad TV Show, price v2";
+  const lay = layoutOf(files, dd, []);
+  assert.deepEqual([...lay.names.values()], ["Ad TV Show, price"]);
+  const bare = files.map((f) => ({ ...f, title: "" }));
+  assert.deepEqual([...layoutOf(bare, dd, []).names.values()], ["Tv price"]);
 });

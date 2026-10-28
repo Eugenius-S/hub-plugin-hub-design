@@ -5,7 +5,7 @@
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCanvasFile, isCopy, fileUrl, nameOf,
   goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
-  describeTweak, directionDirs, dirKey, saveDirOf, saveLine, isProjectKey, projectOfKey, projectDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
+  describeTweak, directionDirs, dirKeyOf, saveDirOf, saveLine, isProjectKey, projectOfKey, projectDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll, handoffHome } from "./lib.js";
 import { chosen, createStyles, t as ts } from "./styles.js";
@@ -377,8 +377,8 @@ const dirsNow = () => directionDirs((hub.snapshot() || {}).sessions, (hub.snapsh
 function adoptOrigin() {
   if (!P.originNew || !ui) return;
   P.originNew = false;
-  const dir = saveDirOf(P.origin, (hub.snapshot() || {}).sessions, (hub.snapshot() || {}).directions);
-  ui.dash.setFolder(dir ? dirKey(dir) : null);
+  const key = dirKeyOf(P.origin, (hub.snapshot() || {}).sessions, (hub.snapshot() || {}).directions);
+  ui.dash.setFolder(key || null);
 }
 // the cwd whose design/ takes the new design: the open dashboard folder, else the direction we came from; "" - the designer's own place
 function saveFolder() {
@@ -469,10 +469,11 @@ async function verify(paths, force = false) {
     for (const p of part) if (r[p] && P.have[p] !== r[p]) { P.have[p] = r[p]; changed = true; }
   }
   if (changed) paint();
-  loadTimes(want.filter((p) => P.have[p] === "ok"));
+  // every asked path, not only the new ones: a failed or unanswered /times call left the card without a shot for good
+  loadTimes([...new Set(paths.map(abs).filter(Boolean))].filter((p) => P.have[p] === "ok" && !P.times[p]));
 }
 // when the files were edited — for the "edited …" line of designs that are not in the session feeds (open only on the canvas)
-async function loadTimes(paths) {
+async function loadTimes(paths, tries = 0) {
   let changed = false;
   for (let i = 0; i < paths.length; i += 40) {
     const part = paths.slice(i, i + 40);
@@ -480,11 +481,16 @@ async function loadTimes(paths) {
     try {
       const res = await fetch(origin() + "/__canvas/times?" + new URLSearchParams(part.map((p) => ["path", p])), { cache: "no-store" });
       r = res.ok ? await res.json() : null;
-    } catch { return; }
-    if (!r) return;
+    } catch { r = null; }
+    if (!r) { retryTimes(paths.slice(i), tries); return; }
     for (const p of part) if (r[p] && P.times[p] !== r[p]) { P.times[p] = r[p]; changed = true; }
   }
   if (changed) paint();
+}
+// the process did not answer (it is starting, or busy with a shot): the same paths again in a few seconds, three times at most
+function retryTimes(paths, tries) {
+  if (tries >= 3) return;
+  setTimeout(() => loadTimes(paths.filter((p) => !P.times[p]), tries + 1), 4000 * (tries + 1));
 }
 // designs moved to their task folders (layout.py of the plugin process): the frames, pins, edits and the known list follow them to the new paths
 const MOVED = ["frames", "pins", "changes", "drawings", "notes", "tweaks", "errs", "writers", "picked", "found", "opened", "known", "focus"];

@@ -1136,7 +1136,7 @@ def peer_rows():
 
     def folder(r):   # the file is in a direction's folder; else the direction made it; else the direction asked for the task
         real = os.path.expanduser(r["path"])
-        label = peers.folder_label(real, dirs) or homes.get(r.get("session"), "")
+        label = peers.folder_label(real, dirs, [r.get("session"), *asked.get(r.get("task"), ())], names) or homes.get(r.get("session"), "")
         for name in asked.get(r.get("task"), ()):
             label = label or homes.get(name, "")
         if label:

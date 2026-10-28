@@ -152,11 +152,20 @@ class Groups(unittest.TestCase):
 
     def test_directions_and_the_deepest_folder_name_the_group(self):
         dirs = peers.direction_dirs(self.SESSIONS, {"ads"})
-        self.assertEqual(sorted(n for _k, n in dirs), ["X", "ads", "ads-b"])   # two in one folder - the folder name; hub and specialists are none
+        self.assertEqual(sorted(n for _k, n in dirs), ["ads", "ads-b", "x", "y"])   # two in one folder - each its own; hub and specialists are none
         self.assertEqual(peers.folder_label(r"C:\Work\Ads\sub\a\i.html", dirs), "ads-b")   # the deepest wins
         self.assertEqual(peers.folder_label("c:/work/ads/design/i.html", dirs), "ads")             # Windows paths do not care for case
         self.assertEqual(peers.folder_label("C:/Work/D/i.html", dirs), "")                          # a specialist's folder is no direction
         self.assertEqual(peers.folder_label("C:/Elsewhere/i.html", dirs), "")
+        # a folder of two directions: the one that made the file or asked for its task, else the one a folder on the way is named for, else nobody
+        self.assertEqual(peers.folder_label("C:/Work/X/i.html", dirs), "")
+        self.assertEqual(peers.folder_label("C:/Work/X/i.html", dirs, ["nobody", "y"]), "y")
+        self.assertEqual(peers.folder_label("C:/Work/X/i.html", dirs, ["x", "y"]), "x")
+        two = [{"name": "black-friday-2026", "cwd": "C:/Work/Ads", "role": "worker"}, {"name": "ads-timetracker", "cwd": "C:/Work/Ads", "role": "worker"}]
+        ds, ns = peers.direction_dirs(two, set()), peers.direction_names(two, set())
+        self.assertEqual(peers.folder_label("C:/Work/Ads/campaign/Black Friday 2026/a.html", ds, [], ns), "black-friday-2026")
+        self.assertEqual(peers.folder_label("C:/Work/Ads/Timetracker/a.html", ds, [], ns), "ads-timetracker")
+        self.assertEqual(peers.folder_label("C:/Work/Ads/other/a.html", ds, [], ns), "")
 
     def test_the_export_carries_the_group_and_the_hub_name_and_the_read_gives_them_back(self):
         root = tempfile.mkdtemp(dir=TMP)
@@ -400,7 +409,7 @@ class Homes(unittest.TestCase):
                     {"name": "motion", "cwd": "/w/motion", "role": "worker"}, {"name": "designer", "cwd": "/d", "role": "agent"},
                     {"name": "hub", "cwd": "/h", "kind": "hub", "role": "worker"}]
         homes = peers.direction_homes(sessions, set())
-        self.assertEqual(homes, {"rewarded-ads": "ads", "ads-two": "ads", "motion": "motion"})   # two directions in one folder - the folder name; the designer and the hub are none
+        self.assertEqual(homes, {"rewarded-ads": "rewarded-ads", "ads-two": "ads-two", "motion": "motion"})   # a direction is labelled by its own name; the designer and the hub are none
 
 
 class PlaceNames(unittest.TestCase):

@@ -935,8 +935,10 @@ export function dashboardFiles(authors, frames, cwds, { who = () => "", time = (
 }
 
 // --- folders of directions: designs live where they were asked for -----------------------------------------------------------
-// A direction is a worker session (the hub's own role "worker") or a name from snapshot.directions; its folder is its cwd. Directions of one project share a cwd -
-// that is one folder (the label is then the folder name), a lone direction names its folder.
+// A direction is a worker session (the hub's own role "worker") or a name from snapshot.directions; its folder is its cwd. Directions of one project may share a cwd:
+// each of them is still a folder of its own (key "<cwd>#<name>", label - its name); which of them a design in that cwd belongs to is told by homeOf.
+const SHARED = "#";
+const rootOf = (d) => d.root || d.key;
 export const dirKey = (p) => String(p || "").replace(/\\/g, "/").replace(/\/+$/, "");
 const lastPart = (p) => dirKey(p).split("/").filter(Boolean).pop() || "";
 export function directionDirs(sessions = [], directions = []) {
@@ -948,16 +950,31 @@ export function directionDirs(sessions = [], directions = []) {
     if (!by.has(key)) by.set(key, { key, cwd: s.cwd, names: [] });
     by.get(key).names.push(s.name);
   }
-  return [...by.values()].map((d) => ({ ...d, label: d.names.length === 1 ? d.names[0] : lastPart(d.key) || d.names[0] }));
+  const out = [];
+  for (const d of by.values()) {
+    if (d.names.length === 1) out.push({ ...d, root: d.key, label: d.names[0] });
+    else for (const n of d.names) out.push({ key: d.key + SHARED + n, cwd: d.cwd, root: d.key, names: [n], label: n, shared: true });
+  }
+  return out;
 }
-// the folder a design file sits in: the deepest direction folder that contains it ("" - no direction)
-export function folderOf(path, dirs = []) {
+// the directions whose cwd is the deepest one that contains the file: none, one, or several (the directions sharing that cwd)
+export function dirsAt(path, dirs = []) {
   const p = dirKey(path);
   const win = /^[A-Za-z]:/.test(p);
   const norm = (x) => (win ? x.toLowerCase() : x);
-  let best = "";
-  for (const d of dirs) if ((norm(p).startsWith(norm(d.key) + "/")) && d.key.length > best.length) best = d.key;
-  return best;
+  let best = "", at = [];
+  for (const d of dirs) {
+    const r = rootOf(d);
+    if (!norm(p).startsWith(norm(r) + "/") || r.length < best.length) continue;
+    if (r.length > best.length) { best = r; at = []; }
+    at.push(d);
+  }
+  return at;
+}
+// the folder a design file sits in: the deepest direction folder that contains it ("" - no direction, or several directions share it: homeOf tells which)
+export function folderOf(path, dirs = []) {
+  const at = dirsAt(path, dirs);
+  return at.length === 1 ? at[0].key : "";
 }
 // --- folders of tasks: all the designs made for one task of the owner (every round, every session of the chain) lie in one folder ----------
 // the registry of the plugin process gives each design the root of the chain of tasks it was made for (f.task). A task gets a folder when it has several designs
@@ -983,6 +1000,14 @@ export function familyOf(path) {
   if (name.toLowerCase() === "index") name = parts.pop() || "";
   const slug = name.replace(ROUND, "").trim();
   return slug && !/^(?:v?\d+[a-z]?|[a-e])$/i.test(slug) ? { slug, dir: parts.join("/") } : null;
+}
+// the name of a family from the title of a design: the version and the variant letter at its end are not the name ("Ad BF end card 2, title v6" -> "Ad BF end card 2, title");
+// a title that is no name (empty, a path, a long brief) gives "" - the folder name is used then
+const VARIANT = /[\s,]+(?:v\d+[a-z]?|[a-e])$/i;
+export function familyTitle(title) {
+  let x = shortTitle(title);
+  for (let i = 0; i < 2; i++) x = x.replace(VARIANT, "").trim();
+  return x.length >= 3 && !/[\/…]/.test(x) ? x : "";
 }
 // a design that no direction owns is a tile of the top level named for its own task: "name:<the name>"; the name is short, readable and has no path
 export const NAME_PREFIX = "name:";
@@ -1029,8 +1054,8 @@ export function isService(f) {
   if (/\.(?:svg|ico)$/.test(file) || parts.some((x) => SERVICE_DIRS.has(x))) return true;
   return [file.replace(/\.[^.]+$/, ""), parts[parts.length - 1] || ""].some((x) => rawWords(x).some((w) => SERVICE_WORDS.has(w)));
 }
-// the designer is the session of that name (and the lanes of its hand edits: designer-2, hd-edits-1)
-export const isDesigner = (f) => /^(?:designer|hd-edits)(?:-\d+)?$/i.test(String((f && f.session) || ""));
+// the designer is the session of that name (and the lanes of its hand edits: designer-2, hd-edits-1); so is whoever saved the design into a project folder (design/<project>/)
+export const isDesigner = (f) => /^(?:designer|hd-edits)(?:-\d+)?$/i.test(String((f && f.session) || "")) || !!(f && projectOf(f.path));
 // the top folder of a design: its direction, else the service folder, else the tile of its own task. The tile of a task that holds one design only is not
 // a folder (see layoutOf): that design goes to the designer's folder, or lies loose ("")
 export const topKeyOf = (f, dirs = [], taskRows = []) => homeOf(f, dirs, taskRows) || (isService(f) ? SERVICE_KEY : placeKeyOf(f, taskRows));
@@ -1040,7 +1065,7 @@ export const topKeyOf = (f, dirs = [], taskRows = []) => homeOf(f, dirs, taskRow
 // A design in no project folder joins a family subfolder: the designs of one folder whose names differ by the variant and the round only ("kind:<folder>|<family>").
 // returns {top: Map(path -> direction folder), sub: Map(path -> "proj:<project>" | "kind:<folder>|<family>"), names: Map(sub key -> the name of the subfolder)}
 export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
-  const top = new Map(), n = new Map(), named = new Map(), fam = new Map(), famOf = new Map(), own = new Set(dirs.map((d) => d.key));
+  const top = new Map(), n = new Map(), named = new Map(), fam = new Map(), famOf = new Map(), famTitle = new Map(), own = new Set(dirs.map((d) => d.key));
   for (const f of files) {
     if (!f) continue;
     const k = topKeyOf(f, dirs, taskRows), project = projectOf(f.path);
@@ -1052,6 +1077,8 @@ export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
       const id = k + "|" + fm.dir + "|" + fm.slug.toLowerCase();
       famOf.set(f.path, { id, slug: fm.slug });
       fam.set(id, (fam.get(id) || 0) + 1);
+      const last = Number(f.last || f.ts) || 0, title = familyTitle(f.title);   // the name of the family is the title of its newest design
+      if (title && (!famTitle.has(id) || last > famTitle.get(id).last)) famTitle.set(id, { last, title });
     }
   }
   // a tile of a task needs several designs; one design alone is the designer's (the designer's folder) or lies loose among the folders ("")
@@ -1066,7 +1093,7 @@ export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
     if (fm && fam.get(fm.id) >= min) {
       const key = KIND_PREFIX + fm.id.split("|").slice(1).join("|");
       sub.set(f.path, key);
-      if (!names.has(key)) names.set(key, readableSlug(fm.slug));
+      if (!names.has(key)) names.set(key, (famTitle.get(fm.id) || {}).title || readableSlug(fm.slug));
       continue;
     }
     if (!project || !(n.get(top.get(f.path) + "|" + project) >= min)) continue;
@@ -1082,10 +1109,21 @@ export function layoutOf(files = [], dirs = [], taskRows = [], min = TASK_MIN) {
 const homeByName = (dirs, name) => (name && (dirs.find((d) => d.names && d.names.includes(name)) || {}).key) || "";
 const taskHome = (t, dirs) => (t ? homeByName(dirs, t.by) || homeByName(dirs, t.dir) || homeByName(dirs, t.who) : "");
 export function homeOf(f, dirs = [], taskRows = []) {
-  const byPath = folderOf(f.path, dirs);
-  if (byPath) return byPath;
+  const at = dirsAt(f.path, dirs);
+  if (at.length === 1) return at[0].key;
   const task = f.task ? (taskRows || []).find((x) => x.id === f.task) : null;
-  return homeByName(dirs, f.session) || taskHome(task, dirs) || projectDirOf(f, dirs, taskRows);
+  const member = at.length > 1 ? memberOf(f, at, task) : "";
+  return member || homeByName(dirs, f.session) || taskHome(task, dirs) || projectDirOf(f, dirs, taskRows);
+}
+// several directions share the cwd the file lies in: the one that made it, else the one that asked for its task, else the one a folder on the way to the file is named for
+// (<cwd>/rewarded-ads/Black Friday 2026/file.html); none of them - "" (the other rules go on)
+function memberOf(f, at, task) {
+  const by = (n) => homeByName(at, n);
+  const hit = by(f.session) || (task ? by(task.by) || by(task.dir) || by(task.who) : "");
+  if (hit) return hit;
+  const rel = dirKey(f.path).slice(rootOf(at[0]).length + 1).split("/").slice(0, -1);
+  for (const seg of rel) { const k = nearestDir(seg, at); if (k) return k; }
+  return "";
 }
 // the words of a name: lower case, letters and digits, three signs and more (a lone "b" or "a" is a label, not a word), without the words every design folder has
 const COMMON = new Set(["design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub", "icons8"]);
@@ -1111,7 +1149,7 @@ export function nearestDir(name, dirs = []) {
   const w = [...new Set(wordsOf(name))];
   const hub = hubby(name);
   if (!w.length && !hub) return "";
-  const names = (d) => [...(d.names || []), d.label, lastPart(d.key)];
+  const names = (d) => [...(d.names || []), d.label, ...(d.shared ? [] : [lastPart(rootOf(d))])];
   let best = null, tie = false;
   for (const d of dirs) {
     if (hub && !names(d).some(saysHub)) continue;
@@ -1209,6 +1247,12 @@ export function saveDirOf(name, sessions = [], directions = []) {
   if (!name) return "";
   const d = directionDirs(sessions, directions).find((x) => x.names.includes(name));
   return d ? d.cwd : "";
+}
+// the dashboard folder of a direction (its key: the cwd, or cwd#name when several directions share the cwd); "" - none
+export function dirKeyOf(name, sessions = [], directions = []) {
+  if (!name) return "";
+  const d = directionDirs(sessions, directions).find((x) => x.names.includes(name));
+  return d ? d.key : "";
 }
 const sepOf = (p) => (/\\/.test(p) && !p.includes("/") ? "\\" : "/");
 // the folder of a task on disk: <the direction that asked>/design/<slug>/; no direction - <the designer's folder>/<slug>/

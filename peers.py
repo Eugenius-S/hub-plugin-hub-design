@@ -78,9 +78,16 @@ def _key(p):
     return str(p or "").replace("\\", "/").rstrip("/")
 
 
+SHARED = "\0"   # the key of a direction in a folder several directions share: <folder>\0<name> (a folder name cannot hold it)
+
+
+def root_of(key):
+    return key.split(SHARED, 1)[0]
+
+
 def direction_dirs(sessions, directions):
     """The folders of the directions: [(folder key, label)] - the same rule as directionDirs of lib.js (hub sessions are not directions; several
-    directions in one folder - the folder name). sessions: [{name, cwd, role, kind}]; directions: the names of the directions."""
+    directions in one folder - each is a direction of its own with the key <folder>\0<name>). sessions: [{name, cwd, role, kind}]; directions: the names of the directions."""
     by = {}
     for s in sessions or []:
         if not isinstance(s, dict) or not s.get("cwd") or s.get("kind") == "hub":
@@ -90,7 +97,10 @@ def direction_dirs(sessions, directions):
         by.setdefault(_key(s["cwd"]), []).append(s.get("name") or "")
     out = []
     for key, names in by.items():
-        out.append((key, names[0] if len(names) == 1 else (key.rsplit("/", 1)[-1] or names[0])))
+        if len(names) == 1:
+            out.append((key, names[0]))
+        else:
+            out.extend((key + SHARED + n, n) for n in dict.fromkeys(names))
     return out
 
 
@@ -100,29 +110,50 @@ def direction_names(sessions, directions):
     for s in sessions or []:
         if isinstance(s, dict) and s.get("cwd") and s.get("kind") != "hub" and (s.get("name") in (directions or ()) or s.get("role") == "worker"):
             by.setdefault(_key(s["cwd"]), []).append(s.get("name") or "")
-    return by
+    out = {}
+    for key, names in by.items():
+        if len(names) == 1:
+            out[key] = names
+        else:
+            out.update({key + SHARED + n: [n] for n in dict.fromkeys(names)})
+    return out
 
 
 def direction_homes(sessions, directions):
     """{session name: label of its direction folder}: a design made by a direction (or asked for by it) lies in its folder wherever the file is."""
-    labels = dict(direction_dirs(sessions, directions))
     homes = {}
     for s in sessions or []:
         if isinstance(s, dict) and s.get("cwd") and s.get("name") and s.get("kind") != "hub" and (s.get("name") in (directions or ()) or s.get("role") == "worker"):
-            homes[s["name"]] = labels.get(_key(s["cwd"]), "")
+            homes[s["name"]] = s["name"]   # a direction is labelled by its own name (also in a folder several directions share)
     return homes
 
 
-def folder_label(path, dirs):
-    """The label of the deepest direction folder that holds the file, "" - no direction (the same rule as folderOf of lib.js)."""
+def folder_label(path, dirs, who=(), names=None):
+    """The label of the deepest direction folder that holds the file, "" - no direction (the same rule as folderOf and memberOf of lib.js). Several
+    directions share the folder: the one that made the file or asked for its task (who, in this order), else the one a folder on the way to the file
+    is named for; none of them - "" (the other rules go on)."""
     p = _key(path)
     win = len(p) > 1 and p[1] == ":"
     norm = (lambda x: x.lower()) if win else (lambda x: x)
-    best, label = "", ""
+    best, at = "", []
     for key, name in dirs:
-        if norm(p).startswith(norm(key) + "/") and len(key) > len(best):
-            best, label = key, name
-    return str(label)[:80]
+        root = root_of(key)
+        if not norm(p).startswith(norm(root) + "/") or len(root) < len(best):
+            continue
+        if len(root) > len(best):
+            best, at = root, []
+        at.append((key, name))
+    if len(at) <= 1:
+        return str(at[0][1])[:80] if at else ""
+    labels = [name for _, name in at]
+    for n in who:
+        if n in labels:
+            return str(n)[:80]
+    for seg in p[len(best) + 1:].split("/")[:-1]:
+        hit = nearest_dir(seg, at, names)
+        if hit:
+            return hit
+    return ""
 
 
 COMMON = {"design", "designs", "template", "templates", "page", "pages", "index", "html", "v1", "v2", "v3", "hub", "icons8"}
@@ -175,7 +206,7 @@ def nearest_dir(name, dirs, names=None):
         return ""
     best, tie = None, False
     for key, label in dirs:
-        parts = list((names or {}).get(key, [])) + [label, key.rsplit("/", 1)[-1]]
+        parts = list((names or {}).get(key, [])) + [label] + ([] if SHARED in key else [key.rsplit("/", 1)[-1]])
         if hub and not any(says_hub(x) for x in parts):
             continue
         own = list(dict.fromkeys(x for part in parts for x in words_of(part)))
