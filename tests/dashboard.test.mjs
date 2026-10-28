@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PRESETS, SORTS, STR, TABS, editedText, isStub, nameOf, shown, sortGroups, stubText, t } from "../dashboard.js";
+import { PRESETS, SORTS, STR, TABS, editedText, isStub, nameOf, peerDirName, shown, sortGroups, stubText, t } from "../dashboard.js";
 import { setLangSource } from "../i18n.js";
 
 const files = [
@@ -130,5 +130,27 @@ test("every tab, sort and preset has a label in both languages", () => {
     for (const id of TABS) assert.notEqual(t("tab_" + id), "tab_" + id);
     for (const id of SORTS) assert.notEqual(t("sort_" + id), "sort_" + id);
     for (const p of PRESETS) assert.ok(p.title && p.lead);
+  }
+});
+
+test("the common folders of the other machine are named in the language of this page, a real direction stays as it is", () => {
+  lang("en");
+  assert.equal(peerDirName("service:"), t("folder_service"));
+  assert.equal(peerDirName("designer:"), t("folder_designer"));
+  assert.equal(peerDirName("icons8-smm"), "icons8-smm");
+  const en = [peerDirName("service:"), peerDirName("designer:")];
+  lang("ru");
+  const ru = [peerDirName("service:"), peerDirName("designer:")];
+  assert.notDeepEqual(en, ru);
+});
+
+test("every tab has a name and a hint in both languages", () => {
+  for (const l of ["en", "ru"]) {
+    lang(l);
+    for (const tab of TABS) {
+      const id = tab.id || tab;
+      assert.ok(t("tab_" + id) && t("tab_" + id) !== "tab_" + id, l + " " + id);
+      assert.ok(t("tab_" + id + "_hint") && t("tab_" + id + "_hint") !== "tab_" + id + "_hint", l + " " + id + " hint");
+    }
   }
 });

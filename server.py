@@ -1147,9 +1147,20 @@ def peer_rows():
             title = ""
         if dirs or folders:   # the project folder design/<project>/, the title, the file name (peers.project_label, as projectDirOf of lib.js)
             label = peers.project_label(real, title, dirs, names, folders)
-        # no direction owns it: the tile of its own task, there is no "no direction" folder (peers.place_label, as placeKeyOf of lib.js)
-        return label or peers.place_label(real, title, titles.get(r.get("task"), ""))
-    return [{**r, "dir": folder(r)} for r in rows]
+        if label:
+            return label
+        if peers.is_service(real):   # covers, icons, test pages: one folder (as topKeyOf of lib.js)
+            return peers.SERVICE_KEY
+        # no direction owns it: the tile of its own task (peers.place_label, as placeKeyOf of lib.js); a task with one design only has no tile (below)
+        return "\0" + peers.place_label(real, title, titles.get(r.get("task"), ""))
+    out = [{**r, "dir": folder(r)} for r in rows]
+    count = {}
+    for r in out:
+        count[r["dir"]] = count.get(r["dir"], 0) + 1
+    for r in out:   # the same rule as layoutOf of lib.js: a name with one design is the designer's folder (its own designs) or no folder at all
+        if r["dir"].startswith("\0"):
+            r["dir"] = r["dir"][1:] if count[r["dir"]] >= 2 else peers.DESIGNER_KEY if peers.is_designer(r.get("session")) else ""
+    return out
 
 
 def peer_homes():

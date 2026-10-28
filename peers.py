@@ -276,6 +276,33 @@ def place_label(path, title="", task_title=""):
     return (readable_slug(project_of(path)) or headline_of(task_title) or short_title(title) or readable_slug(base) or "?")[:80]
 
 
+SERVICE_KEY, DESIGNER_KEY = "service:", "designer:"   # the two common folders go to the other machine as keys: it names them in its own language
+SERVICE_WORDS = {"cover", "icon", "icons", "preview", "stage", "test", "tests", "harness", "loader", "check"}
+SERVICE_DIRS = {"work-tmp", "hub-plugins", "temp", "tmp"}
+_DESIGNER = re.compile(r"^(?:designer|hd-edits)(?:-\d+)?$", re.I)
+
+
+def raw_words(s):
+    return [w for w in re.findall(r"[^\W_]+", unicodedata.normalize("NFC", str(s or "")).lower())]
+
+
+def is_service(path):
+    """A cover, an icon, a test page: made along the way, not for the owner (the same rule as isService of lib.js)."""
+    project = project_of(path)
+    if project:
+        return any(w in SERVICE_WORDS for w in raw_words(project))
+    parts = [x.lower() for x in _key(path).split("/") if x]
+    name = parts.pop() if parts else ""
+    if re.search(r"\.(?:svg|ico)$", name) or any(x in SERVICE_DIRS for x in parts):
+        return True
+    return any(w in SERVICE_WORDS for x in (os.path.splitext(name)[0], parts[-1] if parts else "") for w in raw_words(x))
+
+
+def is_designer(session):
+    """The designer's own session and the lanes of its hand edits (the same rule as isDesigner of lib.js)."""
+    return bool(_DESIGNER.match(str(session or "")))
+
+
 def item_id(path):
     return hashlib.sha1(str(path).replace("\\", "/").lower().encode("utf-8")).hexdigest()[:16]
 

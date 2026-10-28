@@ -181,6 +181,22 @@ class Groups(unittest.TestCase):
         self.assertEqual((got[0]["hub"], got[0]["items"][0]["dir"]), ("", ""))
 
 
+class Layout(unittest.TestCase):
+    """The common folders of the start screen, the same rules as lib.js (isService, isDesigner)."""
+
+    def test_covers_icons_and_test_pages_are_service(self):
+        for path in ("/p/design/motion-loader/index.html", "/p/design/pack-icons/a.html", "/x/cover.html", "/x/a.svg", "/home/work-tmp/z/a.html"):
+            self.assertTrue(peers.is_service(path), path)
+        for path in ("/p/design/poster-bf-sale/index.html", "/x/landing.html"):
+            self.assertFalse(peers.is_service(path), path)
+
+    def test_the_designers_own_session_and_its_edit_lanes_are_the_designer(self):
+        for name in ("designer", "hd-edits", "hd-edits-3", "Designer-2"):
+            self.assertTrue(peers.is_designer(name), name)
+        for name in ("", None, "ads-a", "designer-x", "redesigner"):
+            self.assertFalse(peers.is_designer(name), name)
+
+
 class Read(unittest.TestCase):
     def setUp(self):
         self.root = tempfile.mkdtemp(dir=TMP)

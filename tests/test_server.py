@@ -1083,6 +1083,9 @@ class DesignRegistry(unittest.TestCase):
     def setUpClass(cls):
         import registry
         cls.registry = registry
+        import peers
+        cls.keep_dirs = peers.SERVICE_DIRS
+        peers.SERVICE_DIRS = {"work-tmp", "hub-plugins"}   # the temporary folder of the test is no service place
         cls.srv = server.serve(0)
         cls.port = cls.srv.server_address[1]
         server.PORT = cls.port
@@ -1096,6 +1099,8 @@ class DesignRegistry(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        import peers
+        peers.SERVICE_DIRS = cls.keep_dirs
         cls.srv.shutdown()
         cls.srv.server_close()
 
@@ -1185,14 +1190,14 @@ class DesignRegistry(unittest.TestCase):
         self.assertEqual({os.path.basename(x["path"]): x.get("task") for x in d["items"]}, {"a.html": "d10", "b.html": "d10", "lone.html": "d11"})
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"rewarded": "rewarded-ads"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
-        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": "V1"})   # the top level of the other machine is the direction; a design no direction owns is named for the folder of its task (no "no direction" tile)
+        self.assertEqual(rows, {"a.html": "rewarded-ads", "b.html": "rewarded-ads", "lone.html": "designer:"})   # the top level of the other machine is the direction; a design no direction owns is named for its task, but a task with one design has no tile: the designer's own go to the common folder (key designer:)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
         self.assertEqual(rows, {"a.html": "V1", "b.html": "V1", "lone.html": "V1"})   # no direction asked: the folder of the task (design/v1/) names the tile, never empty
         # no folder of a task: the title of the task when it is a headline ("Ролик Ouch"), not when it is the start of a brief
         loose = os.path.join(TMP, "old-project", "misc")
         os.makedirs(loose, exist_ok=True)
-        for n, task in (("a.html", "d10"), ("b.html", "d12")):
+        for n, task in (("a.html", "d10"), ("c.html", "d10"), ("b.html", "d12")):
             path = os.path.join(os.path.realpath(loose), n)
             self.put(path)
             self.reg.items[self.registry.key_of(path)]["task"] = task
@@ -1201,7 +1206,7 @@ class DesignRegistry(unittest.TestCase):
         self.reg.state["tasks"]["d12"] = {"title": "Role: the hub's designer \u2014 read only\u2026", "by": "x", "who": "designer", "ts": 3, "root": "d12"}
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "file_state", return_value="ok"):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows() if os.path.realpath(loose) in r["path"]}
-        self.assertEqual(rows, {"a.html": "Ролик Ouch", "b.html": "Лендинг Kolo"})
+        self.assertEqual(rows, {"a.html": "Ролик Ouch", "c.html": "Ролик Ouch", "b.html": "designer:"})   # a task with one design has no tile
         # the lone one was asked for by a direction ("x"): it goes to the folder of that direction, not to "no direction" (hd-sort)
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"x": "icons8-smm"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
@@ -1224,6 +1229,20 @@ class DesignRegistry(unittest.TestCase):
         with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={"rewarded": "rewarded-ads"}):
             rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
         self.assertEqual(rows["c.html"], "rewarded-ads")
+
+    def test_a_cover_or_a_test_page_goes_to_the_service_key_and_a_lone_design_of_another_session_to_no_folder(self):
+        base = os.path.join(os.path.realpath(TMP), "old-project", "misc2")
+        os.makedirs(base, exist_ok=True)
+        for n in ("cover-loader.html", "plain.html"):
+            path = os.path.join(base, n)
+            with open(path, "w") as f:
+                f.write("<p>x</p>")
+            self.put(path)
+        self.reg.items[self.registry.key_of(os.path.join(base, "plain.html"))]["session"] = "somebody"
+        with unittest.mock.patch.object(server, "peer_dirs", return_value=[]), unittest.mock.patch.object(server, "peer_homes", return_value={}):
+            rows = {os.path.basename(r["path"]): r["dir"] for r in server.peer_rows()}
+        self.assertEqual(rows["cover-loader.html"], "service:")
+        self.assertEqual(rows["plain.html"], "")
 
     def test_no_registry_means_an_empty_not_ready_list(self):
         with unittest.mock.patch.object(server, "REG", None):
