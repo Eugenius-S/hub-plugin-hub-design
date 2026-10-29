@@ -91,3 +91,49 @@ test("agent: a drag goes on from the shift the element already has (from the fil
   assert.match(track, /parseShift\(el\.style\.translate \|\| getComputedStyle\(el\)\.translate\)/);
   assert.match(track, /dx: sx, dy: sy/);
 });
+
+test("agent: a click on a part of an inline svg icon (path, use, g, a nested svg) picks the whole icon", () => {
+  const line = src.split("\n").find((l) => l.includes("const target = (el) =>"));
+  assert.ok(line, "target() found");
+  const target = new Function(line + "\nreturn target;")();
+  const svg = { tagName: "svg", ownerSVGElement: null };
+  const inner = { tagName: "svg", ownerSVGElement: svg };
+  const g = { tagName: "g", ownerSVGElement: inner };
+  const use = { tagName: "use", ownerSVGElement: inner };
+  assert.equal(target(use), svg);
+  assert.equal(target(g), svg);
+  assert.equal(target(inner), svg);
+  assert.equal(target(svg), svg);
+  const p = { tagName: "P" };
+  assert.equal(target(p), p);
+  assert.equal(target(null), null);
+  // hover, press, double click, a comment pin and the point lookups all go through it
+  const body = (from, to) => src.slice(src.indexOf(from), src.indexOf(to, src.indexOf(from)));
+  assert.match(body('addEventListener("pointerdown"', 'addEventListener("pointerup"'), /const el = target\(e\.target\)/);
+  assert.match(body('addEventListener("dblclick"', "const wheelOut"), /const el = target\(e\.target\)/);
+  assert.match(body('addEventListener("click"', 'addEventListener("dblclick"'), /pickable\(target\(e\.target\)\)/);
+  assert.match(body("const at = (x, y)", "};"), /return target\(el\)/);
+  assert.match(src, /const el = target\(e\.target\);\n\s*showHover/);
+});
+
+test("agent: an inline element (code, span, a link in a paragraph) becomes inline-block on its first move, so the shift shows", () => {
+  const a = src.indexOf("const BOXED");
+  assert.ok(a > 0, "BOXED found");
+  const unInline = new Function(src.slice(a, src.indexOf("\n", src.indexOf("const unInline"))) + "\nreturn unInline;")();
+  assert.equal(unInline("inline", "code"), "inline-block");
+  assert.equal(unInline("inline", "span"), "inline-block");
+  assert.equal(unInline("inline", "a"), "inline-block");
+  for (const tag of ["img", "svg", "video", "canvas", "input", "button"]) assert.equal(unInline("inline", tag), null, tag);
+  for (const d of ["block", "inline-block", "flex", "inline-flex", "grid", "contents"]) assert.equal(unInline(d, "span"), null, d);
+  // it is a recorded style (undo drops it, the file gets it), set only once the drag really moves
+  const move = src.slice(src.indexOf("if (drag) {\n      const ddx"), src.indexOf("paintState(drag.el);"));
+  assert.match(move, /if \(!drag\.moved && Math\.abs\(ddx\) \+ Math\.abs\(ddy\) > 2\) \{/);
+  assert.match(move, /s\.css\.display = \{ from: "inline", to: d \}/);
+});
+
+test("agent: while dragged the element ignores the design's own transition, on release its style is rebuilt from the record", () => {
+  const move = src.slice(src.indexOf("if (drag) {\n      const ddx"), src.indexOf("return stop(e);", src.indexOf("if (drag) {\n      const ddx")));
+  assert.match(move, /paintState\(drag\.el\);\n\s*drag\.el\.style\.transition = "none";/);
+  const up = src.slice(src.indexOf('addEventListener("pointerup"'), src.indexOf('for (const type of ["mousedown"'));
+  assert.match(up, /if \(d\.moved\) \{ paintState\(d\.el\); commit\(d\.el, d\.before\); \}/);
+});

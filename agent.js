@@ -172,12 +172,14 @@
   };
   const find = (sel) => { try { return sel ? document.querySelector(sel) : null; } catch { return null; } };
 
+  // a part of an inline svg (path, use, g, a nested svg) stands for the whole icon: picking the path moved a stroke, not the icon
+  const target = (el) => { while (el && el.ownerSVGElement) el = el.ownerSVGElement; return el; };
   const pickable = (el) => el && el.nodeType === 1 && !ours(el) && el !== document.documentElement && el !== document.body;
   const at = (x, y) => {
     host.style.display = "none";
     const el = document.elementFromPoint(x, y);
     host.style.display = "";
-    return el;
+    return target(el);
   };
 
   // --- box under the cursor ------------------------------------------------------------------------------------------
@@ -442,6 +444,10 @@
     const m = /^(-?[\d.]+)px(?:\s+(-?[\d.]+)px)?(?:\s+0px)?$/.exec(String(v || "").trim());
     return m ? [Number(m[1]), Number(m[2] || 0)] : [0, 0];
   };
+  // translate, width and height do not apply to an inline box (a span, code or a link inside a paragraph): dragging it gave 0,0.
+  // On its first move such an element becomes inline-block; the change goes into the record and the file like any other style
+  const BOXED = /^(img|svg|video|canvas|iframe|input|object|embed|select|textarea|button)$/;
+  const unInline = (display, tag) => (display === "inline" && !BOXED.test(tag) ? "inline-block" : null);
   function track(el) {
     let s = state.get(el);
     if (!s) {
@@ -800,8 +806,12 @@
     }
     if (drag) {
       const ddx = e.clientX - drag.sx, ddy = e.clientY - drag.sy;
-      if (Math.abs(ddx) + Math.abs(ddy) > 2) drag.moved = true;
       const s = state.get(drag.el);
+      if (!drag.moved && Math.abs(ddx) + Math.abs(ddy) > 2) {
+        drag.moved = true;
+        const d = s.css.display ? null : unInline(getComputedStyle(drag.el).display, s.tag);
+        if (d) s.css.display = { from: "inline", to: d };
+      }
       const free = e.altKey || e.metaKey;   // Alt / Cmd: no snapping
       const thr = SNAP_PX * inv;
       const r0 = drag.r0;
@@ -817,11 +827,12 @@
         s.dx = Math.round(drag.bx + b.x - r0.x); s.dy = Math.round(drag.by + b.y - r0.y);
       }
       paintState(drag.el);
+      drag.el.style.transition = "none";   // a design's own transition made the element trail behind the cursor; paintState on release puts it back
       drawSnap(drag, s, free);
       return stop(e);
     }
     if (mode === "view" || mode === "draw") return;
-    const el = e.target;
+    const el = target(e.target);
     showHover(pickable(el) ? el : null);
   }, true);
   addEventListener("pointerdown", (e) => {
@@ -835,7 +846,7 @@
       stroke = { kind: shape, pts: [[e.clientX + scrollX, e.clientY + scrollY]], node };
       return;
     }
-    const el = e.target;
+    const el = target(e.target);
     if (!pickable(el)) return;
     if (mode === "text") { if (textLeaf(el)) { select(el); textEdit(el); } return; }
     if (mode === "edit") {
@@ -860,7 +871,7 @@
     const d = drag;
     drag = null;
     clearSnap();
-    if (d.moved) commit(d.el, d.before);
+    if (d.moved) { paintState(d.el); commit(d.el, d.before); }
     stop(e);
   }, true);
   for (const type of ["mousedown", "mouseup", "touchstart", "auxclick", "contextmenu", "submit"]) {
@@ -873,7 +884,7 @@
     if (mode !== "comment") return;
     if (Date.now() - swallow < 400) return;   // the click that ends a drag has already made a region
     // a click on the empty background of the design pins to the body: a comment is placed on every first click
-    const el = pickable(e.target) ? e.target : document.body;
+    const el = pickable(target(e.target)) ? target(e.target) : document.body;
     if (!el || ours(e.target)) return;
     const r = pageRect(el);
     const x = e.clientX + scrollX, y = e.clientY + scrollY;
@@ -883,7 +894,8 @@
   addEventListener("dblclick", (e) => {
     if (mode === "view" || ours(e.target)) return;
     stop(e);
-    if (mode === "edit" && pickable(e.target) && textLeaf(e.target)) { select(e.target); textEdit(e.target); }
+    const el = target(e.target);
+    if (mode === "edit" && pickable(el) && textLeaf(el)) { select(el); textEdit(el); }
   }, true);
   // the wheel without Ctrl/⌘ scrolls the page inside the frame while it is taller than the window (the frame is screen height); otherwise it goes to the canvas (zoom, pan)
   const wheelOut = (e) => {
