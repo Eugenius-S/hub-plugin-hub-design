@@ -137,3 +137,21 @@ test("agent: while dragged the element ignores the design's own transition, on r
   const up = src.slice(src.indexOf('addEventListener("pointerup"'), src.indexOf('for (const type of ["mousedown"'));
   assert.match(up, /if \(d\.moved\) \{ paintState\(d\.el\); commit\(d\.el, d\.before\); \}/);
 });
+
+test("agent: Alt+click or a second click in place reaches the next layer under the cursor (covered elements, not only parents)", () => {
+  const line = src.split("\n").find((l) => l.includes("const nextLayer = (stack, cur) =>"));
+  assert.ok(line, "nextLayer() found");
+  const nextLayer = new Function(line + "\nreturn nextLayer;")();
+  const mk = (name, kids = []) => { const n = { name, kids }; n.contains = (o) => o === n || kids.some((k) => k.contains(o)); return n; };
+  const top = mk("top"), low = mk("low"), wrap = mk("wrap", [top, low]);
+  const stack = [top, low, wrap];   // elementsFromPoint order: the front first
+  assert.equal(nextLayer(stack, null), top, "nothing picked: the front");
+  assert.equal(nextLayer(stack, top), low, "the covered sibling, not the parent");
+  assert.equal(nextLayer(stack, low), top, "a parent is skipped (the up button reaches it): round again");
+  assert.equal(nextLayer(stack, wrap), top, "from the parent: the front");
+  assert.equal(nextLayer([top], top), top);
+  // the press handler wires it: Alt on release without a move, a repeat click after the double-click pause
+  const up = src.slice(src.indexOf('addEventListener("pointerup"'), src.indexOf('for (const type of ["mousedown"'));
+  assert.match(up, /cycle\(/);
+  assert.match(src, /elementsFromPoint/);
+});

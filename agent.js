@@ -181,6 +181,16 @@
     host.style.display = "";
     return target(el);
   };
+  // every element under the point, the front first: Alt+click or a second click in place steps to the next one, as in Figma
+  const layers = (x, y) => {
+    host.style.display = "none";
+    const all = document.elementsFromPoint(x, y);
+    host.style.display = "";
+    return [...new Set(all.map(target))].filter(pickable);
+  };
+  const nextLayer = (stack, cur) => { const i = stack.indexOf(cur); return (i < 0 ? null : stack.slice(i + 1).find((el) => !el.contains(cur))) || stack[0] || null; };
+  let cycleTimer = 0;
+  const cycle = (x, y) => { const next = nextLayer(layers(x, y), selected); if (next && next !== selected) select(next); };
 
   // --- box under the cursor ------------------------------------------------------------------------------------------
   function showHover(el) {
@@ -850,10 +860,14 @@
     if (!pickable(el)) return;
     if (mode === "text") { if (textLeaf(el)) { select(el); textEdit(el); } return; }
     if (mode === "edit") {
-      if (selected !== el) select(el);
+      clearTimeout(cycleTimer);
+      const under = e.altKey && !!selected && layers(e.clientX, e.clientY).includes(selected);
+      const again = selected === el || under;
+      const it = under ? selected : el;   // Alt+click steps from the picked one; Alt+drag still moves it without snapping
+      if (selected !== it) select(it);
       else if (e.detail > 1) return;
-      const s = track(el);
-      drag = { kind: "move", el, sx: e.clientX, sy: e.clientY, bx: s.dx, by: s.dy, r0: pageRect(el), moved: false, before: snap(el), ...snapScene(el) };
+      const s = track(it);
+      drag = { kind: "move", el: it, again, alt: e.altKey, sx: e.clientX, sy: e.clientY, bx: s.dx, by: s.dy, r0: pageRect(it), moved: false, before: snap(it), ...snapScene(it) };
     }
   }, true);
   addEventListener("pointerup", (e) => {
@@ -872,6 +886,9 @@
     drag = null;
     clearSnap();
     if (d.moved) { paintState(d.el); commit(d.el, d.before); }
+    else if (d.alt) cycle(e.clientX, e.clientY);
+    // a second click in place on the picked one: after the double-click pause, so a double click still edits the text
+    else if (d.again) { const x = e.clientX, y = e.clientY; cycleTimer = setTimeout(() => cycle(x, y), 320); }
     stop(e);
   }, true);
   for (const type of ["mousedown", "mouseup", "touchstart", "auxclick", "contextmenu", "submit"]) {
@@ -895,6 +912,7 @@
     if (mode === "view" || ours(e.target)) return;
     stop(e);
     const el = target(e.target);
+    clearTimeout(cycleTimer);
     if (mode === "edit" && pickable(el) && textLeaf(el)) { select(el); textEdit(el); }
   }, true);
   // the wheel without Ctrl/⌘ scrolls the page inside the frame while it is taller than the window (the frame is screen height); otherwise it goes to the canvas (zoom, pan)
