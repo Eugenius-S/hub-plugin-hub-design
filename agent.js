@@ -473,7 +473,7 @@
   const report = (el) => {
     const s = state.get(el);
     if (!s) return;
-    send({ t: "change", change: { sel: s.sel, label: s.label, tag: s.tag, x0: s.x0, y0: s.y0, w0: s.w0, h0: s.h0, dx: s.dx, dy: s.dy, w: s.w, h: s.h, t0: s.t0, t: s.t, css: s.css } });
+    send({ t: "change", change: { sel: s.sel, label: s.label, tag: s.tag, x0: s.x0, y0: s.y0, w0: s.w0, h0: s.h0, dx: s.dx, dy: s.dy, w: s.w, h: s.h, t0: s.t0, t: s.t, ...(s.m0 != null ? { m: s.m ?? s.m0, m0: s.m0 } : {}), css: s.css } });
   };
   // rebuild the element's look from its record: original style, then shift, size, styles; text separately
   function paintState(el) {
@@ -482,10 +482,11 @@
     if (s.dx || s.dy) el.style.translate = `${s.dx}px ${s.dy}px`;
     if (s.w != null) { el.style.boxSizing = "border-box"; el.style.width = s.w + "px"; el.style.height = s.h + "px"; }
     for (const [p, v] of Object.entries(s.css)) el.style.setProperty(p, v.to);
-    if (s.t != null && s.t0 != null) el.textContent = s.t;
+    if (s.m0 != null) { const want = s.m ?? s.m0; if (pure(el).innerHTML !== want) remount(el, want); }
+    else if (s.t != null && s.t0 != null) el.textContent = s.t;
     else if (s.t0 != null) el.textContent = s.t0;
   }
-  const snap = (el) => { const s = state.get(el); return s ? JSON.parse(JSON.stringify({ dx: s.dx, dy: s.dy, w: s.w, h: s.h, t: s.t, t0: s.t0, css: s.css })) : { dx: 0, dy: 0, w: null, h: null, t: null, t0: null, css: {} }; };
+  const snap = (el) => { const s = state.get(el); return s ? JSON.parse(JSON.stringify({ dx: s.dx, dy: s.dy, w: s.w, h: s.h, t: s.t, t0: s.t0, m: s.m ?? null, m0: s.m0 ?? null, css: s.css })) : { dx: 0, dy: 0, w: null, h: null, t: null, t0: null, m: null, m0: null, css: {} }; };
   // one step of the history is a list of elements: recoloring a text color across the design is one step, one Ctrl+Z
   function commitMany(items) {
     undo.push({ items });
@@ -518,7 +519,8 @@
     const s = state.get(el);
     if (!s) return;
     if (s.attr == null) el.removeAttribute("style"); else el.setAttribute("style", s.attr);
-    if (s.t0 != null) el.textContent = s.t0;
+    if (s.m0 != null) remount(el, s.m0);
+    else if (s.t0 != null) el.textContent = s.t0;
     state.delete(el);
     touched.delete(el);
     for (const list of [undo, redo]) {   // a removed edit leaves no steps behind
@@ -600,6 +602,48 @@
     commitMany(items);
   }
   const textLeaf = (el) => el.childNodes.length > 0 && [...el.childNodes].every((n) => n.nodeType === 3 || (n.nodeType === 1 && n.tagName === "BR"));
+  // a text with inline tags inside (bold, a link, a line break): edited as a whole, the file gets the new inner markup
+  const INLINE = /^(A|ABBR|B|BDI|BDO|BR|CITE|CODE|DATA|DFN|EM|I|KBD|MARK|Q|S|SAMP|SMALL|SPAN|STRONG|SUB|SUP|TIME|U|VAR|WBR)$/;
+  const richText = (el) => !!el.textContent.trim() && el.children.length > 0 && [...el.querySelectorAll("*")].every((n) => INLINE.test(n.tagName));
+  const editable = (el) => textLeaf(el) || richText(el);
+  // a double click on a word in bold edits the whole paragraph, as in Figma
+  const editRoot = (el) => {
+    let r = el;
+    while (INLINE.test(r.tagName) && r.parentElement && pickable(r.parentElement) && richText(r.parentElement)) r = r.parentElement;
+    return r;
+  };
+  // the inner markup as the file should have it: the tags inside with their own style from the file (their edits go separately)
+  // orig: also the text of the tags inside as in the file (their own text edits not applied) - what the file has now
+  function pure(el, orig) {
+    const copy = el.cloneNode(true);
+    const from = [...el.querySelectorAll("*")], to = [...copy.querySelectorAll("*")];
+    from.forEach((n, i) => {
+      const s = state.get(n);
+      if (s) {
+        if (s.attr == null) to[i].removeAttribute("style"); else to[i].setAttribute("style", s.attr);
+        if (orig && s.t0 != null && s.t != null) to[i].textContent = s.t0;
+      }
+      to[i].removeAttribute("contenteditable");
+    });
+    return copy;
+  }
+  // new inner markup; the edits of the tags inside move over to their new nodes by their place (idx: the places taken earlier)
+  function remount(el, markup, idx) {
+    const kept = idx || [...el.querySelectorAll("*")].map((n, i) => [i, n]).filter(([, n]) => state.has(n));
+    el.innerHTML = markup;
+    const now = [...el.querySelectorAll("*")];
+    for (const [i, old] of kept) {
+      const s = state.get(old), n = now[i];
+      if (!s) continue;
+      state.delete(old);
+      touched.delete(old);
+      if (!n || n.tagName.toLowerCase() !== s.tag) continue;
+      state.set(n, s);
+      touched.add(n);
+      for (const list of [undo, redo]) for (const h of list) for (const x of h.items) if (x.el === old) x.el = n;
+      paintState(n);
+    }
+  }
 
   // --- the selected element and its properties for the panel ------------------------------------------------------------------
   const hex = (v) => {
@@ -681,10 +725,18 @@
   }
 
   function textEdit(el) {
+    const rich = !textLeaf(el);
     const s = track(el);
+    // the original first, then the step: Ctrl+Z of the first edit goes back to the original text
+    if (rich && s.m0 == null) {
+      const orig = pure(el, true);
+      s.m0 = orig.innerHTML;
+      s.t0 = orig.textContent;
+      // a text edit of a tag inside becomes part of this one: the file gets one new markup
+      for (const n of el.querySelectorAll("*")) { const c = state.get(n); if (c) c.t0 = c.t = null; }
+    } else if (s.t0 == null) s.t0 = el.textContent;
     const before = snap(el);
-    if (s.t0 == null) s.t0 = el.textContent;
-    el.contentEditable = "plaintext-only";
+    el.contentEditable = rich ? "true" : "plaintext-only";
     el.focus();
     const range = document.createRange();
     range.selectNodeContents(el);
@@ -693,11 +745,14 @@
     const finish = (keep) => {
       el.removeEventListener("blur", onBlur);
       el.removeEventListener("keydown", onKey, true);
+      el.removeEventListener("paste", onPaste, true);
+      el.removeEventListener("drop", onDrop, true);
       el.contentEditable = "false";
       el.removeAttribute("contenteditable");
       getSelection().removeAllRanges();
-      if (!keep) el.textContent = s.t ?? s.t0;
+      if (!keep) { if (rich) remount(el, s.m ?? s.m0); else el.textContent = s.t ?? s.t0; }
       s.t = el.textContent;
+      if (rich) s.m = pure(el).innerHTML;
       commit(el, before);
     };
     const onBlur = () => finish(true);
@@ -705,9 +760,18 @@
       e.stopPropagation();
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); el.blur(); }
       if (e.key === "Escape") { e.preventDefault(); el.removeEventListener("blur", onBlur); finish(false); }
+      // bold, italic and underline by keys would add tags the file does not have: the text only, the font goes through the panel
+      if (rich && (e.ctrlKey || e.metaKey) && /^[biu]$/i.test(e.key)) e.preventDefault();
     };
+    // pasted or dropped markup from elsewhere goes in as plain text
+    const onPaste = (e) => {
+      e.preventDefault();
+      document.execCommand("insertText", false, (e.clipboardData && e.clipboardData.getData("text/plain")) || "");
+    };
+    const onDrop = (e) => e.preventDefault();
     el.addEventListener("blur", onBlur);
     el.addEventListener("keydown", onKey, true);
+    if (rich) { el.addEventListener("paste", onPaste, true); el.addEventListener("drop", onDrop, true); }
   }
 
   // --- freehand drawing -------------------------------------------------------------------------------------------
@@ -858,7 +922,7 @@
     }
     const el = target(e.target);
     if (!pickable(el)) return;
-    if (mode === "text") { if (textLeaf(el)) { select(el); textEdit(el); } return; }
+    if (mode === "text") { const r = editRoot(el); if (editable(r)) { select(r); textEdit(r); } return; }
     if (mode === "edit") {
       clearTimeout(cycleTimer);
       const under = e.altKey && !!selected && layers(e.clientX, e.clientY).includes(selected);
@@ -913,7 +977,7 @@
     stop(e);
     const el = target(e.target);
     clearTimeout(cycleTimer);
-    if (mode === "edit" && pickable(el) && textLeaf(el)) { select(el); textEdit(el); }
+    if (mode === "edit" && pickable(el)) { const r = editRoot(el); if (editable(r)) { select(r); textEdit(r); } }
   }, true);
   // the wheel without Ctrl/⌘ scrolls the page inside the frame while it is taller than the window (the frame is screen height); otherwise it goes to the canvas (zoom, pan)
   const wheelOut = (e) => {
@@ -1150,7 +1214,8 @@
         const s = track(el);
         Object.assign(s, { dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} });
         if (c.x0 != null) Object.assign(s, { x0: c.x0, y0: c.y0, w0: c.w0, h0: c.h0 });
-        if (c.t != null && c.t !== c.t0) { s.t0 = c.t0; s.t = c.t; }
+        if (c.m != null && c.m0 != null) { s.m0 = c.m0; s.t0 = c.t0; s.m = c.m; s.t = c.t; }
+        else if (c.t != null && c.t !== c.t0) { s.t0 = c.t0; s.t = c.t; }
         paintState(el);
       }
     } else if (m.t === "revert") {

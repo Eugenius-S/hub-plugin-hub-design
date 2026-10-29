@@ -405,6 +405,7 @@ export function describeChange(c) {
     parts.push(tr("resize", { w0: px(c.w0), h0: px(c.h0), w: px(c.w), h: px(c.h) }));
   }
   if (c.t != null && c.t !== c.t0) parts.push(tr("retext", { a: tr("quote", { s: cut(c.t0, 200) }), b: tr("quote", { s: cut(c.t, 200) }) }));
+  else if (c.m != null && c.m0 != null && c.m !== c.m0) parts.push(tr("retext", { a: tr("quote", { s: cut(c.m0, 200) }), b: tr("quote", { s: cut(c.m, 200) }) }));   // only the tags changed (a line break)
   const css = Object.entries(c.css || {}).filter(([, v]) => v && v.from !== v.to);
   if (css.length) parts.push(tr("style") + css.map(([p, v]) => (p === "grid-template-columns" ? describeCols(v) : `${p} ${num(v.from)} → ${num(v.to)}`)).join(", "));
   return parts.join("; ");
@@ -623,7 +624,7 @@ export function createSteps({ merge = 800, max = 200 } = {}) {
 // --- hand edits straight into the file (server.py /__canvas/write): what to send and what to mark "already in the file" -------------------------------
 // drafts and sent but not yet accepted by the designer: the file is always rebuilt from the copy - as one full set
 export const writable = (changes, file) => [...new Map(changes.filter((c) => c.file === file && c.state !== "done" && !c.handed && !c.undone && hasEffect(c))
-  .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // one element - one record, the last
+  .map((c) => [c.sel, { sel: c.sel, label: c.label || "", tag: c.tag || "", t0: c.t0 ?? null, t: c.t ?? null, ...(c.m != null ? { m: c.m, m0: c.m0 ?? null } : {}), dx: c.dx || 0, dy: c.dy || 0, w: c.w ?? null, h: c.h ?? null, css: c.css || {} }])).values()];   // one element - one record, the last
 // handed - went to the designer in words, not as a write to the file: from then on the designer edits it, Hub Design does not write it to the file
 // the server response -> marks on the edits: inFile - written to the file, noWrite - why it was skipped (the code from handwrite.py; left to the designer)
 export function markWritten(changes, tweaks, file, res) {

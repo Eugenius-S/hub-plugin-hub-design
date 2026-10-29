@@ -155,3 +155,30 @@ test("agent: Alt+click or a second click in place reaches the next layer under t
   assert.match(up, /cycle\(/);
   assert.match(src, /elementsFromPoint/);
 });
+
+test("agent: a text with inline tags inside (bold, a link, a break) is edited as a whole from a double click on any word of it", () => {
+  const pick = (start) => { const a = src.indexOf(start); assert.ok(a > 0, start); return src.slice(a, src.indexOf("\n", a)); };
+  const body = [pick("const INLINE = "), pick("const textLeaf = "), pick("const richText = "), pick("const editable = ")].join("\n") +
+    "\n" + src.slice(src.indexOf("const editRoot = "), src.indexOf("};", src.indexOf("const editRoot = ")) + 2) +
+    "\nreturn { richText, editable, editRoot };";
+  const { richText, editable, editRoot } = new Function("pickable", body)(() => true);
+  const el = (tagName, kids = [], text = "") => {
+    const n = { tagName, nodeType: 1, childNodes: kids, children: kids.filter((k) => k.nodeType === 1), parentElement: null };
+    for (const k of kids) k.parentElement = n;
+    n.querySelectorAll = () => { const out = []; const walk = (x) => { for (const k of x.children || []) { out.push(k); walk(k); } }; walk(n); return out; };
+    Object.defineProperty(n, "textContent", { get: () => kids.map((k) => k.textContent).join("") + text });
+    return n;
+  };
+  const txt = (s) => ({ nodeType: 3, textContent: s });
+  const strong = el("STRONG", [txt("bold")]), a = el("A", [txt("link")]);
+  const p = el("P", [txt("Plain "), strong, txt(" and "), a, el("BR"), txt("next")]);
+  assert.ok(richText(p) && editable(p));
+  assert.equal(editRoot(strong), p, "a click on the bold word edits the paragraph");
+  assert.equal(editRoot(a), p);
+  const card = el("DIV", [el("H3", [txt("Title")]), el("P", [txt("text")])]);
+  assert.ok(!richText(card), "a block with blocks inside is not a text");
+  assert.equal(editRoot(card.children[0]), card.children[0]);
+  // the edit sends the new inner markup, the file gets it through handwrite; the panel cannot add tags by keys
+  assert.match(src, /m: s\.m \?\? s\.m0, m0: s\.m0/);
+  assert.match(src, /contentEditable = rich \? "true" : "plaintext-only"/);
+});
