@@ -126,5 +126,57 @@ class Apply(unittest.TestCase):
         self.assertEqual(why, "nohtml")
 
 
+RICH = '''<!doctype html>
+<html><body>
+<p id="r" class="lead">
+  Plain <strong>bold</strong> and <a href="#x">link</a><br>next
+</p>
+<h1 id="t">Title</h1>
+</body></html>
+'''
+
+
+class Rich(unittest.TestCase):
+    """Text with inline tags: the canvas sends the new inner markup (m), the file keeps every tag."""
+
+    def change(self, m, t, **kw):
+        return dict({"sel": "#r", "label": "Plain bold and linknext", "tag": "p", "t0": "Plain bold and linknext", "t": t, "m": m}, **kw)
+
+    def test_text_inside_strong_and_a_is_written_keeping_the_markup(self):
+        m = 'Plain <strong>bolder</strong> and <a href="#x">a link</a><br>next'
+        out, done, skipped, _, _ = handwrite.apply(RICH, [self.change(m, "Plain bolder and a linknext")])
+        self.assertEqual((done, skipped), (["#r"], []))
+        self.assertIn('<p id="r" class="lead">\n  ' + m + '\n</p>', out)
+        self.assertEqual(out.replace("bolder", "bold").replace(">a link<", ">link<"), RICH)
+
+    def test_style_of_the_same_element_and_of_a_tag_inside_are_written_too(self):
+        m = 'Plain <strong>bold!</strong> and <a href="#x">link</a><br>next'
+        out, done, skipped, _, _ = handwrite.apply(RICH, [
+            self.change(m, "Plain bold! and linknext", css={"font-size": {"from": "16px", "to": "20px"}}),
+            {"sel": "#r > strong", "label": "bold", "tag": "strong", "css": {"color": {"from": "a", "to": "red"}}},
+        ])
+        self.assertEqual(sorted(done), ["#r", "#r > strong"], skipped)
+        self.assertIn('<p style="font-size: 20px" id="r" class="lead">', out)
+        self.assertIn('<strong style="color: red">bold!</strong>', out)
+
+    def test_unsafe_or_new_markup_is_not_written(self):
+        for m in ('Plain <script>x()</script>', 'Plain <strong onclick="x()">bold</strong>', 'Plain <a href="javascript:x()">link</a>',
+                  'Plain <a href=" JaVa&#x53;cript:x()">link</a>', 'Plain <img src=x>', 'Plain <strong>bold', 'Plain <!-- x -->',
+                  'Plain <div>bold</div>', 'Plain </p><p>bold'):
+            out, done, skipped, _, _ = handwrite.apply(RICH, [self.change(m, "Plain bold")])
+            self.assertEqual((out, done), (RICH, []), m)
+            self.assertEqual(skipped[0]["code"], "markup", m)
+            self.assertIn(skipped[0]["code"], handwrite.WHY)
+
+    def test_rich_text_that_differs_from_the_file_is_not_written(self):
+        out, done, skipped, _, _ = handwrite.apply(RICH, [self.change("Plain", "Plain", t0="Something else")])
+        self.assertEqual((out, done, skipped[0]["code"]), (RICH, [], "textdiff"))
+
+    def test_plain_leaf_still_goes_the_old_way(self):
+        out, done, _, _, _ = handwrite.apply(RICH, [{"sel": "#t", "label": "Title", "t0": "Title", "t": "New & <b>"}])
+        self.assertEqual(done, ["#t"])
+        self.assertIn('<h1 id="t">New &amp; &lt;b&gt;</h1>', out)
+
+
 if __name__ == "__main__":
     unittest.main()

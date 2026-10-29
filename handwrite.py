@@ -117,6 +117,7 @@ WHY = {
     "several": "the file has several such elements",
     "rawtext": "the text inside has markup",
     "nested": "there are nested tags inside",
+    "markup": "the new markup has tags or links that cannot be written",
     "textdiff": "the text in the file is not the same as on the canvas",
     "tag": "the tag in the file is different",
     "label": "the element in the file has different text",
@@ -289,6 +290,91 @@ def retext(tree, el, c):
     return (el.open_end, el.end_start, lead + html.escape(str(c.get("t")), quote=False) + tail), ""
 
 
+# text with inline tags (rich text): the canvas sends the new inner markup; only these tags, and only those the file had
+INLINE = {"a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "kbd", "mark", "q", "s", "samp", "small", "span",
+          "strong", "sub", "sup", "time", "u", "var", "wbr"}
+URL_ATTRS = {"href", "src", "xlink:href", "action", "formaction"}
+
+
+class Markup(HTMLParser):
+    """Checks the inner markup sent by the canvas: known tags, balanced, no handlers, no script links, nothing else."""
+
+    def __init__(self, allowed):
+        super().__init__(convert_charrefs=True)
+        self.allowed, self.stack, self.bad, self.count = allowed, [], False, 0
+
+    def handle_starttag(self, tag, attrs):
+        self.count += 1
+        if tag not in self.allowed:
+            self.bad = True
+        for k, v in attrs:
+            name = k.lower()
+            if not ATTR_NAME.match(name) or name.startswith("on"):
+                self.bad = True
+            if name in URL_ATTRS and re.match(r"(?i)(javascript|vbscript|data):", re.sub(r"[\x00-\x20]", "", v or "")):
+                self.bad = True
+        if tag not in VOID:
+            self.stack.append(tag)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in VOID and self.stack and self.stack[-1] == tag:
+            self.stack.pop()
+
+    def handle_endtag(self, tag):
+        if tag in VOID:
+            return
+        if not self.stack or self.stack.pop() != tag:
+            self.bad = True
+
+    def handle_comment(self, data):
+        self.bad = True
+
+    def handle_decl(self, decl):
+        self.bad = True
+
+    def handle_pi(self, data):
+        self.bad = True
+
+    def unknown_decl(self, data):
+        self.bad = True
+
+
+def markup_count(m, allowed):
+    """How many elements the markup has, or None when it cannot be written."""
+    if not isinstance(m, str):
+        return None
+    p = Markup(allowed)
+    try:
+        p.feed(m)
+        p.close()
+    except Exception:  # noqa: BLE001 - any parser trouble means: do not write
+        return None
+    if p.bad or p.stack or re.search(r"<(?![A-Za-z/])", m):
+        return None
+    return p.count
+
+
+def remark(tree, el, c):
+    """New inner markup instead of the old: the file holds the canvas text, the tags are inline ones the element already had.
+    (edit, the number of elements removed, added) or (None, why)."""
+    if el.tag in RAW_TEXT or el.end_start is None:
+        return None, "rawtext"
+    inner = tree.src[el.open_end:el.end_start]
+    if norm(text_of(tree, el)) != norm(c.get("t0")):
+        return None, "textdiff"
+    had = [e for e in tree.all if el.open_end <= e.start < el.end_start]
+    allowed = ({e.tag for e in had} | {"br"}) & INLINE
+    if any(e.tag not in INLINE for e in had):
+        return None, "nested"
+    added = markup_count(c.get("m"), allowed)
+    if added is None:
+        return None, "markup"
+    lead = re.match(r"\s*", inner).group(0)
+    tail = re.search(r"\s*$", inner).group(0) if inner.strip() else ""
+    return ((el.open_end, el.end_start, lead + c["m"].strip() + tail), len(had), added), ""
+
+
 def verify(tree, el, c):
     if c.get("tag") and el.tag != c["tag"]:
         return "tag"
@@ -307,7 +393,7 @@ def op_ok(o):
     return bool(ATTR_NAME.match(name)) and not re.match(r"(?i)(on|style$)", name)
 
 
-def apply(src, changes, ops=()):
+def _apply(src, changes, ops=()):
     """(new text, [selectors written], [{sel, code, why}], result for the tweaks: "done"/"skipped"/"none", the code of why).
     changes: [{sel, label, tag, dx, dy, w, h, t0, t, css}], ops: [{kind: var|attr, name, value}] for <html>."""
     tree = parse(src)
@@ -357,3 +443,57 @@ def apply(src, changes, ops=()):
     if out != src and len(parse(out).all) != len(tree.all):
         return src, [], [{"sel": c.get("sel"), "code": "check", "why": WHY["check"]} for c in changes], "skipped", "check"
     return out, done, skipped, state, why
+
+
+def apply(src, changes, ops=()):
+    """(new text, [selectors written], [{sel, code, why}], result for the tweaks: "done"/"skipped"/"none", the code of why).
+    changes: [{sel, label, tag, dx, dy, w, h, t0, t, m, css}], ops: [{kind: var|attr, name, value}] for <html>.
+    m: the new inner markup of a text with inline tags. Two passes: first the markup of such texts in the file as it is,
+    then everything else (styles, plain texts, tweaks) on the result, finding every element again."""
+    rich = [c for c in changes if isinstance(c, dict) and c.get("m") is not None and (c.get("t") != c.get("t0") or c.get("m0") is None or c.get("m") != c.get("m0"))]
+    if not rich:
+        return _apply(src, changes, ops)
+    tree = parse(src)
+    edits, skipped, gone, used, delta = [], [], set(), set(), 0
+    for c in rich:
+        el, why = find(tree, c.get("sel"))
+        why = why or ("used" if id(el) in used else "") or (verify(tree, el, c) if el else "")
+        if not why and decls_of(c) is None:
+            why = "style"
+        got = None
+        if not why:
+            got, why = remark(tree, el, c)
+        if why:
+            skipped.append({"sel": c.get("sel"), "code": why, "why": WHY[why]})
+            gone.add(id(c))
+            continue
+        used.add(id(el))
+        edit, removed, added = got
+        if any(a < edit[1] and edit[0] < b for a, b, _ in edits):
+            skipped.append({"sel": c.get("sel"), "code": "used", "why": WHY["used"]})
+            gone.add(id(c))
+            continue
+        edits.append(edit)
+        delta += added - removed
+    mid = src
+    for a, b, new in sorted(edits, key=lambda e: -e[0]):
+        mid = mid[:a] + new + mid[b:]
+    if mid != src and len(parse(mid).all) != len(tree.all) + delta:
+        return src, [], [{"sel": c.get("sel"), "code": "check", "why": WHY["check"]} for c in changes], "skipped", "check"
+    # the second pass: the text is already in; the element is checked by its tag and place, not by the old text
+    rest = []
+    for c in changes:
+        if id(c) in gone:
+            continue
+        if any(c is r for r in rich):
+            c = {k: v for k, v in c.items() if k not in ("t0", "t", "m", "m0", "label")}
+        elif isinstance(c, dict):
+            # a tag inside a text just rewritten: its label may be the text before the edit, so check it in the old file
+            el, why = find(tree, c.get("sel"))
+            if el and not why and any(a <= el.start < b for a, b, _ in edits) and not verify(tree, el, c):
+                c = {k: v for k, v in c.items() if k != "label"}
+        rest.append(c)
+    out, done, skipped2, state, why = _apply(mid, rest, ops)
+    if why == "check":
+        return src, [], [{"sel": c.get("sel"), "code": "check", "why": WHY["check"]} for c in changes], "skipped", "check"
+    return out, done, skipped + skipped2, state, why
