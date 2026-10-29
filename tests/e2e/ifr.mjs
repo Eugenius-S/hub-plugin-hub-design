@@ -13,6 +13,7 @@ const frames = ctxs.filter((c) => c.auxData && c.auxData.isDefault);
 const out = [];
 for (const c of frames) {
   const r = await send("Runtime.evaluate", { expression: expr, contextId: c.id, returnByValue: true, awaitPromise: true });
+  if (!r.result) continue;   // the frame is reloading: its context is gone
   out.push({ origin: c.origin, v: r.result.result ? r.result.result.value : r.result });
 }
 console.log(JSON.stringify(out));

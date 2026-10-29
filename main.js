@@ -912,6 +912,7 @@ function handle(file, m, ep = epOf(file)) {
     if (m.sel) {
       P.sel = { file, sel: m.sel, label: m.label, tag: m.tag, css: m.css || {}, flex: !!m.flex, grid: !!m.grid, kids: m.kids || 0, decl: m.decl || "" };
       P.focus = file;
+      P.cv.auto = false;   // the user is working on the frame: the panel opening must not refit the canvas and pull the element from under the cursor
       if (P.propsUser) P.propsOpen = true;
       for (const o of eps.values()) if (o !== ep) tellEp(o, { t: "deselect" });
     } else if (P.sel && P.sel.file === file) P.sel = null;
