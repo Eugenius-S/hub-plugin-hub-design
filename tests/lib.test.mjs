@@ -688,6 +688,44 @@ test("createAuto: edits went or were rolled back - the countdown is cleared; not
   assert.equal(fired, 2);
 });
 
+test("pageMarks: an open Hub Design keeps the tab (stay) and never holds hub restarts on a core that can stay", async () => {
+  const { pageMarks } = await import("../lib.js");
+  assert.deepEqual(pageMarks({ shown: true, drafts: 3, canStay: true }), { stay: true, hold: false });
+  assert.deepEqual(pageMarks({ shown: true, drafts: 0, canStay: true }), { stay: true, hold: false });
+  assert.deepEqual(pageMarks({ shown: false, drafts: 3, canStay: true }), { stay: false, hold: false });   // left the view: the postponed reload happens
+  // an older core without stay: as before, unsent edits hold, but only while the view is open
+  assert.deepEqual(pageMarks({ shown: true, drafts: 3, canStay: false }), { stay: false, hold: true });
+  assert.deepEqual(pageMarks({ shown: false, drafts: 3, canStay: false }), { stay: false, hold: false });
+});
+
+test("transientFail: no answer or a 5xx (the hub restarts) is retried; a refusal of the core is not", async () => {
+  const { transientFail, retryWait } = await import("../lib.js");
+  assert.equal(transientFail({ error: "Failed to fetch", status: 0 }), true);
+  assert.equal(transientFail({ error: "x" }), true);
+  assert.equal(transientFail({ error: "busy", status: 503 }), true);
+  assert.equal(transientFail({ error: "no session", status: 409 }), false);
+  assert.equal(transientFail({ error: "bad", status: 400 }), false);
+  assert.equal(transientFail({ data: {} }), false);
+  assert.deepEqual([0, 1, 2, 3, 4, 9].map(retryWait), [2000, 4000, 8000, 16000, 30000, 30000]);
+});
+
+test("createAuto: a send cut by a hub restart goes again with the same client_id, a new edit gets a new one", async () => {
+  const t = fakeTimers();
+  let fired = 0;
+  const auto = createAuto({ fire: () => { fired++; }, set: t.set, clear: t.clear });
+  auto.watch(autoSig(itemsOf(1), "designer", false));
+  const first = auto.cid();
+  assert.ok(first);
+  t.tick(8000);
+  assert.equal(fired, 1);
+  auto.retry(2000);   // transient failure: the same batch again
+  assert.equal(auto.cid(), first);
+  t.tick(2000);
+  assert.equal(fired, 2);
+  auto.watch(autoSig(itemsOf(2), "designer", false));
+  assert.notEqual(auto.cid(), first);
+});
+
 test("writable: an edit that went to the designer in words (handed) is not written to the file", async () => {
   const { writable } = await import("../lib.js");
   const f = "/a/page.html";

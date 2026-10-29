@@ -645,21 +645,31 @@ export function markUnwritten(changes, tweaks, file) {
 export const AUTO_MS = 8000;
 export const autoSig = (items, session, home) => (home || !session || !(items.changes.length + items.tweaks.length + items.drawings.length) ? "" : JSON.stringify([session, items]));
 export function createAuto({ fire, ms = AUTO_MS, set = setTimeout, clear = clearTimeout }) {
-  let sig = "", timer = 0, failed = "";
+  let sig = "", timer = 0, failed = "", cid = "";
   const arm = (wait) => { clear(timer); timer = set(() => { timer = 0; fire(); }, wait); };
   return {
     watch(next) {
       if (next === sig) return;
       sig = next;
+      cid = next ? "hd-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) : "";
       clear(timer);
       timer = 0;
       if (next && next !== failed) arm(ms);
     },
     sig: () => sig,
+    cid: () => cid,   // client_id of this batch: a repeat after a cut send is not a second message in the core
     fail() { failed = sig; },   // did not go: the same is not sent a second time on its own - only after a new edit
     retry(wait) { if (sig && sig !== failed) arm(wait); },   // the recipient is busy sending - a bit later
   };
 }
+// a send that did not get the core's answer (the hub or its page server restarts: no answer, 5xx) - the same batch
+// goes again; a refusal of the core (4xx) is final
+export const transientFail = (r) => !!(r && r.error) && !(r.status >= 400 && r.status < 500);
+export const retryWait = (n) => Math.min(30000, 2000 * 2 ** n);
+// marks on <html> while the view is open: stay - the tab does not reload itself for a new hub version while the owner
+// is in Hub Design (the reload happens on leaving); hold - only on a core without stay: unsent edits hold the reload
+// and hub restarts, as before, and only while the view is open
+export const pageMarks = ({ shown, drafts, canStay }) => ({ stay: !!(shown && canStay), hold: !!(shown && !canStay && drafts > 0) });
 // the full path of the copy next to the file
 export const copyPath = (file, copy) => (copy ? String(file).replace(/[^/\\]*$/, copy) : "");
 

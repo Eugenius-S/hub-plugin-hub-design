@@ -4,7 +4,7 @@
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCanvasFile, isCopy, fileUrl, nameOf,
-  goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto,
+  goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto, pageMarks, transientFail, retryWait,
   describeTweak, directionDirs, dirKeyOf, saveDirOf, saveLine, isProjectKey, projectOfKey, projectDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll, handoffHome } from "./lib.js";
@@ -159,7 +159,7 @@ const eps = new Map();   // frame → {id, path, iframe, ready}: every frame has
 const P = {
   session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
-  alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, colors: {}, lastEdit: "", shown: false, handoff: null,
+  alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, colors: {}, lastEdit: "", shown: false, handoff: null, autoTries: 0,
   authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], tasks: [], regAt: 0, peers: [], peersAt: 0, peersSig: "", regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
 };
 
@@ -205,7 +205,7 @@ export default function register(h) {
   });
   hub.addView({
     id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", full: true,
-    render, show() { P.shown = true; sidebar(true); fromAddress(); ping(); }, hide() { P.shown = false; P.openFrom = null; sidebar(false); },
+    render, show() { P.shown = true; sidebar(true); hold(); fromAddress(); ping(); }, hide() { P.shown = false; P.openFrom = null; sidebar(false); hold(); },
   });
   // a palette button in the session input (the composer.tools slot — an addition of this hub): open Hub Design with this conversation
   if (typeof hub.addSlot === "function") {
@@ -333,11 +333,18 @@ function legacy() {
   return { frames: [{ path: last.path, x: 0, y: 0, w: 1440, h: 900, auto: true }], pins: (d.pins || []).map(stamp), changes: (d.changes || []).map(stamp),
     drawings: (d.drawings || []).map(stamp), round: d.round || 1 };
 }
-// the batch has not been sent — the page does not reload itself for a new hub version
+// while Hub Design is open the tab does not reload itself for a new hub version (the canvas, selection and the queue live
+// in the tab); the reload happens on leaving the view. Hub restarts are not held: drafts are in localStorage, a cut
+// auto-send goes again (autoSend). On a core without stay — as before: unsent edits hold, only while the view is open
 function hold() {
   const html = document.documentElement;
-  if (drafts() > 0) html.setAttribute("data-hub-hold", HOLD);
-  else if (html.getAttribute("data-hub-hold") === HOLD) html.removeAttribute("data-hub-hold");
+  const m = pageMarks({ shown: P.shown, drafts: drafts(), canStay: !!(hub.capabilities && hub.capabilities.stay) });
+  const mark = (attr, on) => {
+    if (on) html.setAttribute(attr, HOLD);
+    else if (html.getAttribute(attr) === HOLD) html.removeAttribute(attr);
+  };
+  mark("data-hub-stay", m.stay);
+  mark("data-hub-hold", m.hold);
 }
 const draftPins = () => P.pins.filter((p) => p.state === "draft" && String(p.text || "").trim());
 const draftChanges = () => P.changes.filter((c) => c.state === "draft");
@@ -1114,8 +1121,11 @@ async function autoSend() {
   const to = autoTo(file);   // the author of the design, not whoever the owner talked to in the chat (0.34.1: the edits of a design went to the chat's session)
   if (!text || !to) return;
   P.busy = true;
-  const r = await hub.post("/api/send", withLane({ session: to, text }, file));
+  const r = await hub.post("/api/send", withLane({ session: to, text, client_id: auto.cid() }, file));
   P.busy = false;
+  // the hub restarted under the send: the same batch with the same client_id a bit later (the core does not take it twice)
+  if (r.error && transientFail(r) && auto.sig() === sig) { auto.retry(retryWait(P.autoTries++)); return; }
+  P.autoTries = 0;
   if (r.error) { auto.fail(); P.note = tr("not_sent", { err: r.error }); return paint(); }
   P.note = "";
   for (const x of [...a.changes, ...a.tweaks, ...a.drawings]) { x.state = "sent"; if (x.inFile !== true) x.handed = true; }
