@@ -16,13 +16,11 @@ def read(name):
 
 
 class Manifest(unittest.TestCase):
-    def test_nav_icon_hover_files(self):
-        css = read("navicon.css")
-        self.assertIn('url("icon.svg")', css)
-        self.assertIn('url("icon-filled.svg")', css)
-        self.assertIn("prefers-reduced-motion", css)
-        self.assertIn('hub.addStyle("navicon.css")', read("main.js"))
-        self.assertIn('fill-rule="evenodd"', read("icon-filled.svg"))
+    def test_nav_icon_is_one_color_and_hovers_like_the_theme(self):
+        css = read("style.css")
+        self.assertIn('mask:url("icon.svg")', css)
+        self.assertNotIn("navicon", read("main.js"))
+        self.assertFalse(os.path.exists(os.path.join(HERE, "navicon.css")))
 
     def test_fields(self):
         m = json.loads(read("hub-plugin.json"))
@@ -30,7 +28,7 @@ class Manifest(unittest.TestCase):
         for key in ("description", "why", "version", "hub", "web", "icon"):
             self.assertTrue(m.get(key), key)
         self.assertEqual(m["run"], ["python3", "server.py"])
-        for name in (m["web"], m["icon"], "icon.svg", "style.css", "agent.js", "lib.js", "canvas.js", "icons.js", "dashboard.js", "selection.js", "dashboard.css", "server.py", "i18n.js", "card.js", "card.css", "navicon.css", "icon-filled.svg"):
+        for name in (m["web"], m["icon"], "icon.svg", "style.css", "agent.js", "lib.js", "canvas.js", "icons.js", "dashboard.js", "selection.js", "dashboard.css", "server.py", "i18n.js", "card.js", "card.css", "icon-filled.svg"):
             self.assertTrue(os.path.isfile(os.path.join(HERE, name)), name)
 
     def test_description_is_english_and_russian_is_in_i18n(self):

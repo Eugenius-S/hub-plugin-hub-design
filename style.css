@@ -205,7 +205,8 @@
 .hdc-note textarea{display:block;width:100%;min-height:72px;border:0;outline:none;resize:none;background:none;padding:6px 8px 8px;color:var(--foreground)}
 
 /* palette button in the session input (the composer.tools slot) */
-.hd-palette .hd-pi{display:block;width:22px;height:22px}
+.hd-palette .hd-pi{display:block;width:22px;height:22px;background:currentColor;
+  -webkit-mask:url("icon.svg") center/contain no-repeat;mask:url("icon.svg") center/contain no-repeat}
 
 /* the hub sidebar is hidden by the hide-sidebar plugin: its 32x32 button sits in the corner - leave room for it */
 html.hs-hidden .hd-top{padding-left:56px}

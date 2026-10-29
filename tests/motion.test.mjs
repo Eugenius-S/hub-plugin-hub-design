@@ -6,7 +6,7 @@ const rd = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8").repl
 
 test("motion.css loads last, after the files whose rules it extends", () => {
   const main = rd("main.js");
-  assert.match(main, /hub\.addStyle\("navicon\.css"\);\n\s*hub\.addStyle\("motion\.css"\)/);
+  assert.match(main, /hub\.addStyle\("styles\.css"\);\n\s*hub\.addStyle\("motion\.css"\)/);
 });
 
 test("motion.css moves only transform and opacity, never transitions all, never enters from scale(0)", () => {

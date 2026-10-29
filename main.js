@@ -176,7 +176,6 @@ export default function register(h) {
   hub.addStyle("dashboard.css");
   hub.addStyle("card.css");
   hub.addStyle("styles.css");
-  hub.addStyle("navicon.css");
   hub.addStyle("motion.css");
   addEventListener("message", onFrame);
   // the settings tab "Hub Design: styles": a pasted link is downloaded into the local style library (fetcher.py of the plugin process)
@@ -220,7 +219,7 @@ export default function register(h) {
         b.type = "button";
         b.title = tr("open_in");
         b.setAttribute("aria-label", b.title);
-        b.innerHTML = '<span class="hd-pi" aria-hidden="true"></span>';   // outline / filled-gradient layers: navicon.css
+        b.innerHTML = '<span class="hd-pi" aria-hidden="true"></span>';   // one-color mask icon: style.css
         b.addEventListener("click", () => handoff(root));
         root.append(b);
       },
