@@ -208,6 +208,21 @@
 .hd-palette .hd-pi{display:block;width:22px;height:22px;background:currentColor;
   -webkit-mask:url("icon.svg") center/contain no-repeat;mask:url("icon.svg") center/contain no-repeat}
 
+/* closable side panels: the chat on the left (its button returns it to the left island of the canvas), the style panel on the right */
+.hd-top .hd-x,.hd-phead .hd-x{margin-left:auto;flex:none;width:32px;height:32px;padding:0;border:0;background:none;border-radius:var(--radius);color:var(--muted-foreground);display:inline-flex;align-items:center;justify-content:center}
+.hd-top .hd-x:hover,.hd-phead .hd-x:hover{background:var(--muted);color:var(--foreground)}
+.hd-top .hd-x:focus-visible,.hd-phead .hd-x:focus-visible,.hdc-left:focus-visible{outline:2px solid var(--ring,var(--hd-acc));outline-offset:2px}
+.hd-x .hd-ic{display:flex;width:20px;height:20px}
+.hd-x .hd-ic svg{width:100%;height:100%;fill:currentColor}
+.hd-top{padding-right:var(--space-2)}
+.hd-phead{display:flex;align-items:center;gap:var(--space-2);height:40px;margin:calc(var(--space-3) * -1) calc(var(--space-2) * -1) var(--space-3) 0}
+.hd-phead span{font-size:var(--text-sm);color:var(--foreground);font-weight:600}
+.hdc-left{display:none}
+.hd.no-left .hd-left{display:none}
+.hd.no-left .hdc-left{display:inline-flex}
+.hd.no-left .hdc-left+.hdc-sep{display:block}
+.hdc-sep{display:none;width:1px;height:20px;background:var(--border);margin:0 4px;flex:none}
+html.hs-hidden .hd.no-left .hdc-bar{left:48px}
 /* the hub sidebar is hidden by the hide-sidebar plugin: its 32x32 button sits in the corner - leave room for it */
 html.hs-hidden .hd-top{padding-left:56px}
 @media (max-width:900px){

@@ -52,6 +52,7 @@ const STR = {
     q_now: "Send now",
     q_remove: "Remove",
     props_hint: "Select an element on the canvas to change its color and styles",
+    close_chat: "Hide chat", close_props: "Hide properties", props_title: "Properties",
     colors: "Color",
     font_colors: "Text colors",
     recolor_title: "Recolor all the text of this color in the design",
@@ -112,6 +113,7 @@ const STR = {
     q_now: "Отправить сейчас",
     q_remove: "Убрать",
     props_hint: "Выберите элемент на холсте, чтобы поменять цвет и стили",
+    close_chat: "Скрыть чат", close_props: "Скрыть свойства", props_title: "Свойства",
     colors: "Цвет",
     font_colors: "Цвета шрифтов",
     recolor_title: "Перекрасить весь текст этого цвета в макете",
@@ -157,7 +159,7 @@ let ui = null;        // the view's nodes, they live between snapshots
 const specs = new Map();   // file → {list: parsed tweaks of the design, base: {key: original value}}
 const eps = new Map();   // frame → {id, path, iframe, ready}: every frame has its own agent.js
 const P = {
-  session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true,
+  session: DEFAULT_SESSION, tab: "chat", tool: "select", shapes: { pencil: "free", shape: "rect" }, propsOpen: false, propsUser: true, leftOpen: true,
   frames: [], focus: "", pins: [], changes: [], drawings: [], notes: [], tweaks: [], errs: [], writers: {}, round: 1, seq: 0, cv: { x: 56, y: 84, k: 1, auto: true },
   alive: null, items: [], rev: -1, epoch: null, busy: false, note: "", sel: null, hist: {}, colors: {}, lastEdit: "", shown: false, handoff: null, autoTries: 0,
   authors: [], known: [], histSeq: {}, histAt: 0, opened: {}, have: {}, times: {}, ok: new Set(), hubs: new Set(), registry: [], tasks: [], regAt: 0, peers: [], peersAt: 0, peersSig: "", regAuthors: [], regReady: false, picked: {}, found: {}, pinned: null, home: true, preset: null, asked: {}, homeWho: null, back: "", openFrom: null, sent: 0, origin: "", originNew: false, style: null,
@@ -299,8 +301,20 @@ function loadKnown() {
 function saveKnown() {
   try { localStorage.setItem(STORE + "known", JSON.stringify({ list: P.known, seq: P.histSeq, at: P.histAt })); } catch { /* storage is full: they will be found again */ }
 }
+// which side panels the owner closed (the ✕ in a panel): kept across reloads
+function savePanels() {
+  try { localStorage.setItem(STORE + "panels", JSON.stringify({ left: P.leftOpen, right: P.propsUser })); } catch { /* the choice is just not kept */ }
+}
+function loadPanels() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(STORE + "panels") || "null"); } catch { d = null; }
+  if (!d || typeof d !== "object") return;
+  if (d.left === false) P.leftOpen = false;
+  if (d.right === false) P.propsUser = false;   // closed: selecting an element no longer opens it
+}
 function load() {
   loadKnown();
+  loadPanels();
   let b = null;
   try { b = JSON.parse(getKey("board") || "null"); } catch { b = null; }
   if (!b) b = legacy();
@@ -1048,7 +1062,8 @@ const app = {
   },
   // "Exit Hub Design": leave the view for the chat of the specialist the conversation was with
   exit() { location.hash = exitTarget(P.session, [...P.ok], P.back, ID); },
-  toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; paint(); },
+  toggleProps: () => { P.propsOpen = !P.propsOpen; P.propsUser = P.propsOpen; savePanels(); paint(); },
+  toggleLeft: () => { P.leftOpen = !P.leftOpen; savePanels(); paint(); },
 };
 
 // remove a manual edit, a tweak or a drawing (× in the "Comments" tab): the view in the frame returns, what was written to the file rolls back to the copy
@@ -1340,7 +1355,8 @@ function build(root) {
   const logo = el("span", "hd-logo"); logo.innerHTML = ICONS.logo;
   const title = el("span", "hd-title", "Hub Design");
   const homeBtn = button("hd-home", [logo, title], tr("home_title"), goHome);
-  top.append(homeBtn);
+  const closeLeft = button("hd-x", icon("close"), tr("close_chat"), () => app.toggleLeft());
+  top.append(homeBtn, closeLeft);
   const tabs = el("div", "hd-tabs");
   const tabChat = button("hd-tab", tr("tab_chat"), null, () => { P.tab = "chat"; paint(); });
   const tabComments = button("hd-tab", tr("tab_comments"), null, () => { P.tab = "comments"; paint(); });
@@ -1402,7 +1418,11 @@ function build(root) {
   const cv = createCanvas(app);
   const props = el("div", "hd-props");
   const tw = el("div", "hd-tw"), pbody = el("div", "hd-pbody");
-  props.append(tw, pbody);
+  const closeProps = button("hd-x", icon("close"), tr("close_props"), () => { if (P.propsOpen) app.toggleProps(); });
+  const phead = el("div", "hd-phead");
+  const pheadTitle = el("span", "", tr("props_title"));
+  phead.append(pheadTitle, closeProps);
+  props.append(phead, tw, pbody);
   const dash = createDashboard({
     // a card's picture: the shot of the plugin process (cached by edit time); none until the edit time is known
     thumb: (path) => { const m = P.times[abs(path)]; return m ? `${origin()}/__canvas/thumb?path=${encodeURIComponent(abs(path))}&m=${m}` : ""; },
@@ -1415,7 +1435,7 @@ function build(root) {
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, lane, chips, strip, input, who, note, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
+  return { root, wrap, left, closeLeft, closeProps, pheadTitle, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, lane, chips, strip, input, who, note, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
 }
 
 function render(root, snap) {
@@ -1431,6 +1451,9 @@ const baseName = (p) => p.split(/[\\/]/).pop();
 function relang() {
   ui.last = { lang: currentLang(), authors: ui.last.authors, who: ui.last.who };
   ui.homeBtn.title = tr("home_title");
+  ui.closeLeft.title = tr("close_chat");
+  ui.closeProps.title = tr("close_props");
+  ui.pheadTitle.textContent = tr("props_title");
   ui.tabChat.textContent = tr("tab_chat");
   ui.tabPlus.replaceChildren(icon("file", tr("add_design")));
   ui.tabPlus.title = tr("add_html");
@@ -1466,6 +1489,8 @@ function paint() {
   ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // on the start screen the dashboard shows the required one itself
   setHidden(ui.dash.node, !home());
   if (home()) ui.dash.paint();
+  // the chat panel can be closed (✕), but not on the start screen: the dashboard has no other way back to the chat
+  ui.wrap.classList.toggle("no-left", !P.leftOpen && !home());
 
   // to whom: the hub's agents and sessions, the designer first
   const names = (snap.sessions || []).filter((s) => s.kind !== "hub" && s.role !== "executor").map((s) => s.name);

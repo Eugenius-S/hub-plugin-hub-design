@@ -27,7 +27,7 @@ export const STR = {
     ed_head: "Comment", ed_ph: "What to change here?", ed_close: "Close", ed_delete: "Remove", ed_send: "Send",
     tool_select: "Select (V)", tool_hand: "Hand (H)", tool_text: "Text (T)", tool_frame: "Add a frame (F)", tool_comment: "Comment (C)",
     tool_pencil: "Pencil (P)", tool_shape: "Shapes (R)", tool_more: "More: pencil and shapes",
-    play_top: "Play the selected frame full screen", panel: "Style panel", zoom: "Zoom", close_design: "Close the design and go back to all designs",
+    play_top: "Play the selected frame full screen", panel: "Style panel", show_chat: "Show chat", zoom: "Zoom", close_design: "Close the design and go back to all designs",
   },
   ru: {
     shape_free: "Карандаш", shape_arrow: "Стрелка", shape_rect: "Прямоугольник", shape_oval: "Овал",
@@ -49,7 +49,7 @@ export const STR = {
     ed_head: "Комментарий", ed_ph: "Что поменять здесь?", ed_close: "Закрыть", ed_delete: "Убрать", ed_send: "Отправить",
     tool_select: "Выбрать (V)", tool_hand: "Рука (H)", tool_text: "Текст (T)", tool_frame: "Добавить фрейм (F)", tool_comment: "Комментарий (C)",
     tool_pencil: "Карандаш (P)", tool_shape: "Фигуры (R)", tool_more: "Ещё: карандаш и фигуры",
-    play_top: "Смотреть выбранный фрейм во весь экран", panel: "Панель стилей", zoom: "Масштаб", close_design: "Закрыть макет и вернуться ко всем макетам",
+    play_top: "Смотреть выбранный фрейм во весь экран", panel: "Панель стилей", show_chat: "Показать чат", zoom: "Масштаб", close_design: "Закрыть макет и вернуться ко всем макетам",
   },
 };
 const t = makeT(STR);
@@ -646,6 +646,10 @@ export function createCanvas(app) {
   }), "tool_more");
   ovf.hidden = true;
   bar.append(pages, tools.select, tools.hand, tools.text, tools.frame, tools.comment, pencil.wrap, shapes.wrap, ovf);
+  // the chat is closed: its button is the first one in the left island (the same panel icon, mirrored), a divider after it
+  const showLeft = bind("", btn("hdc-tool hdc-left", svg("panel"), "", () => app.toggleLeft()), "show_chat");
+  showLeft.firstChild.style.transform = "scaleX(-1)";
+  bar.prepend(showLeft, el("span", "hdc-sep"));
   function fitBar() {
     bar.classList.remove("compact", "tiny");
     ovf.hidden = true;
