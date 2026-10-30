@@ -68,7 +68,7 @@
 .hd-card .strip-row{flex-wrap:wrap;row-gap:var(--space-1)}
 .hd-card .strip-row .k{min-width:0;flex:1}
 .hd-card .strip-row .t{order:3;flex:1 1 100%}
-.hd-logo svg{width:18px;height:18px}
+.hd-logo svg{width:calc(var(--icon-size, 16px) * 18 / 16);height:calc(var(--icon-size, 16px) * 18 / 16)}
 .hd-home{display:flex;align-items:center;gap:var(--space-3);border:0;background:none;padding:0;color:inherit;min-width:0;text-align:left}
 .hd-home:hover .hd-title{text-decoration:underline}
 

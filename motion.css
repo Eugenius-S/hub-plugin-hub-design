@@ -103,7 +103,7 @@
 .hd-style .hd-ic{position:relative;display:inline-flex}
 .hd-style .hd-ic::after{
   content:"";position:absolute;inset:0;background:#fff;opacity:0;
-  -webkit-mask:url("icon-filled.svg") center/20px 20px no-repeat;mask:url("icon-filled.svg") center/20px 20px no-repeat;
+  -webkit-mask:url("icon-filled.svg") center/calc(var(--icon-size, 16px) * 20 / 16) calc(var(--icon-size, 16px) * 20 / 16) no-repeat;mask:url("icon-filled.svg") center/calc(var(--icon-size, 16px) * 20 / 16) calc(var(--icon-size, 16px) * 20 / 16) no-repeat;
   transition:opacity 100ms ease;
 }
 .hd-style .hd-ic svg{transition:opacity 100ms ease}

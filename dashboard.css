@@ -13,7 +13,7 @@
 .hdd-more svg{rotate:90deg}   /* the property, not transform: the hover swell in motion.css sets transform and would turn the dots upright */
 .hdd-search,.hdd-path{border:1px solid var(--input);border-radius:var(--radius);background:var(--background);padding:6px 10px;outline:none;min-width:0}
 .hdd-sbox{position:relative;display:flex;align-items:center;margin-right:var(--space-2);min-width:0}
-.hdd-sbox>svg{position:absolute;left:10px;width:16px;height:16px;pointer-events:none;color:var(--muted-foreground)}
+.hdd-sbox>svg{position:absolute;left:10px;width:var(--icon-size, 16px);height:var(--icon-size, 16px);pointer-events:none;color:var(--muted-foreground)}
 .hdd-search{width:200px;padding-left:34px}
 .hdd-path{display:block;width:100%;margin-top:var(--space-3)}
 .hdd-search:focus,.hdd-path:focus{border-color:var(--ring)}
@@ -63,7 +63,7 @@
 .hdd-name{font-size:var(--text-base);font-weight:500;line-height:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hdd-meta{display:flex;align-items:center;gap:6px;color:var(--muted-foreground);font-size:var(--text-sm);min-width:0}
 .hdd-lock{display:inline-flex;flex:none}
-.hdd-lock svg{width:15px;height:15px}
+.hdd-lock svg{width:calc(var(--icon-size, 16px) * 15 / 16);height:calc(var(--icon-size, 16px) * 15 / 16)}
 .hdd-mtext{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .hdd-empty{margin-top:40px;color:var(--muted-foreground);text-align:center}
 
@@ -138,7 +138,7 @@
 .hdd-folder{position:relative}
 .hdd-check{position:absolute;left:10px;top:10px;z-index:3;width:22px;height:22px;border-radius:6px;border:1.5px solid color-mix(in oklab,var(--foreground) 45%,transparent);background:color-mix(in oklab,var(--card) 88%,transparent);color:var(--hd-on);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .12s,background .12s,border-color .12s;cursor:pointer;box-sizing:border-box}
 .hdd-check i{display:none;line-height:0}
-.hdd-check svg{width:16px;height:16px;fill:currentColor}
+.hdd-check svg{width:var(--icon-size, 16px);height:var(--icon-size, 16px);fill:currentColor}
 .hdd-card:hover .hdd-check,.hdd-folder:hover .hdd-check,.hdd-check:focus-visible,.hdd.selecting .hdd-check,.hdd-check[aria-checked=true],.hdd-check[aria-checked=mixed]{opacity:1}
 .hdd-check:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
 .hdd-check:hover{border-color:var(--hd-acc)}
@@ -170,7 +170,7 @@
 :is(.hd,.hdd) .hdd-sel-b.danger{background:var(--destructive,#d64545);border-color:transparent;color:var(--destructive-foreground,#fff)}
 :is(.hd,.hdd) .hdd-sel-b.danger:hover:not(:disabled){background:color-mix(in oklab,var(--destructive,#d64545) 88%,black)}
 .hdd-sel-i{display:inline-flex;line-height:0}
-.hdd-sel-i svg{width:18px;height:18px;fill:currentColor}
+.hdd-sel-i svg{width:calc(var(--icon-size, 16px) * 18 / 16);height:calc(var(--icon-size, 16px) * 18 / 16);fill:currentColor}
 
 .hdd-pop{width:min(420px,100%);display:flex;flex-direction:column;gap:var(--space-2,8px);padding:12px;border:1px solid var(--border);border-radius:var(--radius-xl,16px);background:var(--card);color:var(--foreground);box-shadow:var(--shadow-lift)}
 .hdd-pop-h{font-size:var(--text-sm);font-weight:500;color:var(--muted-foreground);padding:0 4px}
