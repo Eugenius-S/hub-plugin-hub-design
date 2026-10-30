@@ -262,3 +262,6 @@ html.hs-hidden .hd-top{padding-left:56px}
 .hd-infile{flex:none;align-self:center;font-size:11px;line-height:1;padding:3px 6px;border-radius:999px;background:color-mix(in srgb,var(--primary) 14%,transparent);color:var(--primary)}
 .hd-n.rgn{border-radius:4px}
 .hd-citem .hd-dim{flex:none;color:var(--muted-foreground);font-size:var(--text-xs)}
+
+/* Clean (html.th-clean): no blue accent: the accent of every Hub Design view is the ink of the theme (fills carry the page color on top) */
+html.th-clean :is([class^="hd"], [class*=" hd"]) { --primary: var(--c-t1); --primary-foreground: var(--background); --hd-acc: var(--c-t1); --hd-on: var(--background); }
