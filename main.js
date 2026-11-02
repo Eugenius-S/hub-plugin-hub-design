@@ -206,7 +206,7 @@ export default function register(h) {
     }
   });
   hub.addView({
-    id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", full: true,
+    id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", icon_themes: { clean: "icon-clean.svg" }, full: true,
     render, show() { P.shown = true; sidebar(true); hold(); fromAddress(); ping(); }, hide() { P.shown = false; P.openFrom = null; sidebar(false); hold(); },
   });
   // a palette button in the session input (the composer.tools slot — an addition of this hub): open Hub Design with this conversation

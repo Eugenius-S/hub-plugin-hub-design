@@ -37,7 +37,7 @@ test("Style hover: a circle clip-path from the palette, 300-420 ms ease-out, not
   const block = css.slice(css.indexOf("/* style button:"), css.indexOf("@keyframes hd-sweep"));
   assert.ok(!/scale\(/.test(block), "no scale: the circle is clipped, not scaled");
   assert.match(css, /prefers-reduced-motion:reduce\)\{\.hd-style::before[^}]*transition:none;animation:none/);
-  assert.match(rd("icon-filled.svg"), /fill-rule="evenodd"/, "the filled palette has holes");
+  for (const f of ["icon.svg", "icon-clean.svg"]) assert.match(rd(f), /viewBox="0 0 24 24"/, f + " is a 24 px glyph");
 });
 
 test("Style button: the circle starts at the centre of the palette and reaches the farthest corner", () => {

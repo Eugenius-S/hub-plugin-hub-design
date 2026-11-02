@@ -87,8 +87,8 @@
 @starting-style{.hdd-lb-box{opacity:0;transform:scale(calc(1 - var(--hd-m) * .04))}}
 
 /* style button: on hover a gradient spreads in a circle from the centre of the palette over the whole button (the circle's
-   centre and radius come from main.js, they depend on the label), the label turns white and the palette fills: the filled
-   Icons8 pair (icon-filled.svg) has holes, the gradient shows through them. The circle is a layer under the label. */
+   centre and radius come from main.js, they depend on the label), the label turns white and the palette fills with the gradient
+   (the mask is the plugin's icon.svg). The circle is a layer under the label. */
 .hd .hd-style{
   --hd-pink:#d6307f;
   position:relative;isolation:isolate;overflow:hidden;
@@ -103,7 +103,7 @@
 .hd-style .hd-ic{position:relative;display:inline-flex}
 .hd-style .hd-ic::after{
   content:"";position:absolute;inset:0;background:#fff;opacity:0;
-  -webkit-mask:url("icon-filled.svg") center/calc(var(--icon-size, 16px) * 20 / 16) calc(var(--icon-size, 16px) * 20 / 16) no-repeat;mask:url("icon-filled.svg") center/calc(var(--icon-size, 16px) * 20 / 16) calc(var(--icon-size, 16px) * 20 / 16) no-repeat;
+  -webkit-mask:url("icon.svg") center/calc(var(--icon-size, 16px) * 20 / 16) calc(var(--icon-size, 16px) * 20 / 16) no-repeat;mask:url("icon.svg") center/calc(var(--icon-size, 16px) * 20 / 16) calc(var(--icon-size, 16px) * 20 / 16) no-repeat;
   transition:opacity 100ms ease;
 }
 .hd-style .hd-ic svg{transition:opacity 100ms ease}

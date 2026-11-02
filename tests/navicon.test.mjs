@@ -23,6 +23,11 @@ test("the icon is drawn by a currentColor mask and nothing else: no layers, grad
   assert.match(rule, /mask:url\("icon\.svg"\)/);
   assert.doesNotMatch(css, /\.hd-pi:?:(before|after)|hdi-sweep|\.hd-palette:(is\()?:?hover/);
   assert.match(rd("icon.svg"), /viewBox="0 0 24 24"/);
+  assert.match(rd("icon-clean.svg"), /viewBox="0 0 24 24"/);
+  assert.doesNotMatch(rule, /\d+px;height:\d+px/, "the size comes from the core (--tool-icon), not from a pixel value");
+  assert.match(rule, /var\(--tool-icon/);
+  assert.match(css, /th-clean[^{]*\.hd-palette \.hd-pi\{[^}]*icon-clean\.svg/);
+  assert.match(rd("main.js"), /icon_themes: \{ clean: "icon-clean\.svg" \}/);
 });
 
 test("the Style button is a wide secondary .btn under the input window and shows the chosen style's name", () => {
