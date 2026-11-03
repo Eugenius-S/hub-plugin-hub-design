@@ -101,7 +101,7 @@ class Scripts(unittest.TestCase):
         self.assertEqual(main.count("|| DEFAULT_SESSION;"), 1)       # no author: not silently "designer", the owner picks; "designer" by default only on the start screen (a new file)
         self.assertIn("if (home()) return P.homeWho || (P.preset && P.preset.to) || DEFAULT_SESSION;", main)
         self.assertIn("/api/history", main)                         # the design's Write behind the feed tail is looked up in the history
-        self.assertIn("frame.h !== windowHeight(frame.w)", main)    # the frame does not stretch to the document (the design's 100vh)
+        self.assertIn("fitHeight(frame.w, frame.h, rep, st)", main)  # the frame is as tall as the design, checked in the frame it set (a design that follows its window keeps the screen height)
         self.assertLess(main.index("const recipient = "), main.index("const app = {"))   # app reads recipient at module load (0.4.1 without a view)
         canvas = read("canvas.js")
         self.assertIn("app.close()", canvas)

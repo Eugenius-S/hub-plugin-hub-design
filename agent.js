@@ -172,6 +172,39 @@
   };
   const find = (sel) => { try { return sel ? document.querySelector(sel) : null; } catch { return null; } };
 
+  // the height the frame needs to show the whole design: the document, plus what hides in a screen-height scroller (an app shell:
+  // a sidebar and a main with its own scroll). Only a scroller that takes most of the window counts: a table in a card stays inside its card.
+  function contentHeight() {
+    const de = document.documentElement, body = document.body;
+    let h = Math.max(de.scrollHeight, body ? body.scrollHeight : 0), extra = 0;
+    const all = body ? body.querySelectorAll("*") : [];
+    for (let i = 0; i < all.length && i < 5000; i++) {
+      const e = all[i];
+      if (e.clientHeight < innerHeight * 0.6 || e.scrollHeight <= e.clientHeight + 1) continue;
+      if (!/^(auto|scroll|overlay)$/.test(getComputedStyle(e).overflowY)) continue;
+      extra = Math.max(extra, e.scrollHeight - e.clientHeight);
+    }
+    return Math.ceil(h + extra);
+  }
+  // the canvas learns the content height on load and when it changes (a view, an image, a resize of the frame)
+  let dhSent = "", dhTimer = 0, dhWatch = false;
+  const reportHeight = () => {
+    clearTimeout(dhTimer);
+    dhTimer = setTimeout(() => {
+      if (!external) return;
+      const m = { t: "content", h: contentHeight(), vh: innerHeight };
+      const k = m.h + ":" + m.vh;
+      if (k !== dhSent) { dhSent = k; send(m); }
+    }, 200);
+  };
+  const watchHeight = () => {
+    if (dhWatch) return;
+    dhWatch = true;
+    addEventListener("resize", reportHeight);
+    addEventListener("load", reportHeight);
+    if (window.ResizeObserver) { const ro = new ResizeObserver(reportHeight); ro.observe(document.documentElement); if (document.body) ro.observe(document.body); }
+  };
+
   // a part of an inline svg (path, use, g, a nested svg) stands for the whole icon: picking the path moved a stroke, not the icon
   const target = (el) => { while (el && el.ownerSVGElement) el = el.ownerSVGElement; return el; };
   const pickable = (el) => el && el.nodeType === 1 && !ours(el) && el !== document.documentElement && el !== document.body;
@@ -1177,7 +1210,10 @@
       external = !!m.external;
       if (m.theme) applyTheme(m.theme);
       setLang(m.lang);
-      send({ t: "ready", path, tweaks: tweaksDecl(), w: innerWidth, h: innerHeight, dh: Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0) });
+      const dh = contentHeight();
+      send({ t: "ready", path, tweaks: tweaksDecl(), w: innerWidth, h: innerHeight, dh });
+      dhSent = dh + ":" + innerHeight;
+      watchHeight();
       sendHistory();
       errSent = "";
       sendErrors();

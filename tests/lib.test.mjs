@@ -1025,3 +1025,58 @@ test("inkOn: dark ink on light colors, white on dark, white for what is not a he
   assert.equal(inkOn("#257de0"), "#ffffff");
   assert.equal(inkOn("transparent"), "#ffffff");
 });
+
+// 0.45.1: a frame reaches the footer. The agent in the design reports the content height; the frame grows to it, and the design's own
+// 100vh grows with the frame, so the answer is checked in the frame it set: a design that keeps growing with its window (a 100vh hero per
+// section) goes back to the screen height instead of running to the limit.
+import { fitHeight, FRAME_MAX } from "../lib.js";
+
+// a design as a function of the window height vh: what the agent would report there
+const appShell = (inner, header = 60, footer = 120) => (vh) => ({ vh, h: Math.max(vh, header + inner + footer) });   // body 100vh, main scrolls inside: the document itself is the window
+const longPage = (total) => (vh) => ({ vh, h: Math.max(vh, total) });                                              // a long page, min-height:100vh on the app
+const heroes = (n) => (vh) => ({ vh, h: n * vh });                                                                 // every section is 100vh
+// the frame after the agent has reported until nothing changes (what main.js does on every "content" message)
+function settle(design, w = 1440, st = {}) {
+  let cur = windowHeight(w);
+  for (let i = 0; i < 12; i++) {
+    const next = fitHeight(w, cur, design(cur), st);
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
+test("fitHeight: a long page: the frame is as tall as the page, the footer is inside", () => {
+  assert.equal(settle(longPage(6543)), 6543);
+});
+
+test("fitHeight: a screen-height app with a scrolling main: the frame is as tall as the whole content", () => {
+  const content = 60 + 3000 + 120;
+  assert.ok(settle(appShell(3000)) >= content);
+});
+
+test("fitHeight: a page that fits the window stays the window height; an explicit width gives its device height", () => {
+  assert.equal(settle(longPage(700)), 900);
+  assert.equal(settle(longPage(700), 390), 844);
+  assert.equal(settle(longPage(2500), 390), 2500);
+});
+
+test("fitHeight: a design that grows with its window goes back to the window height and stays there", () => {
+  const st = {};
+  assert.equal(settle(heroes(4), 1440, st), 900);
+  assert.equal(fitHeight(1440, 900, heroes(4)(900), st), 900);   // a later report does not start the climb again
+});
+
+test("fitHeight: a report from before the resize is ignored; the limit holds", () => {
+  assert.equal(fitHeight(1440, 3000, { vh: 900, h: 5000 }, {}), 3000);
+  assert.equal(settle(longPage(40000)), FRAME_MAX);
+});
+
+test("fitHeight: a longer view of the same page grows the frame again; a shorter content shrinks it", () => {
+  const st = {};
+  const cur = settle(longPage(3000), 1440, st);
+  assert.equal(cur, 3000);
+  assert.equal(fitHeight(1440, cur, longPage(6000)(cur), st), 6000);
+  assert.equal(fitHeight(1440, 3000, { vh: 3000, h: 1200 }, st), 1200);
+  assert.equal(fitHeight(1440, 3000, { vh: 3000, h: 800 }, st), 900);
+});

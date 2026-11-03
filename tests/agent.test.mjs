@@ -182,3 +182,33 @@ test("agent: a text with inline tags inside (bold, a link, a break) is edited as
   assert.match(src, /m: s\.m \?\? s\.m0, m0: s\.m0/);
   assert.match(src, /contentEditable = rich \? "true" : "plaintext-only"/);
 });
+
+// 0.45.1: the height the frame has to have to show the whole design: the document plus what hides in a screen-height scroller
+function contentHeight(doc) {
+  const a = src.indexOf("function contentHeight()");
+  assert.ok(a > 0, "contentHeight found");
+  const b = src.indexOf("\n  }\n", a);
+  const fn = new Function("document", "getComputedStyle", "innerHeight", src.slice(a, b + 4) + "\nreturn contentHeight();");
+  return fn(doc, (e) => ({ overflowY: e.overflowY || "visible" }), doc.innerHeight);
+}
+const node = (o) => ({ scrollHeight: 0, clientHeight: 0, overflowY: "visible", ...o });
+const page = (de, list, body = de) => ({ innerHeight: 900, documentElement: node({ scrollHeight: de }), body: { scrollHeight: body, querySelectorAll: () => list } });
+
+test("agent: a long document is its own scrollHeight", () => {
+  assert.equal(contentHeight(page(6543, [node({ scrollHeight: 300, clientHeight: 300 })])), 6543);
+});
+
+test("agent: 100vh + a main that scrolls inside + a footer: the hidden part of the scroller is added", () => {
+  // the app is exactly the window (900); the main is 780 high on the screen and holds 3900 of content
+  const main = node({ overflowY: "auto", clientHeight: 780, scrollHeight: 3900 });
+  assert.equal(contentHeight(page(900, [main])), 900 + 3900 - 780);
+});
+
+test("agent: a small scrolling widget (a table, a list in a card) does not stretch the frame; the biggest scroller counts", () => {
+  const widget = node({ overflowY: "auto", clientHeight: 240, scrollHeight: 2000 });
+  const side = node({ overflowY: "auto", clientHeight: 840, scrollHeight: 1000 });
+  const main = node({ overflowY: "scroll", clientHeight: 780, scrollHeight: 3900 });
+  assert.equal(contentHeight(page(900, [widget])), 900);
+  assert.equal(contentHeight(page(900, [widget, side, main])), 900 + 3900 - 780);
+  assert.equal(contentHeight(page(900, [node({ overflowY: "hidden", clientHeight: 800, scrollHeight: 5000 })])), 900);
+});

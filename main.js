@@ -4,7 +4,7 @@
 // the bottom (the designer by default); comments — with their own button or together with your text. A changed file reloads the frame, the pins of the past round fade.
 // The design is served by the plugin process (server.py) from its own address, pins and frames are drawn by agent.js inside each frame.
 import { ASK_TTL, basedOnText, newDesignPrefix, PROPS, SWATCHES, inkOn, canvasPort, chatLines, createCancels, cssValue, describeChange, describeDrawing, draftCount, normErrors, gridCols, gridForm, dueSessions, exitTarget, dashboardFiles, cardKind, isCanvasFile, isCopy, fileUrl, nameOf,
-  goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, autoSig, createAuto, pageMarks, transientFail, retryWait,
+  goneText, foldChange, createSteps, hasEffect, htmlAuthored, htmlPaths, mergeAuthors, KNOWN_MAX, hubName, installText, isGone, lacking, mergeTimeline, message, nextSpot, recentHtml, recipientOf, whoGets, editsTo, searchOrder, selectedLine, timelineQuery, toolMode, windowHeight, fitHeight, autoSig, createAuto, pageMarks, transientFail, retryWait,
   describeTweak, directionDirs, dirKeyOf, saveDirOf, saveLine, isProjectKey, projectOfKey, projectDir, taskLine, normTweaks, withProbe, ownColor, toHex, isBuiltin, BUILTINS, builtinShow, builtinValue, tweakApply, tweakBase, tweakEffect, tweakValue, wroteAt, writable, markWritten, markUnwritten } from "./lib.js";
 import { createCanvas } from "./canvas.js";
 import { designLink, designPathOf, spread, styleLine, waitFresh, moveAll, handoffHome } from "./lib.js";
@@ -716,6 +716,7 @@ function sizeFrame(path, w) {
   const f = P.frames.find((q) => q.path === path);
   if (!f || f.fixed) return;
   f.w = w;
+  fits.delete(path);
   if (f.auto) f.h = windowHeight(w);
   save();
   paint();
@@ -855,13 +856,29 @@ function onFrame(e) {
   handle(ep.path, m, ep);
 }
 
+// the frame is as tall as the design (up to the limit), so that the footer is in it: lib.js fitHeight; the height is not saved, every load measures again
+const fits = new Map();   // path → state of fitHeight
+function fitFrame(frame, rep) {
+  if (!frame.auto || frame.fixed) return;
+  const st = fits.get(frame.path) || {};
+  fits.set(frame.path, st);
+  const h = fitHeight(frame.w, frame.h, rep, st);
+  if (h === frame.h) return;
+  frame.h = h;
+  ui.cv.paint();
+  if (P.cv.auto) ui.cv.fit();
+}
+
 function handle(file, m, ep = epOf(file)) {
   if (!ep) return;
   const frame = P.frames.find((f) => f.path === file);
   if (m.t === "ready") {
     ep.ready = true;
     if (frame) designSize(frame);
-    if (frame && frame.auto && !frame.fixed && frame.h !== windowHeight(frame.w)) { frame.h = windowHeight(frame.w); ui.cv.paint(); if (P.cv.auto) ui.cv.fit(); }
+    if (frame && frame.auto && !frame.fixed) {
+      fits.delete(file);   // a new document: the check starts over; the frame keeps its height meanwhile, no jump on every reload
+      fitFrame(frame, { h: m.dh, vh: m.h });
+    }
     tellEp(ep, { t: "theme", theme: theme(), lang: currentLang() });
     ui.cv.scaleTo(ep);
     syncEp(ep);
@@ -935,6 +952,8 @@ function handle(file, m, ep = epOf(file)) {
     if (m.why === "commit") steps.push({ k: "e", file });
   } else if (m.t === "colors") {
     P.colors[file] = Array.isArray(m.list) ? m.list : [];
+  } else if (m.t === "content") {
+    if (frame) fitFrame(frame, m);
   } else if (m.t === "changed") {
     const w = writers.get(file);
     if (w && m.mtime <= w.maxStamp) return;   // our own write of manual edits

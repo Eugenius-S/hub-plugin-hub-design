@@ -832,9 +832,26 @@ export function nextSpot(frames, w, gap = 80) {
   return { x: last.x + last.w + gap, y: last.y };
 }
 
-// the frame window height is a screen one, by width (like a device); a long page scrolls inside the frame instead of stretching it:
-// otherwise vh/svh in the design (min-height:100vh) stretch to the frame height
+// the frame window height is a screen one, by width (like a device): the start height and the height of a design that follows its window.
+// A frame grows to the content (fitHeight), but vh/svh in the design (min-height:100vh) stretch to the frame height
 export const windowHeight = (w) => ({ 1440: 900, 1280: 800, 768: 1024, 390: 844 })[Number(w)] || 900;
+
+// 0.45.1: ...but the frame still reaches the footer: it is as tall as the content (the design's report: h at the window height vh).
+// The design's own 100vh grows with the frame, so the report is checked in the frame it set: a page that is longer than the window
+// only for a while (a view, an image) settles at once; a design that keeps growing with its window (a 100vh hero per section) goes back
+// to the screen height and stays there until its next load (st.locked). cur is the frame height now, st the state of this frame.
+export const FRAME_MAX = 12000;
+export function fitHeight(w, cur, rep, st) {
+  const win = windowHeight(w), h = Math.max(0, Math.round(Number(rep && rep.h)) || 0);
+  if (h <= win + 1) { st.steps = 0; st.locked = false; return win; }
+  if (st.locked) return win;
+  if (Math.round(Number(rep.vh)) !== Math.round(cur)) return cur;   // measured before the last resize: the next report comes with the new window
+  if (Math.abs(h - cur) <= 2 || (cur >= FRAME_MAX && h >= cur)) { st.steps = 0; return cur; }
+  if (h < cur) { st.steps = 0; return Math.max(win, h); }
+  if (st.steps >= 1) { st.locked = true; st.steps = 0; return win; }   // grew once and the content ran away again: it follows the window
+  st.steps = 1;
+  return Math.min(h, FRAME_MAX);
+}
 
 // the frame label: the file name without .html
 export const frameTitle = (path) => String(path).split(/[\\/]/).pop();
