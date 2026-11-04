@@ -228,17 +228,20 @@ export function createCanvas(app) {
     return false;
   }
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
+  // a focused button or link is pressed by Space: the key is theirs, not the hand's (a mouse click gives the focus back, below)
+  const pressable = (t) => t && t.closest && t.closest("button, a[href], summary, [role=button], [role=menuitem], [role=tab]");
   const SHORTCUT = { KeyZ: "z", Equal: "=", Minus: "-" };
   const onKey = (down) => (e) => {
     if (!down && e.key === " ") release();   // the key-up is never dropped: an input in focus or another screen must not keep the hand on
-    if (!app.visible() || typing(e.target)) return;
+    if (!app.visible() || typing(e.target) || (e.key === " " && pressable(e.target))) return;
     const k = (e.metaKey || e.ctrlKey) && SHORTCUT[e.code] ? SHORTCUT[e.code] : e.key;   // a shortcut is the key by its place: Ctrl+Z works on any layout
     if (key(k, down, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey })) e.preventDefault();
   };
   // Space is the hand here, and the hub listens for the same key to record a voice message (hold Space with an empty field, recorder.js):
   // every pan would start a recording and end in "no speech". The hand takes the key first, the recorder never sees it; voice is the microphone button
+  root.addEventListener("click", (e) => { const b = e.detail && e.target.closest && e.target.closest("button"); if (b) b.blur(); }, true);   // capture: the buttons stop the click themselves
   addEventListener("keydown", (e) => {
-    if (e.code !== "Space" || e.metaKey || e.ctrlKey || e.altKey || !app.visible() || typing(e.target)) return;
+    if (e.code !== "Space" || e.metaKey || e.ctrlKey || e.altKey || !app.visible() || typing(e.target) || pressable(e.target)) return;
     key(" ", true);
     e.preventDefault();
     e.stopPropagation();
