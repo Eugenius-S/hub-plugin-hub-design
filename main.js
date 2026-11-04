@@ -973,6 +973,7 @@ function renumber() {
 function setTool(tool, shape) {
   if (shape && P.shapes[tool] !== undefined) P.shapes[tool] = shape;
   P.tool = tool;
+  ui?.cv.release();      // a tool picked by hand or by a letter always works: the hand held by Space (or stuck) goes off
   if (tool !== "select" && P.sel) { P.sel = null; tellAll({ t: "deselect" }); }
   ui?.cv.closeEditor();
   syncAll();

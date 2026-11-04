@@ -204,8 +204,15 @@ export function createCanvas(app) {
   stage.addEventListener("pointercancel", endGesture);
 
   // keys: space is the hand, letters are tools; from a frame they are forwarded by agent.js
+  // the hand is on only while Space is held; it goes off at once when the key-up may never come (focus lost, tab hidden, a tool chosen)
+  function release() { if (space) { space = false; chrome(); } }
   function key(k, down, mods = {}) {
-    if (k === " ") { if (space !== down) { space = down; chrome(); } return true; }
+    if (k === " ") {
+      if (!down) release();
+      else if (mods.meta || mods.ctrl || mods.alt) return false;   // Ctrl/Cmd+Space belong to the OS (layout, Spotlight): no key-up comes after them
+      else if (!space) { space = true; chrome(); }
+      return true;
+    }
     if (!down || mods.meta || mods.ctrl || mods.alt) {
       if (down && (mods.meta || mods.ctrl) && k.toLowerCase() === "z") { app.undo(!!mods.shift); return true; }
       if (down && (mods.meta || mods.ctrl) && (k === "=" || k === "+")) { setView(zoomAt(view, 1.25, size().W / 2, size().H / 2)); return true; }
@@ -223,13 +230,15 @@ export function createCanvas(app) {
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const SHORTCUT = { KeyZ: "z", Equal: "=", Minus: "-" };
   const onKey = (down) => (e) => {
+    if (!down && e.key === " ") release();   // the key-up is never dropped: an input in focus or another screen must not keep the hand on
     if (!app.visible() || typing(e.target)) return;
     const k = (e.metaKey || e.ctrlKey) && SHORTCUT[e.code] ? SHORTCUT[e.code] : e.key;   // a shortcut is the key by its place: Ctrl+Z works on any layout
     if (key(k, down, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey })) e.preventDefault();
   };
   addEventListener("keydown", onKey(true));
   addEventListener("keyup", onKey(false));
-  addEventListener("blur", () => { if (space) { space = false; chrome(); } });
+  addEventListener("blur", release);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
 
   // --- frames --------------------------------------------------------------------------------------------------------
   function layoutFrame(f) {
@@ -703,7 +712,7 @@ export function createCanvas(app) {
   apply();
 
   return {
-    node: root, paint, fit, setView, key, wheel: frameWheel, reloadFrame, paintErrs, openEditor, refreshEditor, closeEditor, focusOn, openAdd, scaleTo: pushScale, closeMenu,
+    node: root, paint, fit, setView, key, release, wheel: frameWheel, reloadFrame, paintErrs, openEditor, refreshEditor, closeEditor, focusOn, openAdd, scaleTo: pushScale, closeMenu,
     frame: (path) => fr.get(path), size,
   };
 }

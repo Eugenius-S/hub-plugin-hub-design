@@ -1025,7 +1025,10 @@
   const typing = (t) => t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable);
   const KEYS = /^[vhtncprf0]$/i;
   const LATIN = { KeyZ: "z", Equal: "=", Minus: "-" };
+  let spaceSent = false;   // Space went to the canvas as "down" and has no "up" yet
+  const spaceUp = () => { if (spaceSent) { spaceSent = false; send({ t: "key", k: " ", down: false }); } };
   const keyOut = (down) => (e) => {
+    if (!down && e.key === " ") return spaceUp();   // the key-up of Space always goes: a focus in an input must not keep the hand on
     if (!external || typing(e.target) || ours(e.target)) return;
     const mod = e.metaKey || e.ctrlKey;
     // with another layout (not Latin) a shortcut is still the key by its place
@@ -1033,9 +1036,13 @@
     const mine = k === " " || k === "Escape" || (!mod && !e.altKey && (KEYS.test(k) || k === "!" || (e.shiftKey && k === "1"))) ||
       (mod && (/^[zZ=+\-]$/.test(k)));
     if (!mine) return;
+    if (k === " " && (e.ctrlKey || e.metaKey || e.altKey)) return;   // Ctrl/Cmd+Space belong to the OS: no key-up comes after them
     e.preventDefault();
+    if (k === " ") spaceSent = down;
     send({ t: "key", k, down, meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey });
   };
+  addEventListener("blur", spaceUp);   // the frame lost the focus (another window, Cmd+Tab) with Space held: the key-up will not come
+  document.addEventListener("visibilitychange", () => { if (document.hidden) spaceUp(); });
   addEventListener("keydown", (e) => {
     if (e.key === "Escape" && mode !== "view") { select(null); showHover(null); }
     keyOut(true)(e);
