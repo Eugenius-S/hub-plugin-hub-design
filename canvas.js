@@ -235,6 +235,14 @@ export function createCanvas(app) {
     const k = (e.metaKey || e.ctrlKey) && SHORTCUT[e.code] ? SHORTCUT[e.code] : e.key;   // a shortcut is the key by its place: Ctrl+Z works on any layout
     if (key(k, down, { meta: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey })) e.preventDefault();
   };
+  // Space is the hand here, and the hub listens for the same key to record a voice message (hold Space with an empty field, recorder.js):
+  // every pan would start a recording and end in "no speech". The hand takes the key first, the recorder never sees it; voice is the microphone button
+  addEventListener("keydown", (e) => {
+    if (e.code !== "Space" || e.metaKey || e.ctrlKey || e.altKey || !app.visible() || typing(e.target)) return;
+    key(" ", true);
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
   addEventListener("keydown", onKey(true));
   addEventListener("keyup", onKey(false));
   addEventListener("blur", release);

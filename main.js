@@ -1400,6 +1400,8 @@ function build(root) {
       else if (drafts() > 0) markSent();
     },
   });
+  // hold Space in an empty field would start a voice recording (push-to-talk of the hub); here a space is a space, voice is the microphone button
+  input.node.addEventListener("keydown", (e) => { if (e.code === "Space" && !e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation(); });
   const strip = el("div", "strip-host");
   strip.hidden = true;
   const foot = el("div", "hd-foot");
