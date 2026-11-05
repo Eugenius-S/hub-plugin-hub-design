@@ -1116,6 +1116,14 @@ class DesignRegistry(unittest.TestCase):
     def put(self, path, session="designer"):
         self.reg.items[self.registry.key_of(path)] = {"path": path, "session": session, "ts": 5, "last": 7, "rank": 2}
 
+    def test_keep_marks_name_the_designs_the_owner_got_or_liked(self):
+        a, b, c = (os.path.join(self.old, n) for n in ("sent.html", "liked.html", "plain.html"))
+        self.put(a), self.put(b), self.put(c)
+        self.reg.items[self.registry.key_of(a)]["sent"] = 5
+        self.reg.items[self.registry.key_of(b)]["liked"] = 6
+        self.assertEqual(server.keep_marks(), {self.registry.key_of(a): {"sent": 5, "liked": None},
+                                               self.registry.key_of(b): {"sent": None, "liked": 6}})
+
     def get(self, path, headers=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         c.request("GET", path, headers={"Host": f"localhost:{self.port}", **(headers or {})})

@@ -1344,10 +1344,15 @@ def keep_inputs(deep=False):
     return paths, [e for e in extra if os.path.isdir(e)]
 
 
+def keep_marks():
+    """{design key: {sent, liked}}: what the owner got (hub send-file) or liked in Telegram - keep.py never trashes it."""
+    return {registry.key_of(r["path"]): {"sent": r.get("sent"), "liked": r.get("liked")} for r in (REG.listing() if REG else []) if r.get("sent") or r.get("liked")}
+
+
 def keep_run(deep=False):
     """One pass of keep.py: the old versions of the designs to the trash, the old trash out. -> the answer of keep.sweep."""
     paths, extra = keep_inputs(deep)
-    return keep.sweep(state_dir(), paths, organize_ctx(), extra_parents=extra)
+    return keep.sweep(state_dir(), paths, organize_ctx(), extra_parents=extra, marks=keep_marks())
 
 
 def keep_loop():

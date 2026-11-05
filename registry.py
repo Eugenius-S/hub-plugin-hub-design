@@ -31,6 +31,7 @@ import time
 KINDS = (".html", ".htm", ".pdf", ".svg")
 WRITES = ("Write",)                 # create a design
 EDITS = ("Edit", "MultiEdit")       # touch a design that is already known
+LIKED = "❤️"                         # the button of a design post in Telegram (tgpost.LIKE)
 KEEP = 5000                         # entries kept: the freshest
 SKIP_PARTS = {"node_modules", ".git", ".claude", "site-packages", "__pycache__"}
 TEMP = re.compile(r"(?:^|/)(?:tmp|temp|var/folders|private/tmp|appdata/local/temp)(?:/|$)", re.I)   # a scratch file of a test is not a design
@@ -45,7 +46,7 @@ _DESIGN_LINE = re.compile(rb'(?:/|\\\\)design(?:/|\\\\)')
 _LINE_KIND = re.compile(rb'"(?:delegation\.created|turn\.started)"|"task\.noted".*"title"')
 TICK = 3   # s between journal reads
 CUR_EVERY = 30   # s: the tasks the sessions work on are saved no oftener (they change with every turn)
-VERSION = 5   # 2: the task of a design; 3: a word in the middle of a turn keeps its task; 4: the work folders; 5: no //path. An older one is read again
+VERSION = 6   # 6: marks of a design the owner got (sent) and liked in Telegram (liked); 2: the task of a design; 3: a word in the middle of a turn keeps its task; 4: the work folders; 5: no //path. An older one is read again
 WORKS = ("Bash", "Agent")   # a command or a fork's brief names the folder a script writes the designs to
 KEEP_WORK = 400   # work folders kept: the freshest
 SLACK = 120   # s: a file written a little before the command that named its folder was logged
@@ -368,6 +369,16 @@ def fold(items, ev, state=None):
     if kind == "turn.tool" and data.get("name") in WORKS:
         note_work(state, ev)
         return False
+    if kind == "telegram.pressed":   # the owner's ❤️ under a design post (ref hd:<seq of its owner.file>): the owner chose this version
+        ref = str(data.get("ref") or "")
+        if data.get("button") != LIKED or not ref.startswith("hd:"):
+            return False
+        n = ref[3:]
+        for v in items.values():
+            if n in [str(x) for x in v.get("refs") or []] and not v.get("liked"):
+                v["liked"] = ts
+                return True
+        return False
     if kind == "owner.file":
         path, session, rank = design_path(data.get("source") or data.get("path")), data.get("sender"), 1
     elif kind == "turn.tool" and data.get("name") in WRITES + EDITS:
@@ -388,10 +399,15 @@ def fold(items, ev, state=None):
     cur = items.get(k)
     if not task and not (cur or {}).get("task"):   # no task of its own in this turn: a round of a design takes the task of that design
         task = edit_task(items, state, session) or round_task(items, k)
+    sent = {"sent": ts, "refs": [ev.get("seq")]} if kind == "owner.file" else {}   # the owner got this file: it is kept for good
     if not cur:
-        items[k] = {"path": path, "session": session or "", "ts": ts, "last": ts, "rank": rank, **({"task": task} if task else {})}
+        items[k] = {"path": path, "session": session or "", "ts": ts, "last": ts, "rank": rank, **({"task": task} if task else {}), **sent}
         return True
     before = dict(cur)
+    if sent:
+        cur["sent"] = max(cur.get("sent") or 0, ts)
+        if ev.get("seq") not in (cur.get("refs") or []):
+            cur["refs"] = (cur.get("refs") or [])[-9:] + [ev.get("seq")]
     cur["last"] = max(cur["last"], ts)
     if rank > cur["rank"] or rank == cur["rank"] and ts >= cur["ts"]:
         cur.update(session=session or cur["session"], ts=ts, rank=rank)
@@ -403,7 +419,7 @@ def fold(items, ev, state=None):
 def candidates(chunk):
     """Lines of the journal worth parsing: a cheap look at the bytes first (the archive is hundreds of megabytes of tool results)."""
     for line in chunk:
-        if b"owner.file" in line or _LINE_KIND.search(line):
+        if b"owner.file" in line or _LINE_KIND.search(line) or b'"telegram.pressed"' in line and b'"hd:' in line:
             yield line
         elif b"turn.tool" in line and (_EDIT_LINE.search(line) and _KIND_LINE.search(line) or _WORK_LINE.search(line) and _DESIGN_LINE.search(line)):
             yield line
@@ -571,6 +587,10 @@ class Registry:
                     had["last"] = max(had["last"], v["last"])
                     if v.get("task") and not had.get("task"):
                         had["task"] = v["task"]
+                    for f in ("sent", "liked"):
+                        if v.get(f):
+                            had[f] = max(had.get(f) or 0, v[f])
+                    had["refs"] = (had.get("refs") or []) + [r for r in v.get("refs") or [] if r not in (had.get("refs") or [])]
                 else:
                     self.items[nk] = {**v, "path": new}
                 changed = True

@@ -233,6 +233,49 @@ class Keep(unittest.TestCase):
             organize.undo(self.state, out["id"])
         self.assertEqual(e.exception.code, 410)
 
+    # --- what the owner chose or got is kept for good
+    def key(self, page):
+        return keep.registry.key_of(page)
+
+    def five(self, names, folder="poster"):
+        task = os.path.join(self.design, folder)
+        pages = {n: self.folder(task, n, age=(20 - i) * DAY) for i, n in enumerate(names)}   # the first is the oldest
+        return task, pages
+
+    def test_a_version_sent_to_the_owner_stays_beyond_the_four(self):
+        task, pages = self.five(["kolo", "kolo-2", "kolo-3", "kolo-4", "kolo-5", "kolo-6"])
+        marks = {self.key(pages["kolo-2"]): {"sent": NOW - 5 * DAY}}
+        out = self.run_keep(list(pages.values()), marks=marks)
+        self.assertEqual(self.left(task), ["kolo-2", "kolo-3", "kolo-4", "kolo-5", "kolo-6"])   # only kolo went
+        self.assertEqual(out["kept"]["sent"], 1)
+
+    def test_a_version_the_owner_liked_stays_and_the_rest_go_as_before(self):
+        task, pages = self.five(["kolo", "kolo-2", "kolo-3", "kolo-4", "kolo-5", "kolo-6", "kolo-7"])
+        out = self.run_keep(list(pages.values()), marks={self.key(pages["kolo"]): {"liked": NOW - DAY}})
+        self.assertEqual(self.left(task), ["kolo", "kolo-4", "kolo-5", "kolo-6", "kolo-7"])
+        self.assertEqual(out["kept"]["liked"], 1)
+
+    def test_without_marks_the_same_designs_go(self):
+        task, pages = self.five(["kolo", "kolo-2", "kolo-3", "kolo-4", "kolo-5", "kolo-6"])
+        self.run_keep(list(pages.values()), marks={})
+        self.assertEqual(self.left(task), ["kolo-3", "kolo-4", "kolo-5", "kolo-6"])
+
+    def test_the_last_round_of_variants_stays_while_none_is_liked(self):
+        names = ["ad-1a", "ad-1b", "ad-2a", "ad-2b", "ad-2c", "ad-3a", "ad-3b"]   # the oldest first; round 3 is the last
+        task, pages = self.five(names)
+        # newest four by time are ad-2c ad-3a ad-3b and ad-2b; with the rule the whole round 3 is held too (it already is) and round 1 goes
+        out = self.run_keep(list(pages.values()))
+        self.assertEqual(self.left(task), ["ad-2b", "ad-2c", "ad-3a", "ad-3b"])
+        task, pages = self.five(["ad-3a", "ad-1a", "ad-1b", "ad-2a", "ad-2b", "ad-3b"], "second")   # round 3 is old by the clock: still the last round
+        out = self.run_keep(list(pages.values()))
+        self.assertEqual(self.left(task), ["ad-1b", "ad-2a", "ad-2b", "ad-3a", "ad-3b"])   # ad-1a (oldest, round 1) went, round 3 held
+        self.assertEqual(out["kept"]["round"], 1)
+
+    def test_once_a_variant_is_liked_the_other_variants_of_its_round_are_past_versions(self):
+        task, pages = self.five(["ad-3a", "ad-1a", "ad-1b", "ad-2a", "ad-2b", "ad-3b"])
+        self.run_keep(list(pages.values()), marks={self.key(pages["ad-3b"]): {"liked": NOW - DAY}})
+        self.assertEqual(self.left(task), ["ad-1b", "ad-2a", "ad-2b", "ad-3b"])   # ad-3a is old: it goes like any other
+
     def test_the_text_of_the_plan_names_what_goes(self):
         task = os.path.join(self.design, "poster")
         pages = [self.folder(task, "kolo" + ("" if i == 1 else "-%d" % i), age=(10 - i) * DAY) for i in range(1, 6)]

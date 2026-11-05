@@ -30,6 +30,7 @@ import registry
 PAST = 3                 # past versions that stay beside the current one
 MIN_AGE = 3 * 3600       # s: a version touched later than this is left alone
 TRASH_AGE = 24 * 3600    # s: the trash is emptied after this
+ROUND = re.compile(r"(?:-|_v)(?P<n>\d{1,2})(?P<v>[a-z])$", re.I)   # <name>-3f, <name>_v2a: variants of one round (alternatives, not versions)
 PULL = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
 STRONG = re.compile(r"^(?P<root>.+?)(?:[-_]v\d+[a-z]?|[-_]r\d+|-\d{1,2}[a-z])$", re.I)
 PLAIN = re.compile(r"^(?P<root>.+?)-(?!0)\d{1,2}$")
@@ -185,8 +186,35 @@ def designs_of(unit):
     return inner
 
 
-def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE):
+def protected(members, marks):
+    """The units of a family that are never trashed -> {id(unit): reason}: "liked" (the owner pressed ❤️ in Telegram), "sent" (the owner got the file,
+    hub send-file); and when the family has lettered variants (-2a, -2b, -3a: alternatives of a round), "round" for the variants of the last round
+    while none of them is liked (the owner has not chosen yet). Once one is liked, the other variants of that round are past versions like the rest.
+    marks: {design key: {sent, liked}} (the registry)."""
+    def has(u, flag):
+        return any((marks.get(key(p)) or {}).get(flag) for p in (designs_of(u) or [u["main"]]))
+    out = {}
+    for u in members:
+        for flag in ("liked", "sent"):
+            if has(u, flag):
+                out[id(u)] = flag
+                break
+    rounds = {}
+    for u in members:
+        m = ROUND.search(u["name"])
+        if m:
+            rounds.setdefault(int(m["n"]), []).append(u)
+    if rounds:
+        last = rounds[max(rounds)]
+        if not any(has(u, "liked") for u in last):
+            for u in last:
+                out.setdefault(id(u), "round")
+    return out
+
+
+def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE, marks=None):
     """paths: the design files the plugin knows (the registry); extra_parents: folders to look into besides the ones of the paths.
+    marks: {design key: {sent, liked}} - what the owner got or liked is kept (see protected).
     -> {families: n, versions: n, units: [{src, kind, name, keep: [names], size}], paths: [files to tick], bytes, copies: n}"""
     now = now or time.time()
     parents, seen = {}, set()
@@ -203,15 +231,20 @@ def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE):
             if (u["parent"], u["name"], u["kind"]) not in seen:
                 seen.add((u["parent"], u["name"], u["kind"]))
                 found.append(u)
-    out = {"families": 0, "versions": 0, "units": [], "paths": [], "bytes": 0, "copies": 0}
+    out = {"families": 0, "versions": 0, "units": [], "paths": [], "bytes": 0, "copies": 0, "kept": {"sent": 0, "liked": 0, "round": 0}}
+    marks = marks or {}
     gone = []
     for members in families(found).values():
         if len(members) < 2:
             continue
         out["families"] += 1
         out["versions"] += len(members)
+        held = protected(members, marks)
         for u in members[past + 1:]:
             if now - stamp(u) < min_age:
+                continue
+            if id(u) in held:
+                out["kept"][held[id(u)]] += 1
                 continue
             tick = designs_of(u)
             if not tick:
@@ -266,10 +299,10 @@ def purge(state_dir, now=None, age=TRASH_AGE):
     return {"runs": runs, "bytes": total}
 
 
-def sweep(state_dir, paths, ctx, past=PAST, now=None, extra_parents=(), dry=False):
+def sweep(state_dir, paths, ctx, past=PAST, now=None, extra_parents=(), dry=False, marks=None):
     """One pass: the plan and, unless dry, the move of the old versions to the trash and the emptying of the old trash.
     -> {**plan, id: the action to undo (None), deleted: n, skipped: n, purged: {runs, bytes}}"""
-    p = plan(paths, ctx, past, now, extra_parents)
+    p = plan(paths, ctx, past, now, extra_parents, marks=marks)
     out = {**p, "id": None, "deleted": 0, "skipped": 0, "purged": {"runs": 0, "bytes": 0}}
     if dry:
         return out
@@ -291,7 +324,9 @@ def mb(n):
 
 def text_of(p, home=os.path.expanduser("~")):
     short = (lambda x: "~" + x[len(home):] if home and x.startswith(home) else x)
-    lines = [f"designs with versions: {p['families']}, versions: {p['versions']}, to the trash: {len(p['units'])} ({p['copies']} copies of the canvas), {mb(p['bytes'])} MB"]
+    k = p.get("kept") or {}
+    lines = [f"designs with versions: {p['families']}, versions: {p['versions']}, to the trash: {len(p['units'])} ({p['copies']} copies of the canvas), {mb(p['bytes'])} MB; "
+             f"kept besides the newest: liked {k.get('liked', 0)}, sent to the owner {k.get('sent', 0)}, last round of variants {k.get('round', 0)}"]
     for u in sorted(p["units"], key=lambda x: x["src"]):
         lines.append(f"  {short(u['src'])}  {mb(u['size'])} MB" + (f"  (stay: {', '.join(u['keep'])})" if u["keep"] else ""))
     return "\n".join(lines) + "\n"
@@ -307,8 +342,9 @@ def main(argv):
     if "--dry" in argv or "--apply" in argv:
         import server   # the folders the plugin serves and the designs it knows
         server.REG = registry.Registry(state)
+        server.REG.poll()   # the marks (sent, liked) come from the journal: an older registry is read again once
         paths, extra = server.keep_inputs(deep=True)
-        res = sweep(state, paths, server.organize_ctx(), dry="--dry" in argv, extra_parents=extra)
+        res = sweep(state, paths, server.organize_ctx(), dry="--dry" in argv, extra_parents=extra, marks=server.keep_marks())
         os.makedirs(os.path.join(state, "hub-design"), exist_ok=True)
         with open(os.path.join(state, "hub-design", "keep-plan.txt"), "w", encoding="utf-8") as f:
             f.write(text_of(res))

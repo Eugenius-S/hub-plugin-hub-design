@@ -96,6 +96,40 @@ class Registry(unittest.TestCase):
         rows = self.reg().listing()
         self.assertEqual([r["path"] for r in rows], [src])   # twice sent, one entry, the path of the source
 
+    def test_a_file_sent_to_the_owner_is_marked_sent(self):
+        src, other = p("d", "a", "deck.html"), p("d", "a", "other.html")
+        self.live([wrote(1, "designer", other), sent(2, "designer", src), wrote(3, "designer", src)])   # a later Write does not take the mark off
+        got = self.paths(self.reg())
+        self.assertTrue(got["deck.html"].get("sent"))
+        self.assertFalse(got["other.html"].get("sent"))
+
+    def test_a_heart_under_the_post_of_a_design_marks_that_design_liked(self):
+        a, b = p("d", "a", "one.html"), p("d", "a", "two.html")
+        press = lambda seq, ref, button: ev(seq, "telegram.pressed", {"ext": "hub-design", "ref": ref, "button": button}) | {"src": "telegram"}
+        self.live([sent(10, "designer", a), sent(11, "designer", b), press(12, "hd:10", "\u2764\ufe0f"), press(13, "hd:11", "\U0001F44E")])
+        got = self.paths(self.reg())
+        self.assertTrue(got["one.html"].get("liked"))
+        self.assertFalse(got["two.html"].get("liked"))   # 👎 is not a choice
+
+    def test_the_marks_survive_a_save_and_the_old_registry_is_read_again(self):
+        a = p("d", "a", "one.html")
+        self.live([sent(10, "designer", a), ev(12, "telegram.pressed", {"ext": "hub-design", "ref": "hd:10", "button": "\u2764\ufe0f"})])
+        reg = self.reg()
+        reg.save()
+        again = registry.Registry(self.tmp)
+        self.assertTrue(self.paths(again)["one.html"].get("liked"))
+        self.assertTrue(self.paths(again)["one.html"].get("sent"))
+        with open(reg.path, encoding="utf-8") as f:
+            saved = json.load(f)
+        saved["v"] = 5   # 0.46.0 knew no marks: its registry is folded from the start again
+        for it in saved["items"]:
+            it.pop("sent", None), it.pop("liked", None)
+        with open(reg.path, "w", encoding="utf-8") as f:
+            json.dump(saved, f)
+        old = registry.Registry(self.tmp)
+        old.poll()
+        self.assertTrue(self.paths(old)["one.html"].get("liked"))
+
     def test_a_core_copy_without_a_source_is_not_a_design_and_a_saved_one_is_dropped(self):
         copy = p("hub-core", "attachments", "c99385c97cc9", "index.html")
         self.live([ev(1, "owner.file", {"path": copy, "sender": "designer", "channel": "session", "owner": False}),
