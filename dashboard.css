@@ -10,6 +10,9 @@
 .hdd-tools{display:flex;align-items:center;gap:2px;min-width:0}
 .hdd-tool{width:36px;height:36px;border:0;background:none;border-radius:var(--radius);color:var(--foreground);display:flex;align-items:center;justify-content:center;padding:0;flex:none}
 .hdd-tool:hover,.hdd-tool.on{background:var(--muted)}
+.hdd-tidy{height:36px;border:0;background:none;border-radius:var(--radius);color:var(--foreground);padding:0 12px;font-size:var(--text-base);white-space:nowrap;flex:none}
+.hdd-tidy:hover{background:var(--muted)}
+.hdd-tidy:disabled{opacity:.5}
 .hdd-more svg{rotate:90deg}   /* the property, not transform: the hover swell in motion.css sets transform and would turn the dots upright */
 .hdd-search,.hdd-path{border:1px solid var(--input);border-radius:var(--radius);background:var(--background);padding:6px 10px;outline:none;min-width:0}
 .hdd-sbox{position:relative;display:flex;align-items:center;margin-right:var(--space-2);min-width:0}

@@ -25,6 +25,8 @@ follow the designs to their new places.
     python3 layout.py --dry   [state dir]   the plan: <state>/hub-design/layout/plan.txt (and plan.json), nothing is moved
     python3 layout.py --apply [state dir]   do the plan
     python3 layout.py --undo  [state dir]   put back what --apply moved
+    python3 layout.py --assign=<file.json> [--hub=<hub code>] [state dir]   move the designs an agent placed: {"<path>": {"direction": "<label>|designer", "task": "<folder>"}}
+    python3 layout.py --undo-run=<id> [--hub=<hub code>] [state dir]        put back one action of the start screen or of --assign
 The hub code must be on PYTHONPATH (the directions and sessions are read from the hub)."""
 import hashlib
 import json
@@ -211,10 +213,12 @@ def context(state_dir, sessions=None):
     return saved.get("items") or [], Ctx.from_sessions(sessions, names, tasks)
 
 
-def plan(rows, ctx, extra=()):
-    """The plan of moves. rows: the registry ({path, session, task, title}); extra: html/pdf paths found in the design folders.
+def plan(rows, ctx, extra=(), forced=None):
+    """The plan of moves. rows: the registry ({path, session, task, title}); extra: html/pdf paths found in the design folders;
+    forced: {path: {direction: a label of ctx.dirs or "designer", task: a folder name}} - what an agent decided for a design the plan could not place.
     -> {"moves": [...], "unclear": [{path, why}], "left": [{path, why}], "placed": n}. A move: {from, to, kind: dir|file, root, task, direction,
     copies: [[from, to]], assets: [[from, to]], rewrite: n}."""
+    forced = {key(os.path.expanduser(k)): v for k, v in (forced or {}).items() if isinstance(v, dict)}
     seen, items = set(), []
     for r in rows:
         p = os.path.expanduser(str(r.get("path") or ""))
@@ -250,12 +254,15 @@ def plan(rows, ctx, extra=()):
             out["left"].append({"path": p, "why": "working folder"})
             continue
         d = direction_of(r, ctx)
+        pick = forced.get(key(p)) or {}
+        if pick.get("direction") and pick["direction"] != "designer":
+            d = ctx.by_label(pick["direction"]) or ctx.by_name(pick["direction"]) or d
         if not d and len(place[2].split("/")) >= 2:   # its project folder holds designs of one direction: the folder goes there whole
             hits = groups.get((place[1], place[2].split("/")[0])) or set()
             d = next((x for x in ctx.dirs if x["key"] in hits), None) if len(hits) == 1 else None
         if d:
             root = peers._key(d["cwd"]) + "/design"
-        elif place[0] == "designer" or mine:
+        elif place[0] == "designer" or mine or pick.get("direction") == "designer":
             root = peers._key(ctx.home or (place[1] if place[0] == "designer" else ""))
         else:
             root = ""
@@ -265,7 +272,7 @@ def plan(rows, ctx, extra=()):
         rel = under(p, root)
         if rel is None:   # it moves to another root: the task folder it had there (design/<project>/, ~/design/<project>/) keeps its name
             rel = place[2]
-        task = task_name(r, rel, ctx)
+        task = slug(pick["task"]) if pick.get("task") else task_name(r, rel, ctx)
         if not task:
             out["unclear"].append({"path": p, "why": "no task"})
             continue
@@ -277,7 +284,7 @@ def plan(rows, ctx, extra=()):
             out["placed"] += 1
             continue
         src_dir = os.path.dirname(p)
-        if os.path.basename(p).lower() == INDEX and key(os.path.dirname(src_dir)) in (key(root), key(place[1])):
+        if os.path.basename(p).lower() == INDEX and key(os.path.dirname(src_dir)) in (key(root), key(place[1])) and not pick.get("task"):
             out["unclear"].append({"path": p, "why": "a folder of its own right in the root (a project or a design?)"})
             continue
         whole = os.path.basename(p).lower() == INDEX and own_folder(src_dir, p, known, ctx, root)
@@ -628,6 +635,18 @@ def dry(state_dir, rows=None, ctx=None, extra=None):
     return p
 
 
+def assign(state_dir, forced, now=None):
+    """What an agent decided for the designs the plan left unclear: {path: {direction, task}}. Only those designs move, as one action of
+    the owner (organize.run_moves: it can be undone by id). -> {id, moved: [{from, to}], skipped: n, unclear: [{path, why}]}"""
+    import organize
+    rows, ctx, extra = gather(state_dir)
+    only = {key(os.path.expanduser(k)) for k in forced}
+    p = plan(rows, ctx, extra, forced)
+    out = organize.run_moves(state_dir, [m for m in p["moves"] if key(m["from"]) in only], now, fresh=0)
+    out["unclear"] = [u for u in p["unclear"] if key(u["path"]) in only]
+    return out
+
+
 def startup(state_dir, version, auto=False):
     """At the start of the plugin under a hub: the plan (dry) once per version of the plugin; the moves themselves only with
     extensions.hub-design.auto_layout (off by default) - and once per version too, never while designers keep working.
@@ -651,6 +670,23 @@ def startup(state_dir, version, auto=False):
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     state = args[0] if args else (os.environ.get("HUB_STATE_DIR") or os.path.expanduser("~/.hub-core"))
+    opt = {a.split("=", 1)[0]: a.split("=", 1)[1] for a in argv if a.startswith("--") and "=" in a}
+    if opt.get("--hub") and opt["--hub"] not in sys.path:
+        sys.path.insert(0, opt["--hub"])   # the code of the hub: the directions and sessions are read from it
+    if opt.get("--assign"):
+        with open(opt["--assign"], encoding="utf-8") as f:
+            forced = json.load(f)
+        forced = forced.get("designs", forced) if isinstance(forced, dict) else {}
+        res = assign(state, {k: v for k, v in forced.items() if isinstance(v, dict) and v.get("task")})
+        print(f"moved: {len(res['moved'])}, still unclear: {len(res['unclear'])}, undo: python3 layout.py --undo-run={res['id']}" if res["id"] else f"moved: 0, still unclear: {len(res['unclear'])}")
+        for u in res["unclear"]:
+            print(f"  {u['path']}: {u['why']}")
+        return 0
+    if opt.get("--undo-run"):
+        import organize
+        out = organize.undo(state, opt["--undo-run"])
+        print(f"put back: {out['restored']}, conflicts: {len(out['conflicts'])}")
+        return 0
     if "--undo" in argv:
         print(f"undone: {undo(state)}")
         return 0

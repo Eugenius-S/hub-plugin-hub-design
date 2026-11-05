@@ -48,7 +48,7 @@ const click = (n, extra = {}) => n.listeners.click({ stopPropagation() {}, preve
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const paths = ["/p/Ads/design/a/index.html", "/p/Ads/design/b/index.html", "/p/Ads/design/c/index.html", "/p/Ads/design/d/index.html"];
 
-function build({ busy = () => false, peers = [] } = {}) {
+function build({ busy = () => false, peers = [], tidy = null } = {}) {
   const log = { attached: [], srcSets: [] };
   const hub = { el: (tag, cls, text) => { const e = new El(tag, cls, log); if (text) e.textContent = text; return e; } };
   const calls = { move: [], remove: [], undo: [] };
@@ -58,6 +58,7 @@ function build({ busy = () => false, peers = [] } = {}) {
     move: async (ps, dest) => { calls.move.push([ps, dest]); return { id: "m1", moved: ps.map((p) => ({ from: p, to: dest + "/x" })), skipped: [] }; },
     remove: async (ps) => { calls.remove.push(ps); return { id: "d1", deleted: ps.map((p) => ({ from: p, to: "/trash/x" })), skipped: [] }; },
     undo: async (id) => { calls.undo.push(id); return { id, restored: 2, conflicts: [] }; },
+    ...(tidy ? { tidy: async () => { calls.tidy = (calls.tidy || 0) + 1; return tidy; } } : {}),
   };
   const rows = paths.map((p, i) => ({ path: p, session: "designer", ts: 100 + i, last: 200 + i }));
   const app = {
@@ -229,4 +230,36 @@ test("designs next to the subfolders are cards with a preview, not lines: the co
   assert.ok(!files.classList.contains("compact"));
   assert.equal(find(files, "hdd-card").length, 2, "the two lone designs are cards");
   assert.equal(find(dash.node, "hdd-folder").length, 1, "the family is a tile");
+});
+
+test("Sort files: the button is by the tools, a press tells how many moved and how many went to the designer, and Undo takes the whole action back", async () => {
+  setLangSource(() => "en");
+  const { dash, calls } = build({ tidy: { id: "t1", moved: [{ from: "a", to: "b" }, { from: "c", to: "d" }], asked: 3, waiting: 1 } });
+  const b = find(dash.node, "hdd-tidy")[0];
+  assert.ok(b, "the button is there");
+  assert.equal(b.textContent, "Sort files");
+  click(b);
+  await tick();
+  assert.equal(calls.tidy, 1);
+  assert.match(toast(dash).textContent || find(toast(dash), "hdd-toast-t")[0]?.textContent || "", /Sorted: 2.*designer got 3.*1 are being worked on/);
+  find(toast(dash), "hdd-toast-b")[0].onclick();
+  await tick();
+  assert.deepEqual(calls.undo, ["t1"]);
+});
+
+test("Sort files in Russian, and nothing to sort: no Undo", async () => {
+  setLangSource(() => "ru");
+  const { dash } = build({ tidy: { id: null, moved: [], asked: 0, waiting: 0 } });
+  const b = find(dash.node, "hdd-tidy")[0];
+  assert.equal(b.textContent, "Разложить файлы");
+  click(b);
+  await tick();
+  assert.ok(find(toast(dash), "hdd-toast-b")[0].hidden);
+  setLangSource(() => "en");
+});
+
+test("without the organize API (no plugin process) there is no Sort files button", () => {
+  setLangSource(() => "en");
+  const { dash } = build();
+  assert.equal(find(dash.node, "hdd-tidy").length, 0);
 });

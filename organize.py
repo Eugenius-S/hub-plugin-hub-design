@@ -214,6 +214,30 @@ def move(state_dir, paths, dest, ctx, now=None):
         return {"id": run if moved else None, "to": place, "moved": moved, "skipped": skipped, "map": {a: b for a, b in mapped.items() if os.path.exists(b)}}
 
 
+def run_moves(state_dir, moves, now=None, fresh=300):
+    """The moves of a task-folder plan (layout.plan) as one action of the owner: written to the log, so undo(id) puts them back.
+    A design touched in the last `fresh` seconds waits (a designer may be at work on it). -> {id, moved: [{from, to}], skipped: n}"""
+    with LOCK:
+        now = now or time.time()
+        todo = []
+        for m in moves:
+            try:
+                age = now - os.path.getmtime(m["from"])
+            except OSError:
+                continue
+            if age >= fresh:
+                todo.append(m)
+        if not todo:
+            return {"id": None, "moved": [], "skipped": len(moves)}
+        run = new_id(now)
+        layout.apply(state_dir, {"moves": todo}, by="select", run=run)
+        shown = [(m["dir_from"], m["dir_to"]) if m["kind"] == "dir" else (m["from"], m["to"]) for m in todo]
+        moved = [{"from": a, "to": b} for a, b in shown if os.path.exists(b)]
+        if moved:
+            record(state_dir, {"id": run, "ts": int(now), "op": "move", "run": run, "dest": "", "items": [{"src": m["from"], "dst": m["to"]} for m in moved]})
+        return {"id": run if moved else None, "moved": moved, "skipped": len(moves) - len(moved)}
+
+
 def trash_folder(state_dir, run, now=None):
     return os.path.join(state_dir, "hub-design", "trash", time.strftime("%Y-%m-%d", time.localtime(now or time.time())), run)
 

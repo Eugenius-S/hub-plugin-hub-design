@@ -25,7 +25,7 @@ test("kebab: tilted by the rotate property, so the hover swell (transform) does 
 test("search is always open: no toggle button, no hidden state, the magnifier sits in the field", () => {
   const js = rd("dashboard.js");
   assert.ok(!/bSearch|S\.search|search\.hidden/.test(js));
-  assert.match(js, /tools\.append\(searchBox, bView, bSort, bMore\)/);
+  assert.match(js, /tools\.append\(searchBox, \.\.\.\(org && org\.tidy \? \[bTidy\] : \[\]\), bView, bSort, bMore\)/);   // Sort files sits right after the field, when the plugin process can do it
   assert.match(js, /searchBox\.innerHTML = CI\.search/);
   assert.match(rd("dashboard.css"), /\.hdd-sbox>svg\{position:absolute/);
 });

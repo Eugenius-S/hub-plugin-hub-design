@@ -1337,6 +1337,59 @@ class Select(unittest.TestCase):
         self.assertEqual(r.status, 400)
         self.assertTrue(os.path.isfile(self.page))
 
+    def tidy_world(self):
+        """Two designs in the designer's folder: one of a task of a direction (it can be placed), one with no task (it cannot). The layout reads these, not the hub."""
+        import layout
+        base = os.path.join(OUT, "tidy")
+        mine = os.path.join(os.environ["HUB_STATE_DIR"], "hub-design", "layout")
+        for folder in (base, mine):   # what one test handed to the designer is not remembered by the next
+            shutil.rmtree(folder, ignore_errors=True)
+            self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        home, ads = os.path.join(base, "design"), os.path.join(base, "ads")
+        a, b = os.path.join(home, "poster.html"), os.path.join(home, "mystery.html")
+        for f in (a, b):
+            os.makedirs(home, exist_ok=True)
+            with open(f, "w", encoding="utf-8") as h:
+                h.write("<p>x</p>")
+            os.utime(f, (1, 1))
+        ctx = layout.Ctx([{"key": ads, "cwd": ads, "label": "ads-bruno", "names": ["ads-bruno"]}], {"designer": home},
+                         {"d1": {"title": "Black Friday poster", "by": "ads-bruno", "who": "designer"}})
+        rows = [{"path": a, "session": "designer", "task": "d1"}, {"path": b, "session": "designer", "task": ""}]
+        old = (layout.gather, server.tell_session)
+        sent = []
+        layout.gather = lambda state: (rows, ctx, [])
+        server.tell_session = lambda session, text: sent.append((session, text)) or True
+        self.addCleanup(lambda: (setattr(layout, "gather", old[0]), setattr(server, "tell_session", old[1])))
+        return a, b, ads, sent
+
+    def test_tidy_places_what_it_can_hands_the_rest_to_the_designer_and_undoes(self):
+        a, b, ads, sent = self.tidy_world()
+        r, d = self.call("tidy", {})
+        self.assertEqual(r.status, 200)
+        self.assertEqual((len(d["moved"]), d["asked"], d["waiting"]), (1, 1, 0))
+        self.assertTrue(os.path.isfile(os.path.join(ads, "design", "black-friday-poster", "poster", "index.html")))
+        self.assertFalse(os.path.exists(a))
+        self.assertTrue(os.path.isfile(b))
+        self.assertEqual([s for s, _ in sent], ["designer"])
+        text = sent[0][1]
+        self.assertIn("layout.py", text)
+        self.assertIn("--assign=", text)
+        listing = os.path.join(os.environ["HUB_STATE_DIR"], "hub-design", "layout", "unclear.json")
+        with open(listing, encoding="utf-8") as f:
+            self.assertEqual([x["path"] for x in json.load(f)["designs"]], [b])
+        r, back = self.call("undo", {"id": d["id"]})
+        self.assertEqual((r.status, back["restored"]), (200, 1))
+        self.assertTrue(os.path.isfile(a))
+
+    def test_a_second_press_does_not_ask_the_designer_again_and_a_foreign_origin_is_refused(self):
+        a, b, ads, sent = self.tidy_world()
+        self.call("tidy", {})
+        r, d = self.call("tidy", {})
+        self.assertEqual((r.status, d["asked"], d["id"]), (200, 0, None))
+        self.assertEqual(len(sent), 1)
+        r, _ = self.call("tidy", {}, origin="https://evil.example")
+        self.assertEqual(r.status, 403)
+
 
 class Moves(unittest.TestCase):
     """/__canvas/moves: where layout.py moved the old designs - the page follows its pins and cards; the plan at the start once per version."""

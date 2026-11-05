@@ -57,7 +57,7 @@ PDF_TIMEOUT = 45   # seconds to print one design, then Chrome is killed
 PDF_SIZE = (1440, 900)   # the design window if the page did not send its own
 PDF_MAX = 20000          # pixels: we do not stretch a PDF page beyond this
 WRITE_MAX = 2 * 1024 * 1024   # request body for writing edits
-SELECT = ("/__canvas/select/move", "/__canvas/select/delete", "/__canvas/select/undo")
+SELECT = ("/__canvas/select/move", "/__canvas/select/delete", "/__canvas/select/undo", "/__canvas/select/tidy")
 SELECT_MAX = 256 * 1024       # request body of the actions on the ticked designs
 SELECT_FILES = 2000
 KEEP_TICK = 20               # s: how often the loop of the versions looks at the registry
@@ -785,6 +785,8 @@ class Handler(BaseHTTPRequestHandler):
                 out = organize.move(state_dir(), paths, body.get("dest"), organize_ctx())
             elif path.endswith("/delete"):
                 out = organize.delete(state_dir(), paths, organize_ctx())
+            elif path.endswith("/tidy"):
+                out = tidy_run()
             else:
                 out = organize.undo(state_dir(), str(body.get("id") or ""))
         except organize.Refused as e:
@@ -1257,6 +1259,70 @@ def serve(port=PORT):
     srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     srv.daemon_threads = True
     return srv
+
+
+TIDY_AGENT = "designer"       # the session that places the designs layout.py could not place
+TIDY_AGAIN = 24 * 3600        # s: a design handed over is not handed over again sooner
+
+
+def tell_session(session, text):
+    """A message from the plugin to a hub session (the spool folder; none outside a hub)."""
+    if os.environ.get("HUB_STATE_DIR"):
+        notify_owner("message.received", {"to": session, "channel": "session", "owner": False, "sender": tgpost.EXT, "text": text})
+        return True
+    return False
+
+
+def hand_over(unclear, rows, ctx, now=None):
+    """The designs layout.py could not place go to the designer: the list with what is known of each (the session, the task) in unclear.json and
+    the command that puts them where the designer decides (layout.py --assign, undone by --undo-run). -> how many were handed over."""
+    now = now or time.time()
+    base = layout.folder_of(state_dir())
+    seen_path = os.path.join(base, "handed.json")
+    try:
+        with open(seen_path, encoding="utf-8") as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        seen = {}
+    info = {layout.key(os.path.expanduser(str(r.get("path") or ""))): r for r in rows}
+    tasks = ctx.tasks
+    todo = []
+    for u in unclear:
+        if now - float(seen.get(layout.key(u["path"])) or 0) < TIDY_AGAIN:
+            continue
+        r = info.get(layout.key(u["path"])) or {}
+        todo.append({"path": u["path"], "why": u["why"], "session": r.get("session") or "", "task": (tasks.get(r.get("task") or "") or {}).get("title") or r.get("title") or ""})
+    if not todo:
+        return 0
+    os.makedirs(base, exist_ok=True)
+    listing = os.path.join(base, "unclear.json")
+    answer = os.path.join(base, "assign.json")
+    with open(listing, "w", encoding="utf-8") as f:
+        json.dump({"directions": [d["label"] for d in ctx.dirs] + ["designer"], "designs": todo}, f, ensure_ascii=False, indent=1)
+    cmd = f'"{sys.executable}" "{os.path.join(HERE, "layout.py")}" --assign="{answer}"' + (f' --hub="{peers.hub_code()}"' if peers.hub_code() else "") + f' "{state_dir()}"'
+    text = (f"hub-design: the owner pressed \"Sort files\"; {len(todo)} design(s) lie outside the task folders and the plugin cannot tell where they belong. "
+            f"The list (path, why, the session that made it, the task) is in {listing}. Group them by task, give each a direction (one of \"directions\" in that file; "
+            f"\"designer\" for your own folder) and a short Latin folder name for its task, write {answer} as "
+            '{"designs": {"<path>": {"direction": "<direction>", "task": "<folder>"}}} (designs of one task - one folder name) and run: '
+            f"{cmd} . It moves them as one action the owner can undo from the start screen; it prints the undo command too. Reply to the owner in one line.")
+    if not tell_session(TIDY_AGENT, text):
+        return 0
+    for u in todo:
+        seen[layout.key(u["path"])] = now
+    with open(seen_path, "w", encoding="utf-8") as f:
+        json.dump(seen, f)
+    return len(todo)
+
+
+def tidy_run():
+    """The button "Sort files": every design to the folder of its task (layout.py), as one action that can be undone; the ones it cannot place go to the designer."""
+    if REG:
+        REG.save()   # layout reads the registry file: let it be as fresh as the memory
+    rows, ctx, extra = layout.gather(state_dir())
+    p = layout.dry(state_dir(), rows, ctx, extra)
+    res = organize.run_moves(state_dir(), p["moves"])
+    asked = hand_over([u for u in p["unclear"] if not u["why"].startswith("the place is taken")], rows, ctx)
+    return {"id": res["id"], "moved": res["moved"], "waiting": res["skipped"], "asked": asked, "unclear": len(p["unclear"])}
 
 
 def keep_inputs(deep=False):

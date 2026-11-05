@@ -45,6 +45,8 @@ export const STR = {
     move_title: "Move to a folder", move_path_ph: "Or a full path to a folder", move_go: "Move", move_loading: "Loading folders…", move_none: "No folders to pick yet: type a path",
     toast_moved: "Moved: {n}", toast_deleted: "In the trash: {n}", toast_undo: "Undo", toast_undone: "Restored: {n}", toast_skipped: "skipped: {n}",
     toast_conflict: "Not everything came back: the old place is taken", toast_fail: "Did not work: {text}",
+    tidy: "Sort files", tidy_hint: "Put the designs into the folders of their tasks; what cannot be placed goes to the designer",
+    toast_tidy: "Sorted: {n}", toast_tidy_none: "Everything is in place", toast_tidy_asked: "the designer got {n} to place", toast_tidy_wait: "{n} are being worked on and wait",
   },
   ru: {
     preset_slides: "Презентация", preset_design: "Дизайн", preset_codebase: "Свой код", preset_system: "Дизайн-система",
@@ -84,6 +86,8 @@ export const STR = {
     move_title: "Перенести в папку", move_path_ph: "Или полный путь к папке", move_go: "Перенести", move_loading: "Загружаем папки…", move_none: "Папок для выбора пока нет: впишите путь",
     toast_moved: "Перенесено: {n}", toast_deleted: "В корзине: {n}", toast_undo: "Вернуть", toast_undone: "Вернули: {n}", toast_skipped: "пропущено: {n}",
     toast_conflict: "Вернулось не всё: прежнее место занято", toast_fail: "Не получилось: {text}",
+    tidy: "Разложить файлы", tidy_hint: "Разложить макеты по папкам задач; что не удалось отнести, уйдёт дизайнеру",
+    toast_tidy: "Разложено: {n}", toast_tidy_none: "Всё уже на местах", toast_tidy_asked: "дизайнеру передано {n}", toast_tidy_wait: "{n} в работе, подождут",
   },
 };
 export const t = makeT(STR);
@@ -330,7 +334,7 @@ export function createDashboard(app) {
   // sel: the paths of the own designs the owner ticked (a tile ticks every design in it); anchor: the item he ticked last (Shift-click ticks the range up to it);
   // moving / confirm: the "Move to" list and the "to the trash?" question are open; work: a move or a delete is under way
   const S = { tab: "all", q: "", sort: "recent", list: false, path: false, folder: null, sub: null, peer: null, pdir: null, sel: new Set(), anchor: null, moving: false, confirm: false, work: false };
-  const org = app.organize || null;   // { busy(path), targets(), move(paths, dest), remove(paths), undo(id) }: none - the dashboard only shows and opens
+  const org = app.organize || null;   // { busy(path), targets(), move(paths, dest), remove(paths), undo(id), tidy() }: none - the dashboard only shows and opens
   const root = el("div", "hdd");
   const page = el("div", "hdd-page");
 
@@ -361,8 +365,12 @@ export function createDashboard(app) {
   const bSort = tool("sort", () => { S.sort = SORTS[(SORTS.indexOf(S.sort) + 1) % SORTS.length]; paint(); });
   const bMore = tool("more", () => { S.path = !S.path; paint(); if (S.path) pathIn.focus(); });
   bMore.classList.add("hdd-more");
+  // "Sort files": the designs go to the folders of their tasks (layout.py); what it cannot place is handed to the designer. It can be undone from the toast
+  const bTidy = el("button", "hdd-tidy");
+  bTidy.type = "button";
+  bTidy.addEventListener("click", () => tidyRun());
   const tools = el("div", "hdd-tools");
-  tools.append(searchBox, bView, bSort, bMore);
+  tools.append(searchBox, ...(org && org.tidy ? [bTidy] : []), bView, bSort, bMore);
   const bar = el("div", "hdd-bar");
   bar.append(tabs, tools);
 
@@ -546,6 +554,24 @@ export function createDashboard(app) {
       S.moving = false;
       S.confirm = false;
       say(summary(res, kind), { undo: res.id || null });
+    } catch (e) {
+      say(t("toast_fail", { text: (e && e.message) || String(e) }), { bad: true });
+    } finally {
+      S.work = false;
+      paint();
+    }
+  }
+  async function tidyRun() {
+    if (S.work || !org || !org.tidy) return;
+    S.work = true;
+    paintDock();
+    try {
+      const res = await org.tidy();
+      const n = (res.moved || []).length, asked = res.asked || 0, wait = res.waiting || 0;
+      const parts = [n ? t("toast_tidy", { n }) : t("toast_tidy_none")];
+      if (asked) parts.push(t("toast_tidy_asked", { n: asked }));
+      if (wait) parts.push(t("toast_tidy_wait", { n: wait }));
+      say(parts.join(", "), { undo: res.id || null });
     } catch (e) {
       say(t("toast_fail", { text: (e && e.message) || String(e) }), { bad: true });
     } finally {
@@ -985,6 +1011,9 @@ export function createDashboard(app) {
     setText(head, t("title"));
     if (search.placeholder !== t("search_ph")) search.placeholder = t("search_ph");
     if (pathIn.placeholder !== t("path_ph")) pathIn.placeholder = t("path_ph");
+    setText(bTidy, t("tidy"));
+    setTitle(bTidy, t("tidy_hint"));
+    if (bTidy.disabled !== S.work) bTidy.disabled = S.work;
     setTitle(bMore, t("open_by_path"));
     setAttr(bMore, "aria-label", bMore.title);
     setAttr(search, "aria-label", t("search"));

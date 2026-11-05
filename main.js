@@ -592,6 +592,12 @@ const organize = {
     await loadRegistry(true);
     return res;
   },
+  // "Sort files": the designs to the folders of their tasks; the plugin process hands what it cannot place to the designer
+  async tidy() {
+    const res = await selectCall("tidy", {});
+    await loadRegistry(true);
+    return res;
+  },
 };
 // the designs of the other machines of the owner (peers.py of the plugin process): pictures and names, refreshed at most once a minute
 async function loadPeers(force = false) {

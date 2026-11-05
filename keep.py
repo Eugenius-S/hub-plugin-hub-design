@@ -306,6 +306,7 @@ def main(argv):
         return 0
     if "--dry" in argv or "--apply" in argv:
         import server   # the folders the plugin serves and the designs it knows
+        server.REG = registry.Registry(state)
         paths, extra = server.keep_inputs(deep=True)
         res = sweep(state, paths, server.organize_ctx(), dry="--dry" in argv, extra_parents=extra)
         os.makedirs(os.path.join(state, "hub-design"), exist_ok=True)

@@ -172,6 +172,54 @@ class Layout(unittest.TestCase):
         self.assertTrue(os.path.isfile(src))
         self.assertFalse(os.path.exists(os.path.join(self.state, "hub-design", "layout", "moves.jsonl")))
 
+    def test_a_forced_place_settles_an_unclear_design_and_the_run_can_be_undone(self):
+        import organize
+        src = self.put(self.at("design", "mystery.html"))
+        rows = [{"path": src, "session": "designer", "task": ""}]
+        self.assertEqual([u["path"] for u in layout.plan(rows, self.ctx)["unclear"]], [src])
+        p = layout.plan(rows, self.ctx, [], {src: {"direction": "ads-bruno", "task": "Black Friday"}})
+        want = self.ads + "/design/black-friday/mystery/index.html"
+        self.assertEqual(self.moves(p), {src: want})
+        out = organize.run_moves(self.state, p["moves"], now=os.path.getmtime(src) + 1000)
+        self.assertEqual((out["skipped"], len(out["moved"])), (0, 1))
+        self.assertTrue(os.path.isfile(want) and not os.path.exists(src))
+        back = organize.undo(self.state, out["id"])
+        self.assertEqual((back["restored"], back["conflicts"]), (1, []))
+        self.assertTrue(os.path.isfile(src) and not os.path.exists(want))
+
+    def test_a_design_touched_a_minute_ago_waits_for_the_next_press(self):
+        import organize
+        src = self.put(self.at("design", "poster.html"))
+        p = layout.plan([{"path": src, "session": "designer", "task": "d1"}], self.ctx)
+        now = os.path.getmtime(src) + 60
+        out = organize.run_moves(self.state, p["moves"], now=now)
+        self.assertEqual((out["id"], out["moved"], out["skipped"]), (None, [], 1))
+        self.assertTrue(os.path.isfile(src))
+        out = organize.run_moves(self.state, p["moves"], now=now + 400)
+        self.assertEqual(len(out["moved"]), 1)
+        self.assertFalse(os.path.exists(src))
+
+    def test_the_designer_folder_can_be_the_forced_direction(self):
+        src = self.put(self.at("design", "loose.html"))
+        p = layout.plan([{"path": src, "session": "designer", "task": ""}], self.ctx, [], {src: {"direction": "designer", "task": "Sketches"}})
+        self.assertEqual(self.moves(p), {src: self.home + "/sketches/loose/index.html"})
+
+    def test_assign_moves_only_the_designs_it_was_given(self):
+        import organize
+        a = self.put(self.at("design", "mystery.html"))
+        b = self.put(self.at("design", "poster.html"))
+        old = layout.gather
+        layout.gather = lambda state: ([{"path": a, "session": "designer", "task": ""}, {"path": b, "session": "designer", "task": "d1"}], self.ctx, [])
+        self.addCleanup(setattr, layout, "gather", old)
+        os.utime(a, (1, 1))
+        os.utime(b, (1, 1))
+        out = layout.assign(self.state, {a: {"direction": "ads-bruno", "task": "Black Friday"}})
+        self.assertEqual(len(out["moved"]), 1)
+        self.assertFalse(os.path.exists(a))
+        self.assertTrue(os.path.isfile(b))
+        self.assertEqual(organize.undo(self.state, out["id"])["restored"], 1)
+        self.assertTrue(os.path.isfile(a))
+
 
 if __name__ == "__main__":
     unittest.main()
