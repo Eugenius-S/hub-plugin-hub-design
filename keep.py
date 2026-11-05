@@ -14,7 +14,7 @@ session and anything outside a folder named design are left alone. It runs when 
 
     python3 keep.py --dry   [state dir]   the plan (what goes to the trash, how many MB), nothing is moved
     python3 keep.py --apply [state dir]   do it
-    python3 keep.py --purge [state dir]   empty the trash older than a day (--apply does it too, unless --keep-trash)
+    python3 keep.py --purge [state dir]   empty the trash older than a day (--apply does it too)
 The hub code must be on PYTHONPATH."""
 import json
 import os
