@@ -261,6 +261,8 @@ def undo(state_dir, id):
             restored = len(row["items"]) - len(conflicts)
             back = [(i["dst"], i["src"]) for i in row["items"] if i["dst"] not in conflicts]
         else:
+            if not any(os.path.lexists(i["dst"]) for i in row["items"]):
+                raise Refused(410, "The trash was emptied: the files are gone")
             restored, conflicts, back = 0, [], []
             for i in reversed(row["items"]):
                 if os.path.exists(i["dst"]) and not os.path.lexists(i["src"]):

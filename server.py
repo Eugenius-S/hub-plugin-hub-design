@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import fetcher
 import handwrite
+import keep
 import linkctl
 import links as linkmem
 import layout
@@ -59,6 +60,9 @@ WRITE_MAX = 2 * 1024 * 1024   # request body for writing edits
 SELECT = ("/__canvas/select/move", "/__canvas/select/delete", "/__canvas/select/undo")
 SELECT_MAX = 256 * 1024       # request body of the actions on the ticked designs
 SELECT_FILES = 2000
+KEEP_TICK = 20               # s: how often the loop of the versions looks at the registry
+KEEP_SETTLE = 300             # s: a new design is given this long before the old versions go (a designer may be at work on it)
+KEEP_DAILY = 6 * 3600         # s: a pass without a new design (the age of the versions moves on)
 TARGETS_MAX = 200             # task folders of one direction offered as a place to move to
 THUMB_SIZE = (1440, 900)   # the window a design is shot in for a card in the feed
 DOC_SIZE = (900, 634)       # the window a document is shot in: the same ratio as the card tile
@@ -1255,6 +1259,53 @@ def serve(port=PORT):
     return srv
 
 
+def keep_inputs(deep=False):
+    """What keep.py looks at: the designs of the registry and (deep) the design folders of the directions with the folders of their tasks and pulls."""
+    paths = [os.path.expanduser(r["path"]) for r in (REG.listing() if REG else [])]
+    extra = []
+    if deep:
+        for r in work_folders():
+            base = r if os.path.basename(r).lower() == "design" else os.path.join(r, "design")
+            if not os.path.isdir(base):
+                continue
+            extra.append(base)
+            try:
+                subs = [os.path.join(base, n) for n in sorted(os.listdir(base)) if not n.startswith(".")]
+            except OSError:
+                subs = []
+            for sub in subs:
+                extra += [sub, os.path.join(sub, "claude-design")]
+    return paths, [e for e in extra if os.path.isdir(e)]
+
+
+def keep_run(deep=False):
+    """One pass of keep.py: the old versions of the designs to the trash, the old trash out. -> the answer of keep.sweep."""
+    paths, extra = keep_inputs(deep)
+    return keep.sweep(state_dir(), paths, organize_ctx(), extra_parents=extra)
+
+
+def keep_loop():
+    """At the start of the plugin and when a new design shows up in the registry: the versions beyond the newest four go to the trash
+    (extensions.hub-design.keep_versions: false turns it off)."""
+    seen, last = None, 0.0
+    while True:
+        time.sleep(KEEP_TICK)
+        if not (REG and REG.ready) or setting("keep_versions", True) is False:
+            continue
+        now = {registry.key_of(r["path"]) for r in REG.listing()}
+        if seen is not None and now <= seen and time.time() - last < KEEP_DAILY:
+            continue
+        if seen is not None and now > seen and time.time() - last < KEEP_SETTLE:
+            continue
+        try:
+            res = keep_run(deep=seen is None)
+            if res["deleted"] or res["purged"]["runs"]:
+                print(f"hub-design: versions: {res['deleted']} to the trash ({keep.mb(res['bytes'])} MB), the trash emptied: {res['purged']['runs']}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"hub-design: versions: {e}", file=sys.stderr, flush=True)
+        seen, last = now, time.time()
+
+
 def main():
     try:
         srv = serve()
@@ -1269,6 +1320,7 @@ def main():
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the registry of designs (the journal is read in the background)
         REG = registry.Registry(state_dir())
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
+        threading.Thread(target=keep_loop, daemon=True).start()   # old versions of a design to the trash (keep.py)
         threading.Thread(target=prewarm_loop, daemon=True).start()   # every card gets its shot before the owner opens the start screen
         # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
         threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready, peers.EVERY, peer_hub), daemon=True).start()
