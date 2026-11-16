@@ -82,7 +82,8 @@ class Scripts(unittest.TestCase):
     def test_composer_button_and_sidebar_contract(self):
         # the palette button in the input (the composer.tools slot) and the hide-sidebar contract: hide on entering the view, bring back on leaving
         main = read("main.js")
-        self.assertIn('hub.addSlot("composer.tools"', main)
+        self.assertIn('const TOOLS = "composer.tools", ABOVE = "session.composer"', main)   # next to Send where the core has the slot, else above the input
+        self.assertIn("hub.addSlot(slot, {", main)
         self.assertIn("hub-sidebar", main)
         self.assertIn('by: "hub-design"', main)
         self.assertIn("show() { P.shown = true; sidebar(true);", main)

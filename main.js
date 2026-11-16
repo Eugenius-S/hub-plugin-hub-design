@@ -16,6 +16,10 @@ import { createFirstRun } from "./firstrun.js";
 import { createLaneAsk, withLane } from "./lane.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { currentLang, makeT, setLangSource } from "./i18n.js";
+// where the palette button goes: next to "Send" (composer.tools, a slot of this hub's build) or, on a core without it (the shared
+// release), in the row above the session's input (session.composer)
+const TOOLS = "composer.tools", ABOVE = "session.composer";
+const SLOTS = await import("/static/js/ext.js").then((m) => m.SLOTS || {}, () => ({}));
 // writes only on a change: paint() runs on every snapshot of the hub, and a text written again is a new node and a new layout
 const setText = (n, v) => { if (n.textContent !== v) n.textContent = v; };
 const setHidden = (n, v) => { if (n.hidden !== v) n.hidden = v; };
@@ -209,13 +213,16 @@ export default function register(h) {
     id: ID, title: "Hub Design", subtitle: tr("subtitle"), icon: "icon.svg", full: true,
     render, show() { P.shown = true; sidebar(true); hold(); fromAddress(); ping(); }, hide() { P.shown = false; P.openFrom = null; sidebar(false); hold(); },
   });
-  // a palette button in the session input (the composer.tools slot — an addition of this hub): open Hub Design with this conversation
+  // a palette button in the session input: open Hub Design with this conversation. Next to "Send" where the core has the composer.tools
+  // slot (this hub's build), else in the row above the input (session.composer, every core)
   if (typeof hub.addSlot === "function") {
-    hub.addSlot("composer.tools", {
+    const slot = hub.capabilities?.composerTools === 1 || SLOTS[TOOLS] ? TOOLS : ABOVE;
+    hub.addSlot(slot, {
       id: "design",
       render(root, snap, ctx) {
         root.__ctx = ctx;
-        if (!ctx.session) return root.replaceChildren();   // not a session chat (Hub Design's own input, forms)
+        if (!ctx?.session) return root.replaceChildren();   // not a session chat (Hub Design's own input, forms)
+        if (slot === ABOVE) root.classList.add("hd-above");
         if (root.firstChild) { root.firstChild.title = tr("open_in"); root.firstChild.setAttribute("aria-label", tr("open_in")); return; }
         const b = hub.el("button", "btn round quiet hd-palette");
         b.type = "button";
@@ -236,7 +243,8 @@ const PALETTE = '<svg viewBox="0 0 24 24" class="icon" fill="currentColor" aria-
 function handoff(root) {
   const ctx = root.__ctx;
   if (!ctx?.session) return;
-  const ta = root.closest("form")?.querySelector("textarea");
+  const form = root.closest("form") || root.closest(".dock-inner")?.querySelector("form.composer");   // above the input the slot is outside the form
+  const ta = form?.querySelector("textarea");
   const text = ta ? ta.value : "";
   P.handoff = { session: ctx.session.name, text };
   if (ta && text) { ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); }

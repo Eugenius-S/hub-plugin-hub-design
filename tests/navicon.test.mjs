@@ -6,7 +6,7 @@ const rd = (f) => readFileSync(new URL("../" + f, import.meta.url), "utf8").repl
 
 test("the palette button in the input is a one-color mask icon: no animation sheet of ours", () => {
   const main = rd("main.js");
-  const slot = main.slice(main.indexOf('hub.addSlot("composer.tools"'), main.indexOf("const PALETTE ="));
+  const slot = main.slice(main.indexOf("hub.addSlot(slot, {"), main.indexOf("const PALETTE ="));
   assert.match(slot, /hd-palette/);
   assert.match(slot, /<span class="hd-pi" aria-hidden="true"><\/span>/);
   assert.ok(!/PALETTE/.test(slot), "no inline svg in the button: the mask draws the icon");
