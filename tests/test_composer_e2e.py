@@ -1,5 +1,6 @@
 """The palette button in a session's input, on any core: with the composer.tools slot (this hub's build) it sits next to "Send";
-on a core without it (the shared release) it sits in the row above the input (session.composer). Either way a click carries the
+on a core without it (the shared release) it stands in the same row in a holder of its own, and the row above the input
+(session.composer) stays empty and is not shown. Either way a click carries the
 typed text to Hub Design and moves it into Hub Design's input. Needs the hub code on PYTHONPATH and a Chrome; skipped without them."""
 import json
 import os
@@ -38,8 +39,11 @@ class PaletteInTheInput(base.PageInChrome):
         self.assertTrue(inside, "the button is not drawn in the session's input area")
         with open(os.path.join(base.CORE, "modules", "web", "static", "js", "ext.js"), encoding="utf-8") as f:
             has_tools = '"composer.tools"' in f.read()
-        where = self.js(f"{BTN}.closest('.slot-composer-tools') ? 'tools' : {BTN}.closest('.slot-session-composer') ? 'above' : ''")
-        self.assertEqual(where, "tools" if has_tools else "above", "next to Send where the core has composer.tools, else above the input")
+        where = self.js(f"{BTN}.closest('.slot-session-composer') ? 'above' : {BTN}.closest('form.composer > .bar > .slot-composer-tools') ? 'tools' : ''")
+        self.assertEqual(where, "tools", "in the input's row next to Send, with or without composer.tools (has_tools=%s)" % has_tools)
+        if not has_tools:
+            shown = self.js("[...document.querySelectorAll('.slot-host.composer')].filter(h => h.getClientRects().length).length")
+            self.assertEqual(shown, 0, "no empty card above the input on a core without composer.tools")
         self.js(f"(()=>{{const t={INPUT};t.focus();t.value='make the header calmer';t.dispatchEvent(new Event('input',{{bubbles:true}}));return 1}})()")
         self.page({"mclick": ".hd-palette"})
         got = self.page({"until": "location.hash.startsWith('#/x/hub-design')", "ms": 8000})

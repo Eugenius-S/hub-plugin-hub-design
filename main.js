@@ -16,8 +16,9 @@ import { createFirstRun } from "./firstrun.js";
 import { createLaneAsk, withLane } from "./lane.js";
 import { CANVAS_ICONS as CI } from "./icons.js";
 import { currentLang, makeT, setLangSource } from "./i18n.js";
+import { fieldHolder } from "./fieldrow.js";
 // where the palette button goes: next to "Send" (composer.tools, a slot of this hub's build) or, on a core without it (the shared
-// release), in the row above the session's input (session.composer)
+// release), session.composer, from where fieldrow.js puts it into the field's row before the mic
 const TOOLS = "composer.tools", ABOVE = "session.composer";
 const SLOTS = await import("/static/js/ext.js").then((m) => m.SLOTS || {}, () => ({}));
 // writes only on a change: paint() runs on every snapshot of the hub, and a text written again is a new node and a new layout
@@ -214,23 +215,25 @@ export default function register(h) {
     render, show() { P.shown = true; sidebar(true); hold(); fromAddress(); ping(); }, hide() { P.shown = false; P.openFrom = null; sidebar(false); hold(); },
   });
   // a palette button in the session input: open Hub Design with this conversation. Next to "Send" where the core has the composer.tools
-  // slot (this hub's build), else in the row above the input (session.composer, every core)
+  // slot (this hub's build), else session.composer (every core) draws it into the field's row before the mic
   if (typeof hub.addSlot === "function") {
     const slot = hub.capabilities?.composerTools === 1 || SLOTS[TOOLS] ? TOOLS : ABOVE;
     hub.addSlot(slot, {
       id: "design",
       render(root, snap, ctx) {
         root.__ctx = ctx;
-        if (!ctx?.session) return root.replaceChildren();   // not a session chat (Hub Design's own input, forms)
+        if (!ctx?.session) { root.__fieldHolder?.replaceChildren(); return root.replaceChildren(); }   // not a session chat (Hub Design's own input, forms)
         if (slot === ABOVE) root.classList.add("hd-above");
-        if (root.firstChild) { root.firstChild.title = tr("open_in"); root.firstChild.setAttribute("aria-label", tr("open_in")); return; }
+        // the shared core: the button stands in the field's row before the mic (fieldrow.js), not in a card above the field
+        const box = slot === ABOVE ? fieldHolder(root, { cls: "hd-in-field", order: 20 }) : root;
+        if (box.firstChild) { box.firstChild.title = tr("open_in"); box.firstChild.setAttribute("aria-label", tr("open_in")); return; }
         const b = hub.el("button", "btn round quiet hd-palette");
         b.type = "button";
         b.title = tr("open_in");
         b.setAttribute("aria-label", b.title);
         b.innerHTML = '<span class="hd-pi" aria-hidden="true"></span>';   // one-color mask icon: style.css
         b.addEventListener("click", () => handoff(root));
-        root.append(b);
+        box.append(b);
       },
     });
   }

@@ -268,6 +268,6 @@ html.th-clean :is([class^="hd"], [class*=" hd"]) { --primary: var(--c-t1); --pri
 
 /* Clean: the glyph is the size of the theme's own composer icons (mic, attach), not the 22 px of the standard theme */
 html.th-clean .slot-composer-tools .hd-palette .hd-pi{width:18px;height:18px}
-/* the palette in the row above the session's input (a core without the composer.tools slot) */
+/* the palette in the row above the session's input: a core without the composer.tools slot and no field to stand in (fieldrow.js) */
 .hd-above{display:flex;justify-content:flex-end;align-items:center;padding:0 var(--space-2,8px)}
 html.th-clean .hd-above .hd-palette .hd-pi{width:18px;height:18px}
