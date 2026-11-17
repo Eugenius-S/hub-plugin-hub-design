@@ -1,4 +1,4 @@
-// node ifr.mjs <port> '<expr>' — выражение в контексте iframe макета (первый контекст с путём /f/ и без raw)
+// node ifr.mjs <port> '<expr>' — an expression in the context of the design's iframe (the first context with a /f/ path and no raw)
 const [port, expr] = process.argv.slice(2);
 const tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
 const ws = new WebSocket(tabs.find((t) => t.type === "page").webSocketDebuggerUrl);

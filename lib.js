@@ -1144,7 +1144,7 @@ export function homeOf(f, dirs = [], taskRows = []) {
   return member || homeByName(dirs, f.session) || taskHome(task, dirs) || projectDirOf(f, dirs, taskRows);
 }
 // several directions share the cwd the file lies in: the one that made it, else the one that asked for its task, else the one a folder on the way to the file is named for
-// (<cwd>/rewarded-ads/Black Friday 2026/file.html); none of them - "" (the other rules go on)
+// (<cwd>/spring-ads/Spring sale 2026/file.html); none of them - "" (the other rules go on)
 function memberOf(f, at, task) {
   const by = (n) => homeByName(at, n);
   const hit = by(f.session) || (task ? by(task.by) || by(task.dir) || by(task.who) : "");
@@ -1196,7 +1196,7 @@ export function nearestDir(name, dirs = []) {
   }
   return best && !tie ? best.key : "";
 }
-// a name that no direction owns but a task does ("ouch-templates" - "Rewarded-ads Ouch, beat 8"): the words of the name against the titles of the tasks;
+// a name that no direction owns but a task does ("promo-templates" - "Spring ads promo, round 8"): the words of the name against the titles of the tasks;
 // the direction that asked for the nearest tasks - its folder; two directions equally near or nothing in common - ""
 export function taskNear(name, taskRows = [], dirs = []) {
   const w = [...new Set(wordsOf(name))];
@@ -1221,7 +1221,7 @@ export function projectDirOf(f, dirs = [], taskRows = []) {
 }
 // the name of a task folder: the title of the task (tasks: [{id, title}]); the same name for the folder on disk
 export const taskTitle = (id, tasks = []) => String(((tasks || []).find((x) => x.id === id) || {}).title || "").trim() || id;
-// the name of a task tile on the dashboard: the title cut where a path or a long tail begins ("Ouch, beat 8: D:/work/..." -> "Ouch, beat 8")
+// the name of a task tile on the dashboard: the title cut where a path or a long tail begins ("Promo, round 8: D:/work/..." -> "Promo, round 8")
 export const SHORT_MAX = 48;
 const TAIL = /[:\u2014\u2013]\s*(?:[A-Za-z]:[\\/]|[\\/~])|\s[A-Za-z]:[\\/]|\s\/\S/;
 export function shortTitle(title) {
