@@ -825,7 +825,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.wfile.write(body) if self.command != "HEAD" else None
         if url.path == "/__canvas/registry":
             # the designs ever made on this machine (registry.py) with the state of each file: the start screen lists them whatever sessions exist now
-            rows = REG.listing() if REG else []
+            rows = [r for r in (REG.listing() if REG else []) if not layout.archived(r["path"])]   # the archive of past versions is not listed
             out = []
             for r in rows:
                 real = os.path.expanduser(r["path"])
@@ -1127,7 +1127,7 @@ def peer_shot(real, out):
 
 def peer_rows():
     """The designs of this machine that may go to the others: only files we serve (gone and hidden ones are not exported)."""
-    rows = [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok"]
+    rows = [r for r in (REG.listing() if REG else []) if file_state(os.path.expanduser(r["path"])) == "ok" and not layout.archived(r["path"])]
     dirs = peer_dirs()
     homes = peer_homes()
     names = peer_names()
@@ -1345,18 +1345,19 @@ def keep_inputs(deep=False):
 
 
 def keep_marks():
-    """{design key: {sent, liked}}: what the owner got (hub send-file) or liked in Telegram - keep.py never trashes it."""
+    """{design key: {sent, liked}}: what the owner got (hub send-file) or liked in Telegram - keep.py never moves it."""
     return {registry.key_of(r["path"]): {"sent": r.get("sent"), "liked": r.get("liked")} for r in (REG.listing() if REG else []) if r.get("sent") or r.get("liked")}
 
 
 def keep_run(deep=False):
-    """One pass of keep.py: the old versions of the designs to the trash, the old trash out. -> the answer of keep.sweep."""
+    """One pass of keep.py: the old versions of the designs to the archive (light) or the trash (heavy), the old trash out. -> the answer of keep.sweep."""
     paths, extra = keep_inputs(deep)
     return keep.sweep(state_dir(), paths, organize_ctx(), extra_parents=extra, marks=keep_marks())
 
 
 def keep_loop():
-    """At the start of the plugin and when a new design shows up in the registry: the versions beyond the newest four go to the trash
+    """At the start of the plugin and when a new design shows up in the registry: the versions beyond the current one and one past go to the
+    archive beside them (light) or to the trash (heavy)
     (extensions.hub-design.keep_versions: false turns it off)."""
     seen, last = None, 0.0
     while True:
@@ -1370,8 +1371,9 @@ def keep_loop():
             continue
         try:
             res = keep_run(deep=seen is None)
-            if res["deleted"] or res["purged"]["runs"]:
-                print(f"hub-design: versions: {res['deleted']} to the trash ({keep.mb(res['bytes'])} MB), the trash emptied: {res['purged']['runs']}", file=sys.stderr, flush=True)
+            if res["deleted"] or res["archived"] or res["purged"]["runs"]:
+                print(f"hub-design: versions: {res['archived']} to the archive ({keep.mb(res['archive_bytes'])} MB), {res['deleted']} to the trash "
+                      f"({keep.mb(res['trash_bytes'])} MB), the trash emptied: {res['purged']['runs']}", file=sys.stderr, flush=True)
         except Exception as e:
             print(f"hub-design: versions: {e}", file=sys.stderr, flush=True)
         seen, last = now, time.time()
@@ -1391,7 +1393,7 @@ def main():
     if os.environ.get("HUB_STATE_DIR"):   # under a hub: the registry of designs (the journal is read in the background)
         REG = registry.Registry(state_dir())
         threading.Thread(target=registry.run, args=(REG,), daemon=True).start()
-        threading.Thread(target=keep_loop, daemon=True).start()   # old versions of a design to the trash (keep.py)
+        threading.Thread(target=keep_loop, daemon=True).start()   # old versions of a design to the archive or the trash (keep.py)
         threading.Thread(target=prewarm_loop, daemon=True).start()   # every card gets its shot before the owner opens the start screen
         # the designs of this machine for the other machines of the owner (off unless a shared folder is set or found)
         threading.Thread(target=peers.run, args=(peers_root, peer_rows, peer_shot, peer_title, peer_stamp, lambda: REG.ready, peers.EVERY, peer_hub), daemon=True).start()

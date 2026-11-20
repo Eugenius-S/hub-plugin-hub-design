@@ -42,6 +42,7 @@ import registry
 HTML = (".html", ".htm")
 KINDS = HTML + (".pdf",)
 INDEX = "index.html"
+ARCHIVE = "_archive"   # the past versions of a design kept beside it (keep.py): never a design of the start screen, never sorted
 COPY_OF = re.compile(r"^(?P<stem>.+)\.r(?P<n>\d+)(?P<ext>\.html?)$", re.I)
 SLUG_MAX = 32
 SLUG_WORDS = 4
@@ -75,6 +76,11 @@ def under(path, folder):
     """The path relative to folder ('a/b.html'), None if it is not inside."""
     p, f = key(path), key(folder)
     return p[len(f) + 1:] if f and p.startswith(f + "/") else None
+
+
+def archived(path):
+    """A file in the archive of past versions (keep.py puts them into <folder>/_archive/)."""
+    return ARCHIVE in key(path).split("/")
 
 
 def kind_ok(path):
@@ -222,7 +228,7 @@ def plan(rows, ctx, extra=(), forced=None):
     seen, items = set(), []
     for r in rows:
         p = os.path.expanduser(str(r.get("path") or ""))
-        if not p or not kind_ok(p) or key(p) in seen or not os.path.isfile(p):
+        if not p or not kind_ok(p) or key(p) in seen or not os.path.isfile(p) or archived(p):
             continue
         seen.add(key(p))
         items.append({**r, "path": p})
@@ -570,7 +576,7 @@ def scan(folders, depth=SCAN_DEPTH):
             continue
         base = top.rstrip(os.sep).count(os.sep)
         for here, subs, files in os.walk(top):
-            subs[:] = [s for s in subs if not s.startswith(".") and s not in registry.SKIP_PARTS and s not in ("node_modules", "assets", "fonts")]
+            subs[:] = [s for s in subs if not s.startswith(".") and s not in registry.SKIP_PARTS and s not in ("node_modules", "assets", "fonts", ARCHIVE)]
             if here.count(os.sep) - base >= depth:
                 subs[:] = []
             out += [os.path.join(here, f) for f in files if f.lower().endswith(KINDS) and not f.startswith(".")]

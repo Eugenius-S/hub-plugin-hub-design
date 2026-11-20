@@ -1,18 +1,20 @@
-"""Versions of a design: the current one and up to PAST (3) past ones stay, the older ones go to the trash of Hub Design (organize.py:
-<state>/hub-design/trash/<date>/<run>/, every action is a row of the select log and can be undone). The trash is emptied for good after a day.
+"""Versions of a design: the current one and PAST (1) past one stay (the owner's rule). An older light version (an html round with its small assets,
+a hand-edit copy of the canvas) goes to the archive beside the design, <folder>/_archive/ (layout.ARCHIVE; never emptied, the start screen does not list
+it); an older heavy one (a video, a render, an AE file, a batch of pictures) goes to the trash of Hub Design (organize.py:
+<state>/hub-design/trash/<date>/<run>/), emptied for good after a day. Every action is a row of the select log and can be undone.
 
 What a version is (the way the plugin already counts them):
 - a round of a design: a file or a folder of its own named by the design and an ending (<name>-2, <name>-3f, <name>_v2, <name>-r2) next to the others of
   the same name, <name>/index.html, <name>-2/index.html... Newest by the time of the file is current. An ending of one or two digits (-2, -12) is a
   round only when the design without it lies there too (series bf-post-04, bf-post-05 are different designs; a zero-led number never is a round);
   an ending with a letter (-3f) or v/r (-v2, -r2) is a round on its own;
-- a hand-edit copy of the canvas (<name>.r<N>.html beside the design): the 3 newest copies stay;
-- a pull of Claude Design (<project>/claude-design/<YYYYMMDD-HHMMSS>/): the 4 newest pulls stay.
+- a hand-edit copy of the canvas (<name>.r<N>.html beside the design): the newest copy stays;
+- a pull of Claude Design (<project>/claude-design/<YYYYMMDD-HHMMSS>/): the 2 newest pulls stay.
 
 A version younger than MIN_AGE is never touched (a designer may be working on it); a file the page does not serve, a folder that is a working folder of a
 session and anything outside a folder named design are left alone. It runs when the plugin starts and a while after a new design shows up.
 
-    python3 keep.py --dry   [state dir]   the plan (what goes to the trash, how many MB), nothing is moved
+    python3 keep.py --dry   [state dir]   the plan (what goes to the archive and to the trash, how many MB), nothing is moved
     python3 keep.py --apply [state dir]   do it
     python3 keep.py --purge [state dir]   empty the trash older than a day (--apply does it too)
 The hub code must be on PYTHONPATH."""
@@ -27,17 +29,34 @@ import layout
 import organize
 import registry
 
-PAST = 3                 # past versions that stay beside the current one
+PAST = 1                 # past versions that stay beside the current one
 MIN_AGE = 3 * 3600       # s: a version touched later than this is left alone
 TRASH_AGE = 24 * 3600    # s: the trash is emptied after this
 ROUND = re.compile(r"(?:-|_v)(?P<n>\d{1,2})(?P<v>[a-z])$", re.I)   # <name>-3f, <name>_v2a: variants of one round (alternatives, not versions)
 PULL = re.compile(r"^\d{8}-\d{6}(?:-\d+)?$")
 STRONG = re.compile(r"^(?P<root>.+?)(?:[-_]v\d+[a-z]?|[-_]r\d+|-\d{1,2}[a-z])$", re.I)
 PLAIN = re.compile(r"^(?P<root>.+?)-(?!0)\d{1,2}$")
+HEAVY_EXT = (".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".gif", ".aep", ".aepx", ".psd", ".exr", ".tif", ".tiff")   # videos, renders, sources
+PICTURES = (".png", ".jpg", ".jpeg", ".webp", ".avif")
+HEAVY_PICTURES = (10, 5 * 1048576)   # a batch of pictures: this many in a version and this many bytes of them (the small assets of a page stay light)
+HEAVY_BYTES = 20 * 1048576       # a version this big is heavy whatever it holds
 
 
 def key(path):
     return registry.key_of(path)
+
+
+def heavy(src):
+    """A version that goes to the trash, not to the archive: a video, a render, an AE file, a batch of pictures, or just big."""
+    files = [src] if os.path.isfile(src) else [os.path.join(here, n) for here, _, names in os.walk(src) for n in names]
+    exts = [os.path.splitext(f)[1].lower() for f in files]
+    pictures = [f for f, e in zip(files, exts) if e in PICTURES]
+    batch = len(pictures) >= HEAVY_PICTURES[0] and sum(size_of(f) for f in pictures) >= HEAVY_PICTURES[1]
+    return any(e in HEAVY_EXT for e in exts) or batch or size_of(src) >= HEAVY_BYTES
+
+
+def archive_of(src):
+    return os.path.join(os.path.dirname(src), layout.ARCHIVE)
 
 
 def designs_area(path):
@@ -80,7 +99,7 @@ def pull_of(path):
 def unit_of(path, ctx):
     """What a design file is a version of: {kind: dir|file|pull, parent, name, main, src}; None for a copy of the canvas or a file that is no design."""
     base = os.path.basename(path)
-    if not base.lower().endswith(organize.DESIGNS) or base.startswith(".") or organize.is_copy(base) or not designs_area(path):
+    if not base.lower().endswith(organize.DESIGNS) or base.startswith(".") or organize.is_copy(base) or not designs_area(path) or layout.archived(path):
         return None
     pulled = pull_of(path)
     if pulled:
@@ -215,7 +234,8 @@ def protected(members, marks):
 def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE, marks=None):
     """paths: the design files the plugin knows (the registry); extra_parents: folders to look into besides the ones of the paths.
     marks: {design key: {sent, liked}} - what the owner got or liked is kept (see protected).
-    -> {families: n, versions: n, units: [{src, kind, name, keep: [names], size}], paths: [files to tick], bytes, copies: n}"""
+    -> {families: n, versions: n, units: [{src, kind, name, keep: [names], size, to: archive|trash}], paths: [files to tick], bytes, copies: n,
+        trash: [files to tick for the trash], archive: {archive folder: [files to tick]}, trash_bytes, archive_bytes}"""
     now = now or time.time()
     parents, seen = {}, set()
     for p in paths:
@@ -231,7 +251,8 @@ def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE, mar
             if (u["parent"], u["name"], u["kind"]) not in seen:
                 seen.add((u["parent"], u["name"], u["kind"]))
                 found.append(u)
-    out = {"families": 0, "versions": 0, "units": [], "paths": [], "bytes": 0, "copies": 0, "kept": {"sent": 0, "liked": 0, "round": 0}}
+    out = {"families": 0, "versions": 0, "units": [], "paths": [], "bytes": 0, "copies": 0, "kept": {"sent": 0, "liked": 0, "round": 0},
+           "trash": [], "archive": {}, "trash_bytes": 0, "archive_bytes": 0}
     marks = marks or {}
     gone = []
     for members in families(found).values():
@@ -250,9 +271,14 @@ def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE, mar
             if not tick:
                 continue
             gone.append(u)
+            to = "trash" if heavy(u["src"]) else "archive"
             out["units"].append({"src": u["src"], "kind": u["kind"], "name": u["name"], "keep": [m["name"] for m in members[:past + 1]], "size": size_of(u["src"])
-                                 + sum(size_of(c) for _, c in copies_of(u))})
+                                 + sum(size_of(c) for _, c in copies_of(u)), "to": to})
             out["paths"] += tick
+            if to == "trash":
+                out["trash"] += tick
+            else:
+                out["archive"].setdefault(archive_of(u["src"]), []).extend(tick)
     gone_dirs = [u["src"] for u in gone if u["kind"] != "file"]
     gone_files = {u["main"] for u in gone if u["kind"] == "file"}
     for u in found:   # the copies of what stays: the newest few
@@ -263,9 +289,11 @@ def plan(paths, ctx, past=PAST, now=None, extra_parents=(), min_age=MIN_AGE, mar
                 continue
             out["paths"].append(c)
             out["copies"] += 1
-            out["bytes"] += size_of(c)
-            out["units"].append({"src": c, "kind": "copy", "name": os.path.basename(c), "keep": [], "size": size_of(c)})
-    out["bytes"] += sum(x["size"] for x in out["units"] if x["kind"] != "copy")
+            out["archive"].setdefault(archive_of(c), []).append(c)
+            out["units"].append({"src": c, "kind": "copy", "name": os.path.basename(c), "keep": [], "size": size_of(c), "to": "archive"})
+    out["bytes"] = sum(x["size"] for x in out["units"])
+    out["trash_bytes"] = sum(x["size"] for x in out["units"] if x["to"] == "trash")
+    out["archive_bytes"] = out["bytes"] - out["trash_bytes"]
     return out
 
 
@@ -300,20 +328,31 @@ def purge(state_dir, now=None, age=TRASH_AGE):
 
 
 def sweep(state_dir, paths, ctx, past=PAST, now=None, extra_parents=(), dry=False, marks=None):
-    """One pass: the plan and, unless dry, the move of the old versions to the trash and the emptying of the old trash.
-    -> {**plan, id: the action to undo (None), deleted: n, skipped: n, purged: {runs, bytes}}"""
+    """One pass: the plan and, unless dry, the light old versions to the archive beside them, the heavy ones to the trash, the old trash emptied.
+    -> {**plan, id: the trash action to undo (None), ids: every action to undo (trash and archive moves), deleted: n, archived: n, skipped: n,
+        purged: {runs, bytes}}"""
     p = plan(paths, ctx, past, now, extra_parents, marks=marks)
-    out = {**p, "id": None, "deleted": 0, "skipped": 0, "purged": {"runs": 0, "bytes": 0}}
+    out = {**p, "id": None, "ids": [], "deleted": 0, "archived": 0, "skipped": 0, "purged": {"runs": 0, "bytes": 0}}
     if dry:
         return out
-    if p["paths"]:
+    if p["trash"]:
         try:
-            res = organize.delete(state_dir, p["paths"], ctx, now)
+            res = organize.delete(state_dir, p["trash"], ctx, now)
             out["id"] = res["id"]
             out["deleted"] = len(res["deleted"])
-            out["skipped"] = len(res["skipped"])
+            out["skipped"] += len(res["skipped"])
         except organize.Refused:
             pass
+    for dest, ticked in sorted(p["archive"].items()):   # one action per archive folder: the move of organize.py (assets, copies, links follow)
+        try:
+            res = organize.move(state_dir, ticked, dest, ctx, now)
+        except organize.Refused:
+            continue
+        out["archived"] += len(res["moved"])
+        out["skipped"] += len(res["skipped"])
+        if res["id"]:
+            out["ids"].append(res["id"])
+    out["ids"] = ([out["id"]] if out["id"] else []) + out["ids"]
     out["purged"] = purge(state_dir, now)
     return out
 
@@ -325,10 +364,12 @@ def mb(n):
 def text_of(p, home=os.path.expanduser("~")):
     short = (lambda x: "~" + x[len(home):] if home and x.startswith(home) else x)
     k = p.get("kept") or {}
-    lines = [f"designs with versions: {p['families']}, versions: {p['versions']}, to the trash: {len(p['units'])} ({p['copies']} copies of the canvas), {mb(p['bytes'])} MB; "
+    to = {w: [u for u in p["units"] if u.get("to") == w] for w in ("archive", "trash")}
+    lines = [f"designs with versions: {p['families']}, versions: {p['versions']}, to the archive: {len(to['archive'])} ({p['copies']} copies of the canvas), "
+             f"{mb(p.get('archive_bytes', 0))} MB; to the trash: {len(to['trash'])}, {mb(p.get('trash_bytes', 0))} MB; "
              f"kept besides the newest: liked {k.get('liked', 0)}, sent to the owner {k.get('sent', 0)}, last round of variants {k.get('round', 0)}"]
     for u in sorted(p["units"], key=lambda x: x["src"]):
-        lines.append(f"  {short(u['src'])}  {mb(u['size'])} MB" + (f"  (stay: {', '.join(u['keep'])})" if u["keep"] else ""))
+        lines.append(f"  {short(u['src'])}  {mb(u['size'])} MB  -> {u.get('to', 'trash')}" + (f"  (stay: {', '.join(u['keep'])})" if u["keep"] else ""))
     return "\n".join(lines) + "\n"
 
 
@@ -350,7 +391,8 @@ def main(argv):
             f.write(text_of(res))
         print(text_of(res).split("\n", 1)[0])
         if "--apply" in argv:
-            print(f"moved to the trash: {res['deleted']}, skipped: {res['skipped']}, undo id: {res['id']}, trash emptied: {res['purged']}")
+            print(f"moved to the archive: {res['archived']}, to the trash: {res['deleted']}, skipped: {res['skipped']}, undo ids: {' '.join(res['ids']) or None}, "
+                  f"trash emptied: {res['purged']}")
         return 0
     print(__doc__)
     return 0

@@ -21,7 +21,7 @@ DESIGNS = (".html", ".htm", ".pdf", ".svg")
 WALK_DEPTH = 6
 WALK_FILES = 4000
 LOCK = threading.Lock()
-SKIP_DIRS = ("assets", "fonts", "node_modules")
+SKIP_DIRS = ("assets", "fonts", "node_modules", layout.ARCHIVE)
 
 
 class Refused(Exception):
