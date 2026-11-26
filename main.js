@@ -154,6 +154,8 @@ const STR = {
 const tr = makeT(STR);
 const ID = "hub-design";
 const STORE = "hub-design:";
+const CHAT_DRAFT = STORE + "chat-draft";
+const CHAT_SENDS = STORE + "chat-sends";
 const OLD_STORE = "design-canvas:";   // keys before 0.2.0 (the plugin was called design-canvas): picked up once
 const DEFAULT_SESSION = "designer";
 const HOLD = "Hub Design";
@@ -161,6 +163,7 @@ const PROP_LIST = [...new Set(PROPS.flatMap((g) => g.rows.flat().map((f) => f.p)
 
 let hub = null;
 let ui = null;        // the view's nodes, they live between snapshots
+let chatRevision = 0;
 const specs = new Map();   // file → {list: parsed tweaks of the design, base: {key: original value}}
 const eps = new Map();   // frame → {id, path, iframe, ready}: every frame has its own agent.js
 const P = {
@@ -249,8 +252,7 @@ function handoff(root) {
   const form = root.closest("form") || root.closest(".dock-inner")?.querySelector("form.composer");   // above the input the slot is outside the form
   const ta = form?.querySelector("textarea");
   const text = ta ? ta.value : "";
-  P.handoff = { session: ctx.session.name, text };
-  if (ta && text) { ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); }
+  P.handoff = { session: ctx.session.name, text, source: ta };
   hub.go(ID);
   // the view could be already open and hidden — show() picks up the handoff itself; if it is open now — pick it up here
   setTimeout(applyHandoff, 0);
@@ -272,8 +274,14 @@ function applyHandoff() {
   P.openFrom = { session: h.session, ts: Date.now() / 1000 };   // open this session's last design on the canvas if it has one (while it is not in the list — wait for the feeds)
   const ta = ui.input.node.querySelector("textarea");
   if (ta && h.text) {
-    ta.value = ta.value ? ta.value + "\n" + h.text : h.text;
+    const text = ta.value ? ta.value + "\n" + h.text : h.text;
+    const saved = !isStub(text) && saveChatDraft(text);
+    ta.value = text;
     ta.dispatchEvent(new Event("input", { bubbles: true }));
+    if (saved && h.source?.value === h.text) {
+      h.source.value = "";
+      h.source.dispatchEvent(new Event("input", { bubbles: true }));
+    }
   }
   save();
   openFromSession();
@@ -300,6 +308,54 @@ function save() {
   localStorage.setItem(STORE + "board", JSON.stringify({ frames: P.frames, pins: P.pins, changes: P.changes, drawings: P.drawings, notes: P.notes, tweaks: P.tweaks, errs: P.errs, writers: P.writers,
     round: P.round, cv: P.cv, shapes: P.shapes, picked: P.picked, found: P.found, opened: P.opened }));
   hold();
+}
+
+function saveChatDraft(text) {
+  try {
+    if (text && !isStub(text)) localStorage.setItem(CHAT_DRAFT, text);
+    else localStorage.removeItem(CHAT_DRAFT);
+    return true;
+  } catch { return false; }
+}
+
+function loadChatDraft(field) {
+  let text = "";
+  try { text = localStorage.getItem(CHAT_DRAFT) || ""; } catch { /* storage is unavailable */ }
+  if (text) {
+    field.value = text;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+function recentChatSends() {
+  try {
+    const cutoff = Date.now() - 86400000;   // the hub remembers accepted ids for a day
+    const sends = JSON.parse(localStorage.getItem(CHAT_SENDS) || "[]");
+    return sends.filter((send) => send.at > cutoff);
+  } catch { return []; }
+}
+
+function saveChatSends(sends) {
+  try {
+    if (sends.length) localStorage.setItem(CHAT_SENDS, JSON.stringify(sends));
+    else localStorage.removeItem(CHAT_SENDS);
+  } catch { /* the composer can still retry in this tab */ }
+}
+
+async function sendChatDraft(body) {
+  const revision = chatRevision;
+  const routed = home() ? body : withLane(body, laneFile([...P.pins.filter((x) => x.state === "draft"), ...draftChanges(), ...draftDrawings()]));
+  const { client_id, ...message } = routed;
+  const key = JSON.stringify(message);
+  const sends = recentChatSends();
+  const previous = sends.find((send) => send.key === key);
+  const id = previous?.id || client_id;
+  // Retrying the same draft after losing the receipt must keep the original client id.
+  if (!previous) saveChatSends([...sends.slice(-7), { key, id, at: Date.now() }]);
+  const result = await hub.send({ ...message, client_id: id });
+  if (result.ok || result.receipt === "refused") saveChatSends(recentChatSends().filter((send) => send.id !== id));
+  if (result.ok && chatRevision === revision) saveChatDraft(ui.input.node.querySelector("textarea").value);
+  return result;
 }
 // designs found earlier (feeds and history): the feed tail forgets them, the dashboard must not
 function loadKnown() {
@@ -1405,17 +1461,24 @@ function build(root) {
   const lane = createLaneAsk({ hub, hubName: () => hubName((hub.snapshot() || {}).sessions) });   // "turn the edit lane on?" once
   const need = createNeed({ hub, install }, "chat");   // no recipient in the hub — not silently into the void: the same banner
   const chips = el("div", "hd-chips");
+  const ownTransport = hub.capabilities?.composerTransport === 1 && hub.send;
   const input = hub.input({
     to: P.session, key: ID, placeholder: tr("placeholder"),
     prefix: (text) => { if (home()) return withStyle(withSave(newDesignPrefix() + text)); const b = batchText() || selText(); return withStyle(b ? b + "\n\n" + text : text); },   // the style line is the last line of the message
     // the owner's words with the canvas edits go to the design's lane; on the start screen (a new design) - to the designer as before
-    ...(hub.capabilities && hub.capabilities.composerTransport === 1 && hub.send
-      ? { send: (body) => hub.send(home() ? body : withLane(body, laneFile([...P.pins.filter((x) => x.state === "draft"), ...draftChanges(), ...draftDrawings()]))) } : {}),
+    ...(ownTransport ? { send: sendChatDraft } : {}),
     onSent: () => {
+      if (!ownTransport) saveChatDraft(chatField.value);
       if (P.style) attachStyle(null);
       if (home()) P.openNew = { session: P.session, ts: Date.now() / 1000 };   // on the start screen they wrote — this is a task for a new design
       else if (drafts() > 0) markSent();
     },
+  });
+  const chatField = input.node.querySelector("textarea");
+  loadChatDraft(chatField);
+  chatField.addEventListener("input", () => {
+    chatRevision++;
+    saveChatDraft(chatField.value);
   });
   // hold Space in an empty field would start a voice recording (push-to-talk of the hub); here a space is a space, voice is the microphone button
   input.node.addEventListener("keydown", (e) => { if (e.code === "Space" && !e.metaKey && !e.ctrlKey && !e.altKey) e.stopPropagation(); });

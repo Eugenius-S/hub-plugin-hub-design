@@ -50,6 +50,11 @@ class PaletteInTheInput(base.PageInChrome):
         self.assertTrue(got[-1]["until"], "the click did not open Hub Design")
         got = self.page({"until": "[...document.querySelectorAll('textarea')].some(t => t.closest('.hd') && t.value.includes('make the header calmer'))", "ms": 8000})
         self.assertTrue(got[-1]["until"], "the typed text did not reach Hub Design's input")
+        field = "document.querySelector('.hd form.composer textarea')"
+        self.js(f"(() => {{ const t = {field}; t.value += ' and keep the logo'; t.dispatchEvent(new Event('input', {{bubbles:true}})); }})()")
+        self.js("(location.reload(), true)")
+        got = self.page({"until": f"{field}?.value === 'make the header calmer and keep the logo'", "ms": 8000})
+        self.assertTrue(got[-1]["until"], "reloading Hub Design lost the transferred draft and its edits")
 
 
 if __name__ == "__main__":
