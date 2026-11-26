@@ -46,6 +46,7 @@ const STR = {
     add_design: "Add a design",
     add_html: "Add an HTML file to the canvas",
     placeholder: "Describe what to change…",
+    chat_sending: "Sending. Waiting for the hub to confirm…",
     who_title: "Send the edits to",
     select_down: "The design service does not answer",
     exit: "Exit Hub Design", exit_title: "Exit Hub Design: back to the chat with {name}",
@@ -107,6 +108,7 @@ const STR = {
     add_design: "Добавить макет",
     add_html: "Добавить HTML на холст",
     placeholder: "Опишите, что нужно изменить…",
+    chat_sending: "Отправляем. Ждём подтверждения хаба…",
     who_title: "Кому отправлять правки",
     select_down: "Сервис макетов не отвечает",
     exit: "Выйти из Hub Design", exit_title: "Выйти из Hub Design в чат: {name}",
@@ -164,6 +166,8 @@ const PROP_LIST = [...new Set(PROPS.flatMap((g) => g.rows.flat().map((f) => f.p)
 let hub = null;
 let ui = null;        // the view's nodes, they live between snapshots
 let chatRevision = 0;
+let restoredChatTo = "";
+let sendingChat = 0;
 const specs = new Map();   // file → {list: parsed tweaks of the design, base: {key: original value}}
 const eps = new Map();   // frame → {id, path, iframe, ready}: every frame has its own agent.js
 const P = {
@@ -312,19 +316,26 @@ function save() {
 
 function saveChatDraft(text) {
   try {
-    if (text && !isStub(text)) localStorage.setItem(CHAT_DRAFT, text);
-    else localStorage.removeItem(CHAT_DRAFT);
+    if (text && !isStub(text)) localStorage.setItem(CHAT_DRAFT, JSON.stringify({ text, to: P.session }));
+    else { localStorage.removeItem(CHAT_DRAFT); restoredChatTo = ""; }
     return true;
   } catch { return false; }
 }
 
-function loadChatDraft(field) {
-  let text = "";
-  try { text = localStorage.getItem(CHAT_DRAFT) || ""; } catch { /* storage is unavailable */ }
-  if (text) {
-    field.value = text;
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  }
+function loadChatDraft() {
+  let draft;
+  try { draft = JSON.parse(localStorage.getItem(CHAT_DRAFT) || "null"); } catch { return; }
+  if (typeof draft?.text !== "string" || !draft.text) return;
+  restoredChatTo = typeof draft.to === "string" ? draft.to : "";
+  setSession(restoredChatTo);
+  const field = ui.input.node.querySelector("textarea");
+  field.value = draft.text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function paintChatStatus() {
+  setText(ui.sendStatus, sendingChat ? tr("chat_sending") : "");
+  setHidden(ui.sendStatus, !sendingChat);
 }
 
 function recentChatSends() {
@@ -352,10 +363,17 @@ async function sendChatDraft(body) {
   const id = previous?.id || client_id;
   // Retrying the same draft after losing the receipt must keep the original client id.
   if (!previous) saveChatSends([...sends.slice(-7), { key, id, at: Date.now() }]);
-  const result = await hub.send({ ...message, client_id: id });
-  if (result.ok || result.receipt === "refused") saveChatSends(recentChatSends().filter((send) => send.id !== id));
-  if (result.ok && chatRevision === revision) saveChatDraft(ui.input.node.querySelector("textarea").value);
-  return result;
+  sendingChat++;
+  paintChatStatus();
+  try {
+    const result = await hub.send({ ...message, client_id: id });
+    if (result.ok || result.receipt === "refused") saveChatSends(recentChatSends().filter((send) => send.id !== id));
+    if (result.ok && chatRevision === revision) saveChatDraft(ui.input.node.querySelector("textarea").value);
+    return result;
+  } finally {
+    sendingChat--;
+    paintChatStatus();
+  }
 }
 // designs found earlier (feeds and history): the feed tail forgets them, the dashboard must not
 function loadKnown() {
@@ -1266,6 +1284,7 @@ async function basedOn(path) {
 // the start screen: a chat with the specialist of the chosen kind (preset) or chosen by hand, otherwise with the designer
 const home = () => P.home || !P.frames.length;
 function wanted() {
+  if (restoredChatTo) return restoredChatTo;
   if (home()) return P.homeWho || (P.preset && P.preset.to) || DEFAULT_SESSION;
   if (P.pinned && P.pinned.focus === P.focus) return P.session;   // chosen by hand — keep it while the same design is open
   P.pinned = null;
@@ -1309,7 +1328,14 @@ function setSession(name) {
   P.session = name;
   P.items = [];
   P.rev = -1;
-  if (ui) { ui.input.set({ to: name }); ui.last.chat = ""; ui.last.queue = ""; pullChat(hub.snapshot() || {}); }
+  if (ui) {
+    ui.input.set({ to: name });
+    const text = ui.input.node.querySelector("textarea").value;
+    if (text) saveChatDraft(text);
+    ui.last.chat = "";
+    ui.last.queue = "";
+    pullChat(hub.snapshot() || {});
+  }
 }
 // designs by the hub's session feeds: on page events. The snapshot has no feeds (the page of an open session takes its own) — when the feed revision
 // of a session in the snapshot grows, we pull only the changed rows from the core (since); only what concerns HTML is kept. No timer
@@ -1475,7 +1501,6 @@ function build(root) {
     },
   });
   const chatField = input.node.querySelector("textarea");
-  loadChatDraft(chatField);
   chatField.addEventListener("input", () => {
     chatRevision++;
     saveChatDraft(chatField.value);
@@ -1489,11 +1514,15 @@ function build(root) {
   const who = el("select", "hd-who");
   who.title = tr("who_title");
   who.addEventListener("change", () => {
+    restoredChatTo = "";
     if (home()) P.homeWho = who.value; else P.pinned = { focus: P.focus };
     setSession(who.value);
     paint();
   });
   const note = el("div", "hd-note");
+  const sendStatus = el("span", "hd-hint hd-send-status");
+  sendStatus.setAttribute("role", "status");
+  sendStatus.hidden = true;
   // a wide secondary button under the input window: the palette and the label (the chosen style's name once there is one)
   // with a style chosen a small x on its right end detaches it (the click does not open the picker)
   const styleOpen = button("btn hd-style", [icon("palette"), el("span", "hd-style-t", ts("btn"))], ts("btn_title"), () => (st.node.hidden ? st.open() : st.close()));   // the second press closes the open window
@@ -1511,7 +1540,7 @@ function build(root) {
   const styleBtn = el("div", "hd-style-w");
   styleBtn.append(styleOpen, styleX);
   styleBtn.hidden = !st.shown();
-  foot.append(icon("gear"), who);
+  foot.append(icon("gear"), who, sendStatus);
   card.append(lane.node, need.node, chips, strip, input.node, foot, note);
   left.append(top, tabs, chat, list, card, styleBtn);
 
@@ -1537,11 +1566,11 @@ function build(root) {
 
   wrap.append(left, right);
   root.replaceChildren(wrap);
-  return { root, wrap, left, closeLeft, closeProps, pheadTitle, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, lane, chips, strip, input, who, note, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
+  return { root, wrap, left, closeLeft, closeProps, pheadTitle, right, exitB, title, homeBtn, tabChat, tabComments, tabPlus, chat, list, need, lane, chips, strip, input, who, note, sendStatus, st, styleBtn, cv, props, tw, pbody, dash, last: { lang: currentLang() } };
 }
 
 function render(root, snap) {
-  if (!ui || ui.root !== root) { ui = build(root); load(); fromAddress(); ping(); }
+  if (!ui || ui.root !== root) { ui = build(root); load(); loadChatDraft(); fromAddress(); ping(); }
   ui.snap = snap;
   pullChat(snap);
   paint();
@@ -1586,6 +1615,7 @@ function paint() {
   setHidden(ui.list, P.tab !== "comments");
   setText(ui.note, P.note);
   setHidden(ui.note, !P.note);
+  paintChatStatus();
   ui.cv.paint();
   ui.lane.paint(snap);
   ui.need.paint(lackNow().filter((n) => n.name === P.session && !(home() && n.need === "required")));   // on the start screen the dashboard shows the required one itself
@@ -1620,6 +1650,7 @@ function dropStub() {
 
 // a preset on the start screen: the chat goes to the specialist of the kind, the input gets the stub "new <kind>: …", the cursor in the input
 function startPreset(p) {
+  restoredChatTo = "";
   P.preset = p;
   P.homeWho = null;
   P.tab = "chat";
